@@ -5,8 +5,8 @@ export interface WebToFigmaSchema {
   assets: AssetRegistry;
   styles: StyleRegistry;
   components?: ComponentRegistry;
-  yogaLayout?: YogaLayoutData;
   designTokens?: DesignTokenRegistry;
+  cssVariables?: Record<string, string>;
   screenshot?: string;
 }
 
@@ -56,6 +56,11 @@ export interface ElementNode {
     width: number;
     height: number;
     rotation?: number;
+    minWidth?: number;
+    maxWidth?: number;
+    minHeight?: number;
+    maxHeight?: number;
+    boxSizing?: 'border-box' | 'content-box';
   };
 
   absoluteLayout?: {
@@ -67,10 +72,29 @@ export interface ElementNode {
     height: number;
   };
 
+  viewportLayout?: {
+    left: number;
+    top: number;
+    right: number;
+    bottom: number;
+    width: number;
+    height: number;
+  };
+
+  stackingContext?: {
+    zIndex: number;
+    isStackingContext: boolean;
+    stackingParent?: string;
+  };
+
+  hasOverlappingElements?: boolean;
+
   autoLayout?: {
     layoutMode: 'HORIZONTAL' | 'VERTICAL' | 'NONE';
     primaryAxisAlignItems: 'MIN' | 'CENTER' | 'MAX' | 'SPACE_BETWEEN';
     counterAxisAlignItems: 'MIN' | 'CENTER' | 'MAX' | 'STRETCH';
+    primaryAxisSizingMode?: 'FIXED' | 'AUTO';
+    counterAxisSizingMode?: 'FIXED' | 'AUTO';
     paddingTop: number;
     paddingRight: number;
     paddingBottom: number;
@@ -78,6 +102,30 @@ export interface ElementNode {
     itemSpacing: number;
     layoutGrow?: number;
     layoutAlign?: 'STRETCH' | 'INHERIT';
+  };
+
+  gridLayout?: {
+    isGrid: boolean;
+    templateColumns: string;
+    templateRows: string;
+    columnGap: number;
+    rowGap: number;
+    autoFlow?: string;
+    justifyItems?: string;
+    alignItems?: string;
+    justifyContent?: string;
+    alignContent?: string;
+  };
+
+  gridChild?: {
+    columnStart?: string | number;
+    columnEnd?: string | number;
+    rowStart?: string | number;
+    rowEnd?: string | number;
+    columnSpan?: number;
+    rowSpan?: number;
+    justifySelf?: string;
+    alignSelf?: string;
   };
 
   fills?: Fill[];
@@ -128,6 +176,12 @@ export interface ElementNode {
   interactions?: InteractionData[];
 
   position?: 'static' | 'relative' | 'absolute' | 'fixed' | 'sticky';
+  positionValues?: {
+    top?: string;
+    right?: string;
+    bottom?: string;
+    left?: string;
+  };
   display?: string;
   visibility?: 'visible' | 'hidden' | 'collapse';
   pointerEvents?: string;
@@ -185,6 +239,10 @@ export interface Fill {
   gradientTransform?: Transform2D;
   imageHash?: string;
   scaleMode?: 'FILL' | 'FIT' | 'CROP' | 'TILE';
+  imageTransform?: Transform2D;
+  rotation?: number;
+  objectFit?: 'fill' | 'contain' | 'cover' | 'none' | 'scale-down';
+  objectPosition?: string;
 }
 
 export interface GradientStop {
@@ -227,9 +285,17 @@ export interface TextStyle {
   fontStyle?: 'normal' | 'italic' | 'oblique';
   textTransform?: string;
   whiteSpace?: string;
+  wordWrap?: string;
+  textOverflow?: string;
   listStyleType?: string;
   listStylePosition?: string;
   fills: Fill[];
+  effects?: Effect[];
+  fontVariant?: string;
+  fontStretch?: string;
+  textRendering?: string;
+  wordSpacing?: number;
+  textIndent?: number;
 }
 
 export interface CornerRadius {
@@ -304,11 +370,6 @@ export interface ComponentDefinition {
 export interface VariantData {
   state: 'default' | 'hover' | 'focus' | 'active' | 'disabled';
   properties: Partial<ElementNode>;
-}
-
-export interface YogaLayoutData {
-  calculatedByYoga: boolean;
-  layoutTree: any;
 }
 
 export type BlendMode =

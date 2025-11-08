@@ -1,5 +1,9 @@
 export class DesignSystemBuilder {
-  constructor(private styles: any) {}
+  private styles: any;
+
+  constructor(styles: any = {}) {
+    this.styles = styles || {};
+  }
 
   async createDesignSystemPage(): Promise<PageNode> {
     const page = figma.createPage();
@@ -72,7 +76,8 @@ export class DesignSystemBuilder {
 
     const colorRect = figma.createRectangle();
     colorRect.resize(80, 80);
-    colorRect.fills = [{ type: 'SOLID', color: colorData.color }];
+    const { r, g, b } = colorData.color;
+    colorRect.fills = [{ type: 'SOLID', color: { r, g, b }, opacity: colorData.color.a ?? 1 }];
     colorRect.cornerRadius = 8;
     swatch.appendChild(colorRect);
 

@@ -3,16 +3,23 @@ export class StyleManager {
   private textStyles: Map<string, TextStyle> = new Map();
   private effectStyles: Map<string, EffectStyle> = new Map();
 
-  constructor(private styles: any) {}
+  private styles: any;
+
+  constructor(styles: any = {}) {
+    // Ensure downstream style access always hits an object
+    this.styles = styles || {};
+  }
 
   async createFigmaStyles(): Promise<void> {
     if (this.styles.colors) {
       for (const [key, colorData] of Object.entries(this.styles.colors) as any[]) {
         const style = figma.createPaintStyle();
         style.name = `Colors/${colorData.name}`;
+        const { r, g, b } = colorData.color;
         style.paints = [{
           type: 'SOLID',
-          color: colorData.color
+          color: { r, g, b },
+          opacity: colorData.color.a ?? 1
         }];
         this.paintStyles.set(key, style);
       }

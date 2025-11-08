@@ -10,11 +10,78 @@
     
     <div id="status" class="status">Ready to capture</div>
     <div id="handoff-status" class="handoff-status hidden"></div>
+
+    <div class="target-url-section">
+      <label for="target-url">Target URL (optional)</label>
+      <input id="target-url" type="text" placeholder="https://example.com">
+      <p class="target-url-help">Leave blank to capture the current tab. Enter a URL to open it automatically before capturing.</p>
+    </div>
+
+    <!-- Progress Bar Section -->
+    <div id="progress-section" class="progress-section hidden">
+      <div class="progress-header">
+        <span id="progress-phase" class="progress-phase">Initializing...</span>
+        <span id="progress-percent" class="progress-percent">0%</span>
+      </div>
+      <div class="progress-bar-container">
+        <div id="progress-bar-fill" class="progress-bar-fill"></div>
+      </div>
+      <div id="progress-message" class="progress-message">Starting extraction...</div>
+      <div id="progress-stats" class="progress-stats hidden">
+        <div class="progress-stat">
+          <span class="progress-stat-label">Elements:</span>
+          <span id="progress-stat-elements" class="progress-stat-value">0</span>
+        </div>
+        <div class="progress-stat">
+          <span class="progress-stat-label">Figma Nodes:</span>
+          <span id="progress-stat-figma" class="progress-stat-value">0</span>
+        </div>
+        <div class="progress-stat">
+          <span class="progress-stat-label">Images:</span>
+          <span id="progress-stat-images" class="progress-stat-value">0</span>
+        </div>
+        <div class="progress-stat">
+          <span class="progress-stat-label">Styles:</span>
+          <span id="progress-stat-styles" class="progress-stat-value">0</span>
+        </div>
+        <div class="progress-stat">
+          <span class="progress-stat-label">Fonts:</span>
+          <span id="progress-stat-fonts" class="progress-stat-value">0</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="connection-panel">
+      <div class="connection-item" id="server-connection">
+        <span id="server-connection-dot" class="connection-dot"></span>
+        <div class="connection-copy">
+          <span class="connection-title">Handoff Server</span>
+          <span id="server-connection-detail" class="connection-detail">Checking…</span>
+        </div>
+      </div>
+      <div class="connection-item" id="plugin-connection">
+        <span id="plugin-connection-dot" class="connection-dot"></span>
+        <div class="connection-copy">
+          <span class="connection-title">Figma Plugin Link</span>
+          <span id="plugin-connection-detail" class="connection-detail">Waiting for plugin…</span>
+        </div>
+      </div>
+      <div class="connection-item" id="transfer-connection">
+        <span id="transfer-connection-dot" class="connection-dot"></span>
+        <div class="connection-copy">
+          <span class="connection-title">Transfer Status</span>
+          <span id="transfer-connection-detail" class="connection-detail">Idle</span>
+        </div>
+      </div>
+    </div>
     
     <div id="preview-card" class="preview hidden">
       <div class="preview-header">
         <span class="preview-title" id="preview-title">Preview ready</span>
-        <button id="open-preview-btn" class="preview-open-btn" title="Open source page">↗</button>
+        <div class="preview-actions">
+          <button id="toggle-overlay-btn" class="preview-toggle-btn" title="Toggle element overlay">🔲</button>
+          <button id="open-preview-btn" class="preview-open-btn" title="Open source page">↗</button>
+        </div>
       </div>
       <div id="screenshot-container" class="preview-body">
         <img id="screenshot" alt="Screenshot preview">
@@ -23,19 +90,53 @@
         <span id="preview-url" class="preview-url"></span>
         <span id="preview-timestamp" class="preview-timestamp"></span>
       </div>
-    </div>
-    
-    <div class="stats hidden" id="stats">
-      <div class="stat">
-        <span id="stat-elements">0</span> elements
+      <div id="validation-summary" class="validation-summary hidden">
+        <span id="validation-status" class="validation-status"></span>
+        <span id="validation-details" class="validation-details"></span>
       </div>
     </div>
     
-    <button id="capture-btn" class="btn-primary">📸 Capture Page</button>
-    
+    <div class="stats hidden" id="stats">
+      <div class="stat-grid">
+        <div class="stat-item">
+          <span class="stat-label">Elements</span>
+          <span class="stat-value" id="stat-elements">0</span>
+        </div>
+        <div class="stat-item">
+          <span class="stat-label">JSON Size</span>
+          <span class="stat-value" id="stat-size">0 KB</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="viewport-selector">
+      <div class="viewport-label">Capture Viewports:</div>
+      <div class="viewport-options">
+        <label class="viewport-option">
+          <input type="checkbox" id="viewport-mobile" value="mobile" checked>
+          <span>📱 Mobile (375px)</span>
+        </label>
+        <label class="viewport-option">
+          <input type="checkbox" id="viewport-tablet" value="tablet" checked>
+          <span>📱 Tablet (768px)</span>
+        </label>
+        <label class="viewport-option">
+          <input type="checkbox" id="viewport-desktop" value="desktop" checked>
+          <span id="desktop-viewport-label">💻 Desktop (Auto-detect)</span>
+        </label>
+      </div>
+    </div>
+
+    <div class="capture-actions">
+      <button id="capture-btn" class="btn-primary" title="Capture the current page and send the data to Figma automatically">📸 Capture &amp; Send to Figma</button>
+      <button id="capture-download-btn" class="btn-secondary" title="Capture the page and download the raw JSON without sending to Figma">📸⬇️ Capture &amp; Download JSON</button>
+      <button id="capture-remote-btn" class="btn-outline" title="Use the headless capture service (Playwright/Puppeteer) for perfect assets">☁️📸 Server Capture (Playwright)</button>
+      <p class="capture-hint">Capture finishes and hands off to Figma automatically. Need the raw JSON? Use the download capture button or the download action below.</p>
+    </div>
+
     <div class="actions hidden" id="actions">
+      <button id="send-to-figma-btn" class="btn-success">🚀 Send to Figma</button>
       <button id="download-btn" class="btn-secondary">💾 Download JSON</button>
-      <button id="figma-btn" class="btn-success">🚀 Send to Figma</button>
     </div>
   </div>
   <script src="popup.js"></script>

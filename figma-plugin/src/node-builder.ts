@@ -2,13 +2,13 @@ import { StyleManager } from './style-manager';
 import { ComponentManager } from './component-manager';
 import { ImportOptions } from './importer';
 
-type SceneNodeWithEffects = SceneNode & EffectMixin;
 type SceneNodeWithGeometry = SceneNode & GeometryMixin;
 
 export class NodeBuilder {
   private imageFetchCache = new Map<string, Uint8Array>();
   private imagePaintCache = new Map<string, string>();
   private assets: any;
+  private fontCache = new Map<string, { family: string; style: string }>();
 
   constructor(
     private styleManager: StyleManager,
@@ -21,6 +21,86 @@ export class NodeBuilder {
 
   setAssets(assets: any): void {
     this.assets = assets;
+  }
+
+  private async loadFontWithFallbacks(requestedFamily: string, requestedStyle: string): Promise<{ family: string; style: string }> {
+    const cacheKey = `${requestedFamily}:${requestedStyle}`;
+    if (this.fontCache.has(cacheKey)) {
+      return this.fontCache.get(cacheKey)!;
+    }
+
+    // Clean and normalize font family name
+    const cleanFamily = requestedFamily.replace(/['"]/g, '').trim();
+    
+    // Define font fallback chains for common web fonts
+    const fontFallbacks = new Map([
+      // Serif fonts
+      ['Times', ['Times New Roman', 'Times', 'serif']],
+      ['Times New Roman', ['Times New Roman', 'Times', 'serif']],
+      ['Georgia', ['Georgia', 'Times New Roman', 'serif']],
+      
+      // Sans-serif fonts  
+      ['Arial', ['Arial', 'Helvetica', 'sans-serif']],
+      ['Helvetica', ['Helvetica', 'Arial', 'sans-serif']],
+      ['Helvetica Neue', ['Helvetica Neue', 'Helvetica', 'Arial', 'sans-serif']],
+      ['Roboto', ['Roboto', 'Arial', 'sans-serif']],
+      ['Open Sans', ['Open Sans', 'Arial', 'sans-serif']],
+      ['Lato', ['Lato', 'Arial', 'sans-serif']],
+      ['Montserrat', ['Montserrat', 'Arial', 'sans-serif']],
+      ['Source Sans Pro', ['Source Sans Pro', 'Arial', 'sans-serif']],
+      
+      // Monospace fonts
+      ['Monaco', ['Monaco', 'Menlo', 'monospace']],
+      ['Menlo', ['Menlo', 'Monaco', 'monospace']],
+      ['Courier', ['Courier', 'Courier New', 'monospace']],
+      ['Courier New', ['Courier New', 'Courier', 'monospace']],
+      ['SF Mono', ['SF Mono', 'Monaco', 'Menlo', 'monospace']],
+      
+      // System fonts
+      ['-apple-system', ['Inter', 'Arial', 'sans-serif']],
+      ['system-ui', ['Inter', 'Arial', 'sans-serif']],
+      ['BlinkMacSystemFont', ['Inter', 'Arial', 'sans-serif']],
+    ]);
+
+    // Get fallback chain for the requested font
+    const fallbackChain = fontFallbacks.get(cleanFamily) || [cleanFamily, 'Arial', 'Inter'];
+    
+    // Try each font in the fallback chain
+    for (const fontFamily of fallbackChain) {
+      // Try different style variations for each font
+      const stylesToTry = [
+        requestedStyle,
+        'Regular',
+        'Normal',
+        'Medium',
+        'Bold',
+        'Light'
+      ].filter((style, index, arr) => arr.indexOf(style) === index); // Remove duplicates
+
+      for (const style of stylesToTry) {
+        try {
+          await figma.loadFontAsync({ family: fontFamily, style });
+          const result = { family: fontFamily, style };
+          this.fontCache.set(cacheKey, result);
+          console.log(`✅ Loaded font: ${fontFamily} ${style} (requested: ${cleanFamily} ${requestedStyle})`);
+          return result;
+        } catch (error) {
+          // Continue to next fallback
+          console.log(`⚠️ Failed to load: ${fontFamily} ${style}`);
+        }
+      }
+    }
+
+    // Last resort fallback to Inter Regular
+    try {
+      await figma.loadFontAsync({ family: 'Inter', style: 'Regular' });
+      const result = { family: 'Inter', style: 'Regular' };
+      this.fontCache.set(cacheKey, result);
+      console.warn(`❌ Using last resort font Inter Regular for: ${cleanFamily} ${requestedStyle}`);
+      return result;
+    } catch (error) {
+      throw new Error(`Critical error: Cannot load any font including Inter Regular`);
+    }
   }
 
   async createNode(nodeData: any): Promise<SceneNode | null> {
@@ -93,6 +173,8 @@ export class NodeBuilder {
     const rect = figma.createRectangle();
     rect.name = data.name || 'Rectangle';
     rect.resize(Math.max(data.layout.width || 1, 1), Math.max(data.layout.height || 1, 1));
+    rect.strokes = [];
+    rect.effects = [];
     return rect;
   }
 
@@ -102,14 +184,27 @@ export class NodeBuilder {
 
     if (data.textStyle) {
       const fontStyle = this.mapFontWeight(data.textStyle.fontWeight);
-      try {
-        await figma.loadFontAsync({ family: data.textStyle.fontFamily, style: fontStyle });
-      } catch {
-        await figma.loadFontAsync({ family: 'Inter', style: 'Regular' });
+      let fontFamily = data.textStyle.fontFamily;
+      let finalFontStyle = fontStyle;
+
+      // Progressive font fallback strategy for better fidelity
+      const originalFontFamily = fontFamily;
+      const fontLoadResult = await this.loadFontWithFallbacks(fontFamily, fontStyle);
+      fontFamily = fontLoadResult.family;
+      finalFontStyle = fontLoadResult.style;
+
+      // Critical fix: Compensate for font metric differences if font fallback occurred
+      let fontMetricsRatio = 1.0;
+      if (fontFamily !== originalFontFamily) {
+        fontMetricsRatio = this.getFontMetricsRatio(fontFamily, originalFontFamily);
+        console.log(`📝 Font fallback: ${originalFontFamily} → ${fontFamily} (ratio: ${fontMetricsRatio.toFixed(3)})`);
       }
 
-      text.fontName = { family: data.textStyle.fontFamily, style: fontStyle };
-      text.fontSize = data.textStyle.fontSize;
+      text.fontName = { family: fontFamily, style: finalFontStyle };
+      
+      // Apply font metrics compensation if font fallback occurred
+      const adjustedFontSize = data.textStyle.fontSize * fontMetricsRatio;
+      text.fontSize = adjustedFontSize;
       text.textAlignHorizontal = data.textStyle.textAlignHorizontal;
       text.textAlignVertical = data.textStyle.textAlignVertical;
 
@@ -134,6 +229,16 @@ export class NodeBuilder {
         text.fills = await this.convertFillsAsync(data.textStyle.fills);
       }
 
+      // Apply text decoration (underline, strikethrough)
+      if (data.textStyle.textDecoration) {
+        text.textDecoration = data.textStyle.textDecoration;
+      }
+
+      // Apply text case (uppercase, lowercase, capitalize, title)
+      if (data.textStyle.textCase) {
+        text.textCase = data.textStyle.textCase;
+      }
+
       if (data.textStyle.fontStyle) {
         this.safeSetPluginData(text, 'fontStyle', data.textStyle.fontStyle);
       }
@@ -145,9 +250,32 @@ export class NodeBuilder {
       }
       if (data.textStyle.whiteSpace) {
         this.safeSetPluginData(text, 'whiteSpace', data.textStyle.whiteSpace);
+        // Apply text auto resize based on white-space
+        if (data.textStyle.whiteSpace === 'nowrap') {
+          text.textAutoResize = 'WIDTH_AND_HEIGHT';
+        } else if (data.textStyle.whiteSpace === 'pre' || data.textStyle.whiteSpace === 'pre-wrap') {
+          text.textAutoResize = 'HEIGHT';
+        }
+      }
+      if (data.textStyle.wordWrap) {
+        this.safeSetPluginData(text, 'wordWrap', data.textStyle.wordWrap);
+      }
+      if (data.textStyle.textOverflow) {
+        this.safeSetPluginData(text, 'textOverflow', data.textStyle.textOverflow);
+        // Handle text-overflow: ellipsis
+        if (data.textStyle.textOverflow === 'ellipsis') {
+          text.textTruncation = 'ENDING';
+        }
       }
       if (data.textStyle.listStyleType) {
         this.safeSetPluginData(text, 'listStyleType', data.textStyle.listStyleType);
+      }
+
+      // Apply text shadows as effects
+      if (data.textStyle.textShadows?.length) {
+        const existingEffects = text.effects || [];
+        const textShadowEffects = this.convertEffects(data.textStyle.textShadows);
+        text.effects = [...existingEffects, ...textShadowEffects];
       }
     }
 
@@ -209,6 +337,7 @@ export class NodeBuilder {
     this.applyPositioning(node, data);
     await this.applyCommonStyles(node, data);
     this.applyAutoLayout(node, data);
+    this.applyGridLayoutMetadata(node, data);
     this.applyOverflow(node, data);
     this.applyVisibility(node, data);
     this.applyFilters(node, data);
@@ -217,40 +346,197 @@ export class NodeBuilder {
 
   private applyPositioning(node: SceneNode, data: any) {
     if (data.layout) {
+      // Adjust dimensions based on box-sizing and stroke compensation
+      let width = data.layout.width || 1;
+      let height = data.layout.height || 1;
+      
+      // Critical fix: Compensate for Figma stroke expansion
+      if (data.strokes?.length && data.strokeWeight) {
+        const strokeWeight = data.strokeWeight || 0;
+        
+        if (data.layout.boxSizing === 'border-box') {
+          // Border-box: CSS dimensions include borders, but Figma strokes expand beyond
+          // Reduce content area to compensate for Figma's stroke expansion
+          width = Math.max(width - strokeWeight, 1);
+          height = Math.max(height - strokeWeight, 1);
+          
+          this.safeSetPluginData(node, 'borderBoxCompensation', strokeWeight.toString());
+        } else {
+          // Content-box: No adjustment needed as strokes are additional
+          this.safeSetPluginData(node, 'contentBoxStroke', strokeWeight.toString());
+        }
+      }
+      
       node.x = data.layout.x || 0;
       node.y = data.layout.y || 0;
+      
+      // Handle absolute positioning with better precision
+      if (data.position === 'absolute' || data.position === 'fixed') {
+        if (data.positionValues) {
+          // Use absolute layout positioning if available for better accuracy
+          if (data.absoluteLayout) {
+            node.x = data.absoluteLayout.left || node.x;
+            node.y = data.absoluteLayout.top || node.y;
+            width = data.absoluteLayout.width || width;
+            height = data.absoluteLayout.height || height;
+          }
+          
+          // Store CSS position values for reference
+          this.safeSetPluginData(node, 'cssPositionValues', JSON.stringify(data.positionValues));
+        }
+      }
+      
       if ('rotation' in node) {
         (node as any).rotation = data.layout.rotation || 0;
       }
-      if (typeof data.layout.width === 'number' && typeof data.layout.height === 'number') {
+      
+      if (typeof width === 'number' && typeof height === 'number') {
         if ('resize' in node) {
-          (node as LayoutMixin).resize(Math.max(data.layout.width, 1), Math.max(data.layout.height, 1));
+          (node as LayoutMixin).resize(Math.max(width, 1), Math.max(height, 1));
         }
       }
     }
 
-    if ('layoutPositioning' in node && data.position && data.position !== 'static') {
-      (node as any).layoutPositioning = 'ABSOLUTE';
+    // Note: layoutPositioning is not set here because:
+    // - If parent has Auto Layout (layoutMode !== NONE), children must use AUTO positioning
+    // - If parent has manual layout (layoutMode === NONE), children use x/y positions (already set above)
+    // - Setting ABSOLUTE on a node before it has a parent, then adding it to an Auto Layout parent, causes errors
+
+    // Store CSS position type for reference (absolute, fixed, relative, sticky)
+    if (data.position) {
+      this.safeSetPluginData(node, 'cssPosition', data.position);
+
+      if ('layoutPositioning' in node) {
+        if (data.position === 'absolute' || data.position === 'fixed' || data.position === 'sticky') {
+          try {
+            (node as FrameNode).layoutPositioning = 'ABSOLUTE';
+          } catch {
+            // ignore nodes that don't support it
+          }
+        }
+      }
     }
 
+    // layoutGrow and layoutAlign can only be set on children of Auto Layout containers
     if ('layoutGrow' in node && typeof data.autoLayout?.layoutGrow === 'number') {
-      (node as any).layoutGrow = data.autoLayout.layoutGrow;
+      try {
+        (node as any).layoutGrow = data.autoLayout.layoutGrow;
+      } catch (error) {
+        console.warn(`Cannot set layoutGrow on node "${node.name}":`, error);
+        this.safeSetPluginData(node, 'cssLayoutGrow', data.autoLayout.layoutGrow.toString());
+      }
     }
     if ('layoutAlign' in node && data.autoLayout?.layoutAlign) {
-      (node as any).layoutAlign = data.autoLayout.layoutAlign;
+      try {
+        (node as any).layoutAlign = data.autoLayout.layoutAlign;
+      } catch (error) {
+        console.warn(`Cannot set layoutAlign on node "${node.name}":`, error);
+        this.safeSetPluginData(node, 'cssLayoutAlign', data.autoLayout.layoutAlign);
+      }
     }
 
-    if (data.transform?.matrix?.length >= 6 && 'relativeTransform' in node) {
-      const [a, b, c, d, tx, ty] = data.transform.matrix;
-      (node as any).relativeTransform = [
-        [a ?? 1, c ?? 0, tx ?? node.x],
-        [b ?? 0, d ?? 1, ty ?? node.y]
-      ];
+    // DISABLED: Applying relativeTransform causes "rotation is not invertible" errors
+    // and conflicts with Figma's layout system. Use simple x/y positioning instead.
+    // Complex CSS transforms (scale, skew, 3D) are stored in plugin data for reference.
+    if (data.transform?.matrix) {
+      this.safeSetPluginData(node, 'cssTransform', JSON.stringify(data.transform));
+    }
+
+    // Apply responsive constraints if available
+    if (data.layout) {
+      this.applyResponsiveConstraints(node, data.layout);
     }
   }
 
+  /**
+   * Apply responsive constraints (min/max width/height) to Figma nodes
+   * Note: minWidth/maxWidth can only be set on Auto Layout nodes and their children
+   */
+  private applyResponsiveConstraints(node: SceneNode, layout: any) {
+    // Figma supports minWidth, maxWidth, minHeight, maxHeight on frames
+    if (!('minWidth' in node)) return;
+
+    const frameNode = node as FrameNode;
+
+    // Check if this node supports min/max constraints
+    // These can only be set on Auto Layout nodes (layoutMode !== 'NONE') or their children
+    const supportsMinMaxConstraints = this.nodeSupportsMinMaxConstraints(frameNode);
+
+    // Always store the CSS values in plugin data for reference
+    if (typeof layout.minWidth === 'number' && layout.minWidth > 0) {
+      this.safeSetPluginData(node, 'cssMinWidth', layout.minWidth.toString());
+      
+      if (supportsMinMaxConstraints) {
+        try {
+          frameNode.minWidth = layout.minWidth;
+        } catch (error) {
+          console.warn(`Cannot set minWidth on node "${frameNode.name}":`, error);
+        }
+      }
+    }
+
+    if (typeof layout.maxWidth === 'number' && layout.maxWidth > 0) {
+      this.safeSetPluginData(node, 'cssMaxWidth', layout.maxWidth.toString());
+      
+      if (supportsMinMaxConstraints) {
+        try {
+          frameNode.maxWidth = layout.maxWidth;
+        } catch (error) {
+          console.warn(`Cannot set maxWidth on node "${frameNode.name}":`, error);
+        }
+      }
+    }
+
+    // Apply min/max height (these have fewer restrictions)
+    if (typeof layout.minHeight === 'number' && layout.minHeight > 0) {
+      this.safeSetPluginData(node, 'cssMinHeight', layout.minHeight.toString());
+      
+      try {
+        frameNode.minHeight = layout.minHeight;
+      } catch (error) {
+        console.warn(`Cannot set minHeight on node "${frameNode.name}":`, error);
+      }
+    }
+
+    if (typeof layout.maxHeight === 'number' && layout.maxHeight > 0) {
+      this.safeSetPluginData(node, 'cssMaxHeight', layout.maxHeight.toString());
+      
+      try {
+        frameNode.maxHeight = layout.maxHeight;
+      } catch (error) {
+        console.warn(`Cannot set maxHeight on node "${frameNode.name}":`, error);
+      }
+    }
+  }
+
+  /**
+   * Check if a node supports min/max width constraints
+   * Returns true if the node is an Auto Layout container or child of one
+   */
+  private nodeSupportsMinMaxConstraints(node: FrameNode): boolean {
+    // If this node itself has Auto Layout, it supports constraints
+    if ('layoutMode' in node && node.layoutMode !== 'NONE') {
+      return true;
+    }
+
+    // If this node's parent has Auto Layout, this node (as a child) supports constraints
+    if (node.parent && 'layoutMode' in node.parent) {
+      const parentFrame = node.parent as FrameNode;
+      return parentFrame.layoutMode !== 'NONE';
+    }
+
+    return false;
+  }
+
   private async applyCommonStyles(node: SceneNode, data: any): Promise<void> {
-    if (data.fills && 'fills' in node && node.type !== 'TEXT') {
+    // Process backgrounds if available (preferred for proper positioning/sizing)
+    if (data.backgrounds?.length && 'fills' in node && node.type !== 'TEXT') {
+      (node as SceneNodeWithGeometry).fills = await this.convertBackgroundLayersAsync(
+        data.backgrounds,
+        data.layout
+      );
+    } else if (data.fills && 'fills' in node && node.type !== 'TEXT') {
+      // Fallback to basic fills if no backgrounds
       (node as SceneNodeWithGeometry).fills = await this.convertFillsAsync(data.fills);
     }
 
@@ -268,17 +554,32 @@ export class NodeBuilder {
       (node as any).strokeAlign = data.strokeAlign;
     }
 
+    // Apply dashed/dotted border styles
+    if ('dashPattern' in node && data.borderStyle) {
+      const dashPatterns: Record<string, number[]> = {
+        dashed: [10, 5],
+        dotted: [2, 3],
+        solid: []
+      };
+      const pattern = dashPatterns[data.borderStyle] || [];
+      if (pattern.length > 0) {
+        (node as any).dashPattern = pattern;
+      }
+      // Store original border style in plugin data
+      this.safeSetPluginData(node, 'borderStyle', data.borderStyle);
+    }
+
     if (data.cornerRadius && 'cornerRadius' in node) {
       this.applyCornerRadius(node as any, data.cornerRadius);
     }
 
-    const existingEffects = 'effects' in node ? [...((node as SceneNodeWithEffects).effects || [])] : [];
+    const existingEffects = 'effects' in node ? [...((node as BlendMixin).effects || [])] : [];
     if (data.effects?.length && 'effects' in node) {
       existingEffects.push(...this.convertEffects(data.effects));
     }
 
     if (existingEffects.length && 'effects' in node) {
-      (node as SceneNodeWithEffects).effects = existingEffects;
+      (node as BlendMixin).effects = existingEffects;
     }
 
     if (data.opacity !== undefined && 'opacity' in node) {
@@ -305,47 +606,42 @@ export class NodeBuilder {
   }
 
   private applyAutoLayout(node: SceneNode, data: any) {
-    if (!this.options.applyAutoLayout || !data.autoLayout) return;
-    if (!('layoutMode' in node)) return;
+    // Auto Layout is applied later via layout-upgrader to preserve fidelity
+    return;
+  }
 
-    const frameNode = node as FrameNode;
-    const autoLayout = data.autoLayout;
+  /**
+   * Store CSS Grid layout metadata in plugin data for reference
+   * Note: Figma's Auto Layout cannot represent true 2D grids, so we store the original
+   * grid properties for documentation/debugging purposes
+   */
+  private applyGridLayoutMetadata(node: SceneNode, data: any) {
+    if (!data.gridLayout) return;
 
-    // Only apply auto layout if it's a flex container
-    if (autoLayout.layoutMode && autoLayout.layoutMode !== 'NONE') {
-      frameNode.layoutMode = autoLayout.layoutMode;
+    const grid = data.gridLayout;
 
-      if (autoLayout.primaryAxisAlignItems) {
-        frameNode.primaryAxisAlignItems = autoLayout.primaryAxisAlignItems;
-      }
+    // Store grid layout information in plugin data
+    this.safeSetPluginData(node, 'gridLayout', JSON.stringify({
+      templateColumns: grid.templateColumns,
+      templateRows: grid.templateRows,
+      columnGap: grid.columnGap,
+      rowGap: grid.rowGap,
+      autoFlow: grid.autoFlow,
+      justifyItems: grid.justifyItems,
+      alignItems: grid.alignItems,
+      justifyContent: grid.justifyContent,
+      alignContent: grid.alignContent
+    }));
 
-      if (autoLayout.counterAxisAlignItems) {
-        frameNode.counterAxisAlignItems = autoLayout.counterAxisAlignItems;
-      }
+    // Store grid child properties if present
+    if (data.gridChild) {
+      this.safeSetPluginData(node, 'gridChild', JSON.stringify(data.gridChild));
+    }
 
-      if (typeof autoLayout.itemSpacing === 'number') {
-        frameNode.itemSpacing = autoLayout.itemSpacing;
-      }
-
-      if (typeof autoLayout.paddingTop === 'number') {
-        frameNode.paddingTop = autoLayout.paddingTop;
-      }
-      if (typeof autoLayout.paddingRight === 'number') {
-        frameNode.paddingRight = autoLayout.paddingRight;
-      }
-      if (typeof autoLayout.paddingBottom === 'number') {
-        frameNode.paddingBottom = autoLayout.paddingBottom;
-      }
-      if (typeof autoLayout.paddingLeft === 'number') {
-        frameNode.paddingLeft = autoLayout.paddingLeft;
-      }
-
-      // Set sizing modes if present
-      if (autoLayout.primaryAxisSizingMode) {
-        frameNode.primaryAxisSizingMode = autoLayout.primaryAxisSizingMode;
-      }
-      if (autoLayout.counterAxisSizingMode) {
-        frameNode.counterAxisSizingMode = autoLayout.counterAxisSizingMode;
+    // Add visual indicator that this was a grid layout
+    if ('name' in node && typeof node.name === 'string') {
+      if (!node.name.includes('[Grid]')) {
+        node.name = `${node.name} [Grid]`;
       }
     }
   }
@@ -369,7 +665,7 @@ export class NodeBuilder {
 
   private applyFilters(node: SceneNode, data: any) {
     if (!('setPluginData' in node)) return;
-    const existingEffects = 'effects' in node ? [...((node as SceneNodeWithEffects).effects || [])] : [];
+    const existingEffects = 'effects' in node ? [...((node as BlendMixin).effects || [])] : [];
 
     (data.filters || []).forEach((filter: any) => {
       if (filter.type === 'blur' && 'effects' in node) {
@@ -393,7 +689,7 @@ export class NodeBuilder {
     });
 
     if (existingEffects.length && 'effects' in node) {
-      (node as SceneNodeWithEffects).effects = existingEffects;
+      (node as BlendMixin).effects = existingEffects;
     }
 
     if (data.filters?.length) {
@@ -407,11 +703,22 @@ export class NodeBuilder {
   private applyMetadata(node: SceneNode, data: any, meta: { reuseComponent: boolean }) {
     this.applyConstraints(node, data);
 
+    // layoutGrow and layoutAlign can only be set on children of Auto Layout containers
     if ('layoutGrow' in node && data.autoLayout?.layoutGrow !== undefined) {
-      (node as any).layoutGrow = data.autoLayout.layoutGrow;
+      try {
+        (node as any).layoutGrow = data.autoLayout.layoutGrow;
+      } catch (error) {
+        console.warn(`Cannot set layoutGrow on node "${node.name}" in metadata:`, error);
+        this.safeSetPluginData(node, 'cssLayoutGrow', data.autoLayout.layoutGrow.toString());
+      }
     }
     if ('layoutAlign' in node && data.autoLayout?.layoutAlign) {
-      (node as any).layoutAlign = data.autoLayout.layoutAlign;
+      try {
+        (node as any).layoutAlign = data.autoLayout.layoutAlign;
+      } catch (error) {
+        console.warn(`Cannot set layoutAlign on node "${node.name}" in metadata:`, error);
+        this.safeSetPluginData(node, 'cssLayoutAlign', data.autoLayout.layoutAlign);
+      }
     }
 
     this.safeSetPluginData(node, 'sourceNodeId', data.id || '');
@@ -472,16 +779,26 @@ export class NodeBuilder {
     }
   }
 
-  private async convertFillsAsync(fills: any[]): Promise<Paint[]> {
+  /**
+   * Convert background layers with proper positioning, sizing, and repeat handling
+   */
+  private async convertBackgroundLayersAsync(
+    backgrounds: any[],
+    nodeLayout?: { width: number; height: number }
+  ): Promise<Paint[]> {
     const paints: Paint[] = [];
 
-    for (const fill of fills) {
-      if (!fill) continue;
+    for (const layer of backgrounds) {
+      if (!layer || !layer.fill) continue;
 
+      const fill = layer.fill;
+
+      // Handle solid colors and gradients
       if (fill.type === 'SOLID' && fill.color) {
+        const { r, g, b } = fill.color;
         paints.push({
           type: 'SOLID',
-          color: fill.color,
+          color: { r, g, b },
           opacity: fill.opacity !== undefined ? fill.opacity : fill.color.a ?? 1,
           visible: fill.visible !== false
         } as SolidPaint);
@@ -491,10 +808,61 @@ export class NodeBuilder {
       if ((fill.type === 'GRADIENT_LINEAR' || fill.type === 'GRADIENT_RADIAL') && fill.gradientStops) {
         paints.push({
           type: fill.type,
-          gradientStops: fill.gradientStops.map((stop: any) => ({
-            position: stop.position,
-            color: stop.color
-          })),
+          gradientStops: fill.gradientStops.map((stop: any) => {
+            const { r, g, b, a } = stop.color;
+            return {
+              position: stop.position,
+              color: { r, g, b, a }
+            };
+          }),
+          gradientTransform: fill.gradientTransform || [
+            [1, 0, 0],
+            [0, 1, 0]
+          ],
+          visible: fill.visible !== false
+        } as GradientPaint);
+        continue;
+      }
+
+      // Handle images with advanced positioning/sizing
+      if (fill.type === 'IMAGE') {
+        paints.push(
+          await this.resolveImagePaintWithBackground(fill, layer, nodeLayout)
+        );
+        continue;
+      }
+    }
+
+    return paints;
+  }
+
+  private async convertFillsAsync(fills: any[]): Promise<Paint[]> {
+    const paints: Paint[] = [];
+
+    for (const fill of fills) {
+      if (!fill) continue;
+
+      if (fill.type === 'SOLID' && fill.color) {
+        const { r, g, b } = fill.color;
+        paints.push({
+          type: 'SOLID',
+          color: { r, g, b },
+          opacity: fill.opacity !== undefined ? fill.opacity : fill.color.a ?? 1,
+          visible: fill.visible !== false
+        } as SolidPaint);
+        continue;
+      }
+
+      if ((fill.type === 'GRADIENT_LINEAR' || fill.type === 'GRADIENT_RADIAL') && fill.gradientStops) {
+        paints.push({
+          type: fill.type,
+          gradientStops: fill.gradientStops.map((stop: any) => {
+            const { r, g, b, a } = stop.color;
+            return {
+              position: stop.position,
+              color: { r, g, b, a }
+            };
+          }),
           gradientTransform: fill.gradientTransform || [
             [1, 0, 0],
             [0, 1, 0]
@@ -513,6 +881,91 @@ export class NodeBuilder {
     return paints;
   }
 
+  /**
+   * Resolve image paint with background layer properties (position, size, repeat)
+   */
+  private async resolveImagePaintWithBackground(
+    fill: any,
+    layer: any,
+    nodeLayout?: { width: number; height: number }
+  ): Promise<Paint> {
+    const hash = fill.imageHash;
+    if (!hash || !this.assets?.images?.[hash]) {
+      return {
+        type: 'SOLID',
+        color: { r: 0.9, g: 0.9, b: 0.9 },
+        opacity: 1
+      } as SolidPaint;
+    }
+
+    // Get or create the Figma image
+    let imageHash: string;
+    if (this.imagePaintCache.has(hash)) {
+      imageHash = this.imagePaintCache.get(hash)!;
+    } else {
+      try {
+        const asset = this.assets.images[hash];
+        let imageBytes: Uint8Array | undefined;
+
+        if (asset.base64) {
+          imageBytes = this.base64ToUint8Array(asset.base64);
+        } else if (asset.url) {
+          imageBytes = await this.fetchImage(asset.url);
+        }
+
+        if (!imageBytes) {
+          throw new Error('No image data available');
+        }
+
+        const image = figma.createImage(imageBytes);
+        this.imagePaintCache.set(hash, image.hash);
+        imageHash = image.hash;
+      } catch (error) {
+        console.warn('Failed to resolve image paint', error);
+        return {
+          type: 'SOLID',
+          color: { r: 0.9, g: 0.9, b: 0.9 },
+          opacity: 1
+        } as SolidPaint;
+      }
+    }
+
+    // Determine scale mode from background-repeat
+    const scaleMode = this.getScaleModeFromRepeat(layer.repeat);
+
+    // Calculate image transform from background-position and background-size
+    const imageTransform = this.calculateImageTransform(
+      layer.position,
+      layer.size,
+      nodeLayout,
+      this.assets.images[hash]
+    );
+
+    const paint: ImagePaint = {
+      type: 'IMAGE',
+      imageHash,
+      scaleMode,
+      visible: fill.visible !== false
+    };
+
+    // Apply transform if calculated
+    if (imageTransform) {
+      paint.imageTransform = imageTransform;
+    }
+
+    // Apply rotation if present
+    if (fill.rotation !== undefined) {
+      paint.rotation = fill.rotation;
+    }
+
+    // Apply scaling factor if needed
+    if (fill.scalingFactor !== undefined) {
+      paint.scalingFactor = fill.scalingFactor;
+    }
+
+    return paint;
+  }
+
   private async resolveImagePaint(fill: any): Promise<Paint> {
     const hash = fill.imageHash;
     if (!hash || !this.assets?.images?.[hash]) {
@@ -525,11 +978,26 @@ export class NodeBuilder {
 
     if (this.imagePaintCache.has(hash)) {
       const cachedHash = this.imagePaintCache.get(hash)!;
-      return {
+      
+      // Enhanced scale mode mapping from object-fit
+      let scaleMode = fill.scaleMode || 'FILL';
+      if (fill.objectFit) {
+        scaleMode = this.mapObjectFitToScaleMode(fill.objectFit);
+      }
+      
+      const imagePaint: ImagePaint = {
         type: 'IMAGE',
         imageHash: cachedHash,
-        scaleMode: fill.scaleMode || 'FILL'
-      } as ImagePaint;
+        scaleMode,
+        visible: fill.visible !== false
+      };
+
+      // Apply object-position as image transform if specified
+      if (fill.objectPosition && fill.objectPosition !== 'center center') {
+        imagePaint.imageTransform = this.parseObjectPositionToTransform(fill.objectPosition);
+      }
+
+      return imagePaint;
     }
 
     try {
@@ -549,11 +1017,25 @@ export class NodeBuilder {
       const image = figma.createImage(imageBytes);
       this.imagePaintCache.set(hash, image.hash);
 
-      return {
+      // Enhanced scale mode mapping from object-fit
+      let scaleMode = fill.scaleMode || 'FILL';
+      if (fill.objectFit) {
+        scaleMode = this.mapObjectFitToScaleMode(fill.objectFit);
+      }
+
+      const imagePaint: ImagePaint = {
         type: 'IMAGE',
         imageHash: image.hash,
-        scaleMode: fill.scaleMode || 'FILL'
-      } as ImagePaint;
+        scaleMode,
+        visible: fill.visible !== false
+      };
+
+      // Apply object-position as image transform if specified
+      if (fill.objectPosition && fill.objectPosition !== 'center center') {
+        imagePaint.imageTransform = this.parseObjectPositionToTransform(fill.objectPosition);
+      }
+
+      return imagePaint;
     } catch (error) {
       console.warn('Failed to resolve image paint', error);
       return {
@@ -564,13 +1046,91 @@ export class NodeBuilder {
     }
   }
 
+  private mapObjectFitToScaleMode(objectFit: string): 'FILL' | 'FIT' | 'CROP' | 'TILE' {
+    const mapping: Record<string, 'FILL' | 'FIT' | 'CROP' | 'TILE'> = {
+      'fill': 'FILL',        // Stretch to fill completely
+      'contain': 'FIT',      // Scale to fit within bounds
+      'cover': 'CROP',       // Scale to cover, may crop
+      'none': 'CROP',        // Use original size
+      'scale-down': 'FIT'    // Similar to contain
+    };
+    return mapping[objectFit] || 'FILL';
+  }
+
+  private getFontMetricsRatio(actualFont: string, originalFont: string): number {
+    // Font metrics compensation ratios for common font substitutions
+    const fontMetricsMap = new Map([
+      // Web fonts → System font ratios (height adjustment factors)
+      ['Inter:Arial', 0.98],
+      ['Inter:Helvetica', 0.97],
+      ['Arial:Inter', 1.02],
+      ['Helvetica:Inter', 1.03],
+      ['Roboto:Inter', 0.99],
+      ['Open Sans:Inter', 1.01],
+      ['Lato:Inter', 0.99],
+      ['Montserrat:Inter', 1.02],
+      ['Source Sans Pro:Inter', 0.98],
+      
+      // Serif fallbacks
+      ['Times New Roman:Times', 1.0],
+      ['Georgia:Times New Roman', 0.95],
+      
+      // Monospace fallbacks
+      ['Monaco:Menlo', 1.01],
+      ['SF Mono:Monaco', 0.99],
+      ['Courier New:Courier', 1.0]
+    ]);
+    
+    const key = `${originalFont}:${actualFont}`;
+    return fontMetricsMap.get(key) || 1.0;
+  }
+
+  private parseObjectPositionToTransform(objectPosition: string): [[number, number, number], [number, number, number]] {
+    // Parse object-position values like "center center", "50% 50%", "left top", etc.
+    const parts = objectPosition.trim().split(/\s+/);
+    let xOffset = 0;
+    let yOffset = 0;
+
+    // Handle horizontal position
+    if (parts[0]) {
+      if (parts[0] === 'left') xOffset = -0.5;
+      else if (parts[0] === 'right') xOffset = 0.5;
+      else if (parts[0] === 'center') xOffset = 0;
+      else if (parts[0].endsWith('%')) {
+        const percent = parseFloat(parts[0]) / 100;
+        xOffset = percent - 0.5; // Convert to offset from center
+      }
+    }
+
+    // Handle vertical position  
+    if (parts[1]) {
+      if (parts[1] === 'top') yOffset = -0.5;
+      else if (parts[1] === 'bottom') yOffset = 0.5;
+      else if (parts[1] === 'center') yOffset = 0;
+      else if (parts[1].endsWith('%')) {
+        const percent = parseFloat(parts[1]) / 100;
+        yOffset = percent - 0.5; // Convert to offset from center
+      }
+    }
+
+    // Return transform matrix with position offsets
+    return [
+      [1, 0, xOffset],
+      [0, 1, yOffset]
+    ];
+  }
+
   private async convertStrokesAsync(strokes: any[]): Promise<Paint[]> {
-    return strokes.map((stroke) => ({
-      type: 'SOLID',
-      color: stroke.color || { r: 0, g: 0, b: 0 },
-      opacity: stroke.opacity !== undefined ? stroke.opacity : stroke.color?.a ?? 1,
-      visible: stroke.visible !== false
-    })) as SolidPaint[];
+    return strokes.map((stroke) => {
+      const color = stroke.color || { r: 0, g: 0, b: 0 };
+      const { r, g, b } = color;
+      return {
+        type: 'SOLID',
+        color: { r, g, b },
+        opacity: stroke.opacity !== undefined ? stroke.opacity : color.a ?? 1,
+        visible: stroke.visible !== false
+      };
+    }) as SolidPaint[];
   }
 
   private convertEffects(effects: any[]): Effect[] {
@@ -612,11 +1172,179 @@ export class NodeBuilder {
           type: 'BACKGROUND_BLUR',
           radius: effect.radius,
           visible: effect.visible !== false
-        } as BackgroundBlurEffect;
+        } as BlurEffect;
       }
 
       return effect;
     });
+  }
+
+  /**
+   * Convert CSS background-repeat to Figma scaleMode
+   */
+  private getScaleModeFromRepeat(repeat?: string): 'FILL' | 'FIT' | 'CROP' | 'TILE' {
+    if (!repeat) return 'FILL';
+
+    const repeatLower = repeat.toLowerCase().trim();
+
+    // 'repeat' or 'repeat repeat' means tile
+    if (repeatLower === 'repeat' || repeatLower === 'repeat repeat') {
+      return 'TILE';
+    }
+
+    // 'repeat-x' or 'repeat-y' also means tile
+    if (repeatLower === 'repeat-x' || repeatLower === 'repeat-y') {
+      return 'TILE';
+    }
+
+    // 'no-repeat' with other properties will be handled by imageTransform
+    // Default to FILL for 'no-repeat', 'space', 'round'
+    return 'FILL';
+  }
+
+  /**
+   * Calculate Figma imageTransform from CSS background-position and background-size
+   * Returns a 2x3 transform matrix: [[a, b, c], [d, e, f]]
+   */
+  private calculateImageTransform(
+    position?: { x: string; y: string },
+    size?: { width: string; height: string },
+    nodeLayout?: { width: number; height: number },
+    imageAsset?: { width: number; height: number }
+  ): [[number, number, number], [number, number, number]] | undefined {
+    // If we don't have enough info, skip transform
+    if (!position && !size) return undefined;
+
+    // Start with identity matrix
+    let scaleX = 1;
+    let scaleY = 1;
+    let translateX = 0;
+    let translateY = 0;
+
+    // Process background-size
+    if (size && nodeLayout && imageAsset) {
+      const { width: sizeWidth, height: sizeHeight } = size;
+
+      // Handle 'cover' - scale to cover the entire area
+      if (sizeWidth === 'cover') {
+        const scaleRatio = Math.max(
+          nodeLayout.width / imageAsset.width,
+          nodeLayout.height / imageAsset.height
+        );
+        scaleX = scaleRatio;
+        scaleY = scaleRatio;
+      }
+      // Handle 'contain' - scale to fit within the area
+      else if (sizeWidth === 'contain') {
+        const scaleRatio = Math.min(
+          nodeLayout.width / imageAsset.width,
+          nodeLayout.height / imageAsset.height
+        );
+        scaleX = scaleRatio;
+        scaleY = scaleRatio;
+      }
+      // Handle 'auto' or specific dimensions
+      else {
+        scaleX = this.parseSizeValue(sizeWidth, nodeLayout.width, imageAsset.width);
+        scaleY = this.parseSizeValue(sizeHeight || sizeWidth, nodeLayout.height, imageAsset.height);
+      }
+    }
+
+    // Process background-position
+    if (position && nodeLayout && imageAsset) {
+      const { x: posX, y: posY } = position;
+
+      // Calculate effective image dimensions after scaling
+      const scaledImageWidth = imageAsset.width * scaleX;
+      const scaledImageHeight = imageAsset.height * scaleY;
+
+      translateX = this.parsePositionValue(posX, nodeLayout.width, scaledImageWidth);
+      translateY = this.parsePositionValue(posY, nodeLayout.height, scaledImageHeight);
+
+      // Normalize to Figma's coordinate system (0-1 range relative to image size)
+      if (imageAsset.width > 0) {
+        translateX = translateX / imageAsset.width;
+      }
+      if (imageAsset.height > 0) {
+        translateY = translateY / imageAsset.height;
+      }
+    }
+
+    // Return the transform matrix: [[scaleX, 0, translateX], [0, scaleY, translateY]]
+    return [
+      [scaleX, 0, translateX],
+      [0, scaleY, translateY]
+    ];
+  }
+
+  /**
+   * Parse CSS size value (e.g., "100px", "50%", "auto") to a scale factor
+   */
+  private parseSizeValue(value: string, containerSize: number, imageSize: number): number {
+    const trimmed = value.trim().toLowerCase();
+
+    if (trimmed === 'auto') {
+      return 1; // Use intrinsic size
+    }
+
+    if (trimmed.endsWith('%')) {
+      const percentage = parseFloat(trimmed);
+      return (containerSize * (percentage / 100)) / imageSize;
+    }
+
+    if (trimmed.endsWith('px')) {
+      const pixels = parseFloat(trimmed);
+      return pixels / imageSize;
+    }
+
+    // Try to parse as number (assumed pixels)
+    const num = parseFloat(trimmed);
+    if (!isNaN(num)) {
+      return num / imageSize;
+    }
+
+    return 1; // Default
+  }
+
+  /**
+   * Parse CSS position value (e.g., "center", "50%", "10px", "left", "right", "top", "bottom")
+   * Returns position in pixels
+   */
+  private parsePositionValue(value: string, containerSize: number, imageSize: number): number {
+    const trimmed = value.trim().toLowerCase();
+
+    // Handle keywords
+    const keywordMap: Record<string, number> = {
+      left: 0,
+      top: 0,
+      center: 0.5,
+      right: 1,
+      bottom: 1
+    };
+
+    if (trimmed in keywordMap) {
+      const ratio = keywordMap[trimmed];
+      return (containerSize - imageSize) * ratio;
+    }
+
+    // Handle percentage
+    if (trimmed.endsWith('%')) {
+      const percentage = parseFloat(trimmed) / 100;
+      return (containerSize - imageSize) * percentage;
+    }
+
+    // Handle pixels
+    if (trimmed.endsWith('px')) {
+      return parseFloat(trimmed);
+    }
+
+    // Try to parse as number (assumed pixels)
+    const num = parseFloat(trimmed);
+    if (!isNaN(num)) {
+      return num;
+    }
+
+    return 0; // Default to 0
   }
 
   private async fetchImage(url: string): Promise<Uint8Array> {

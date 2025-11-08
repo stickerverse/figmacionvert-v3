@@ -238,6 +238,41 @@
       gap: 6px;
       flex: 1;
     }
+
+    .connection-details {
+      margin-bottom: 12px;
+      padding: 12px;
+      border: 1px solid #e2e8f0;
+      border-radius: 8px;
+      background: #f8fafc;
+    }
+
+    .connection-details-title {
+      font-size: 10px;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: #64748b;
+      margin-bottom: 6px;
+      font-weight: 600;
+    }
+
+    .connection-detail-row {
+      display: flex;
+      justify-content: space-between;
+      font-size: 11px;
+      padding: 4px 0;
+      border-top: 1px solid #e2e8f0;
+    }
+
+    .connection-detail-row:first-of-type {
+      border-top: none;
+      padding-top: 0;
+    }
+
+    .connection-detail-row span:last-child {
+      font-family: 'SFMono-Regular', Menlo, monospace;
+      color: #0f172a;
+    }
     
     .status-light {
       width: 12px;
@@ -498,8 +533,24 @@
     </div>
   </div>
 
+  <div class="connection-details">
+    <div class="connection-details-title">Live Link</div>
+    <div class="connection-detail-row">
+      <span>Chrome Extension</span>
+      <span id="detail-extension-status">No heartbeat yet</span>
+    </div>
+    <div class="connection-detail-row">
+      <span>Handoff Server</span>
+      <span id="detail-server-status">Waiting…</span>
+    </div>
+    <div class="connection-detail-row">
+      <span>Transfer</span>
+      <span id="detail-transfer-status">Idle</span>
+    </div>
+  </div>
+
   <div id="handoff-status-message" class="handoff-message hidden">
-    Waiting for handoff server on http://127.0.0.1:4411...
+    Waiting for handoff server on http://localhost:4411...
   </div>
 
   <!-- DEBUG STATUS -->
@@ -576,6 +627,9 @@ Initializing...
     <button id="import-btn" class="btn btn-primary" disabled>
       Import to Figma
     </button>
+    <button id="upgrade-auto-layout-btn" class="btn btn-secondary" disabled>
+      Upgrade Selection to Auto Layout
+    </button>
   </div>
 
   <div id="stats-section" class="section hidden">
@@ -593,6 +647,8 @@ Initializing...
 
   <script>
     let currentData = null;
+    const importBtn = document.getElementById('import-btn');
+    const upgradeBtn = document.getElementById('upgrade-auto-layout-btn');
 
     document.getElementById('file-input').addEventListener('change', (e) => {
       const file = e.target.files[0];
@@ -610,7 +666,7 @@ Initializing...
       }
     });
 
-    document.getElementById('import-btn').addEventListener('click', () => {
+    importBtn.addEventListener('click', () => {
       if (!currentData) return;
 
       const options = {
@@ -633,6 +689,12 @@ Initializing...
       }, '*');
     });
 
+    upgradeBtn.addEventListener('click', () => {
+      parent.postMessage({
+        pluginMessage: { type: 'upgrade-auto-layout' }
+      }, '*');
+    });
+
     function handleDataLoaded(data, source) {
       currentData = data;
       
@@ -640,7 +702,8 @@ Initializing...
       fileNameEl.textContent = `Loaded: ${source}`;
       fileNameEl.classList.remove('hidden');
 
-      document.getElementById('import-btn').disabled = false;
+      importBtn.disabled = false;
+      upgradeBtn.disabled = false;
       showStatus('idle', 'Ready to import');
     }
 
@@ -659,7 +722,7 @@ Initializing...
 
     function showError(message) {
       showStatus('error', message);
-      document.getElementById('import-btn').disabled = false;
+      importBtn.disabled = false;
     }
 
     function updateProgress(percent) {
@@ -754,6 +817,65 @@ Initializing...
       }
     }
 
+    const connectionDetailEls = {
+      extension: document.getElementById('detail-extension-status'),
+      server: document.getElementById('detail-server-status'),
+      transfer: document.getElementById('detail-transfer-status')
+    };
+
+    function updateTelemetryDetails(telemetry) {
+      if (!connectionDetailEls.extension || !connectionDetailEls.server || !connectionDetailEls.transfer) {
+        return;
+      }
+
+      if (!telemetry) {
+        connectionDetailEls.extension.textContent = 'No heartbeat yet';
+        connectionDetailEls.server.textContent = 'Waiting…';
+        connectionDetailEls.transfer.textContent = 'Idle';
+        return;
+      }
+
+      connectionDetailEls.extension.textContent = telemetry.lastExtensionPingAt
+        ? `Heartbeat ${formatAgo(telemetry.lastExtensionPingAt)}`
+        : 'No heartbeat yet';
+
+      const queueLabel = typeof telemetry.queueLength === 'number'
+        ? `${telemetry.queueLength} queued`
+        : 'Queue size unknown';
+      const pollLabel = telemetry.lastPluginPollAt
+        ? ` • polled ${formatAgo(telemetry.lastPluginPollAt)}`
+        : '';
+      connectionDetailEls.server.textContent = `${queueLabel}${pollLabel}`;
+
+      connectionDetailEls.transfer.textContent = describeTransferStatus(telemetry);
+    }
+
+    function describeTransferStatus(telemetry) {
+      const now = Date.now();
+      if (telemetry.lastExtensionTransferAt && now - telemetry.lastExtensionTransferAt < 6000) {
+        return 'Streaming now';
+      }
+      if (telemetry.lastPluginDeliveryAt) {
+        return `Delivered ${formatAgo(telemetry.lastPluginDeliveryAt)}`;
+      }
+      if (telemetry.lastExtensionTransferAt) {
+        return `Queued ${formatAgo(telemetry.lastExtensionTransferAt)}`;
+      }
+      return 'Idle';
+    }
+
+    function formatAgo(timestamp) {
+      if (!timestamp) return '—';
+      const diffMs = Date.now() - timestamp;
+      if (diffMs < 1000) return 'just now';
+      const seconds = Math.floor(diffMs / 1000);
+      if (seconds < 60) return `${seconds}s ago`;
+      const minutes = Math.floor(seconds / 60);
+      if (minutes < 60) return `${minutes}m ago`;
+      const hours = Math.floor(minutes / 60);
+      return `${hours}h ago`;
+    }
+
     function updateHandoffMessage(status, detail = '', meta = null) {
       const messageEl = document.getElementById('handoff-status-message');
       if (!messageEl) return;
@@ -781,7 +903,7 @@ Initializing...
           break;
         case 'disconnected':
         default:
-          text = 'Waiting for handoff server on http://127.0.0.1:4411…';
+          text = 'Waiting for handoff server on http://localhost:4411…';
           break;
       }
 
@@ -796,15 +918,10 @@ Initializing...
     setStatusLight('data-reception-light', 'red');
     setStatusLight('figma-import-light', 'red');
 
-    // START HANDOFF SERVER POLLING FROM UI (has network access!)
-    const HANDOFF_ENDPOINT = 'http://localhost:4411/jobs/next';
-    const HANDOFF_POLL_INTERVAL = 2500;
-    let consecutiveFailures = 0;
     const debugLogs = [];
-
     function updateDebugStatus(message) {
       debugLogs.push(`[${new Date().toLocaleTimeString()}] ${message}`);
-      if (debugLogs.length > 15) debugLogs.shift(); // Keep last 15 messages
+      if (debugLogs.length > 15) debugLogs.shift();
       const debugEl = document.getElementById('debug-status');
       if (debugEl) {
         debugEl.textContent = debugLogs.join('\n');
@@ -814,66 +931,7 @@ Initializing...
     }
 
     updateDebugStatus('🚀 Plugin UI loaded');
-    updateDebugStatus(`📡 Will poll: ${HANDOFF_ENDPOINT}`);
-
-    async function pollHandoffServer() {
-      updateDebugStatus('🔍 Polling server...');
-      try {
-        const response = await fetch(HANDOFF_ENDPOINT, {
-          method: 'GET',
-          headers: { 'cache-control': 'no-cache' }
-        });
-
-        updateDebugStatus(`✅ Fetch OK (${response.status})`);
-
-        if (!response.ok) {
-          throw new Error(`HTTP ${response.status}`);
-        }
-
-        const body = await response.json();
-        consecutiveFailures = 0;
-
-        // Update server status light to green
-        updateDebugStatus('🟢 Server connected!');
-        setStatusLight('server-connection-light', 'green');
-
-        if (body?.job?.payload) {
-          updateDebugStatus(`📥 Job received: ${body.job.id}`);
-          setStatusLight('data-reception-light', 'green');
-
-          // Send data to plugin code for import
-          updateDebugStatus('🚀 Starting import...');
-          parent.postMessage({
-            pluginMessage: {
-              type: 'auto-import',
-              data: body.job.payload,
-              options: {
-                createMainFrame: true,
-                applyAutoLayout: true,
-                createStyles: true
-              }
-            }
-          }, '*');
-        } else {
-          updateDebugStatus('ℹ️ No job in queue');
-        }
-      } catch (error) {
-        consecutiveFailures++;
-        updateDebugStatus(`❌ ERROR: ${error.message}`);
-        updateDebugStatus(`📊 Failures: ${consecutiveFailures}/3`);
-
-        // Only update status light if multiple failures
-        if (consecutiveFailures >= 3) {
-          updateDebugStatus('🔴 Connection lost (3+ failures)');
-          setStatusLight('server-connection-light', 'red');
-          setStatusLight('data-reception-light', 'red');
-        }
-      }
-    }
-
-    // Start polling immediately
-    pollHandoffServer();
-    setInterval(pollHandoffServer, HANDOFF_POLL_INTERVAL);
+    updateDebugStatus('📡 Waiting for plugin backend to deliver capture jobs…');
 
     // AUTO-IMPORT: Listen for data from plugin backend
     onmessage = (event) => {
@@ -913,6 +971,10 @@ Initializing...
           } else if (msg.status === 'error' || msg.status === 'disconnected') {
             setStatusLight('data-reception-light', 'red');
           }
+          break;
+
+        case 'handoff-telemetry':
+          updateTelemetryDetails(msg.telemetry || null);
           break;
           
         case 'chrome-extension-connected':

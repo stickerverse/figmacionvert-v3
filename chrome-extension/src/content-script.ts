@@ -6,18 +6,31 @@ console.log('🌐 Content script loaded');
 const overlay = new StatusOverlay();
 const scroller = new PageScroller();
 let isCapturing = false;
-const HANDOFF_CHUNK_SIZE = 250_000;
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   console.log('📨 Content script received message:', message.type);
-  
+
   if (message.type === 'START_CAPTURE' && !isCapturing) {
     console.log('🚀 Starting capture...');
     isCapturing = true;
-    
-    handleCapture()
+
+    // Get current viewport dimensions more accurately
+  const currentViewport = {
+    width: Math.max(document.documentElement.clientWidth, window.innerWidth || 0),
+    height: Math.max(document.documentElement.clientHeight, window.innerHeight || 0)
+  };
+  
+  const viewports: CaptureViewportTarget[] = message.viewports || [{ 
+    name: 'Current', 
+    width: currentViewport.width, 
+    height: currentViewport.height,
+    deviceScaleFactor: window.devicePixelRatio || 1
+  }];
+    console.log(`📐 Will capture ${viewports.length} viewport(s):`, viewports);
+
+    handleMultiViewportCapture(viewports)
       .then(() => {
-        console.log('✅ Capture finished');
+        console.log('✅ All viewport captures finished');
       })
       .catch((error) => {
         console.error('❌ Capture failed:', error);
@@ -25,79 +38,179 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       .finally(() => {
         isCapturing = false;
       });
-    
+
     sendResponse({ started: true });
   }
   return false;
 });
 
-async function handleCapture() {
-  try {
-    console.log('📍 Step 1: Show overlay');
-    overlay.show('🔄 Starting capture...');
-    await wait(500);
+type CaptureViewportTarget = {
+  name?: string;
+  width?: number;
+  height?: number;
+  deviceScaleFactor?: number;
+};
 
-    // Inject script
-    console.log('📍 Step 2: Inject script');
-    overlay.update('📦 Injecting script...');
+async function handleMultiViewportCapture(viewports: CaptureViewportTarget[]) {
+  const captures: any[] = [];
+
+  try {
+    console.log('💉 Injecting script once for all viewports...');
+    overlay.show('📦 Preparing capture...');
+
+    chrome.runtime.sendMessage({
+      type: 'CAPTURE_PROGRESS',
+      status: 'Preparing capture script...',
+      current: 0,
+      total: viewports.length
+    });
+
     await injectScript();
     await wait(500);
 
-    // Scroll page
-    console.log('📍 Step 3: Scroll page');
-    overlay.update('📜 Scrolling page...');
-    await scroller.scrollPage();
-    await wait(500);
+    for (let i = 0; i < viewports.length; i++) {
+      const viewport = viewports[i];
+      console.log(`📐 Capturing viewport ${i + 1}/${viewports.length}: ${viewport.name} (${viewport.width}x${viewport.height})`);
 
-    // Capture screenshot
-    console.log('📍 Step 4: Capture screenshot');
-    overlay.update('📸 Taking screenshot...');
-    const screenshot = await captureScreenshot();
-    console.log('📸 Screenshot captured:', screenshot ? 'yes' : 'no');
-    await wait(500);
+      overlay.show(`🔄 Capturing ${viewport.name} (${i + 1}/${viewports.length})...`);
 
-    // Extract DOM
-    console.log('📍 Step 5: Extract DOM');
-    overlay.update('🌳 Extracting page structure...');
-    const data = await extractPage(screenshot);
-    console.log('🌳 DOM extracted:', data ? 'yes' : 'no');
-
-    // Send to handoff server
-    console.log('📍 Step 6: Send to handoff server');
-    overlay.update('🚚 Sending data to handoff server...');
-    let handoffDelivered = false;
-    try {
-      await transmitToHandoffServer(data);
-      handoffDelivered = true;
-      console.log('🛰️ Handoff server acknowledged payload');
-      overlay.update('🚚 Data handed off to server');
-    } catch (error) {
-      console.warn('⚠️ Failed to reach handoff server:', error);
-      overlay.update('⚠️ Handoff server unavailable, continuing...');
       chrome.runtime.sendMessage({
-        type: 'HANDOFF_ERROR',
-        message: error instanceof Error ? error.message : String(error)
+        type: 'CAPTURE_PROGRESS',
+        status: `Resizing to ${viewport.name} (${viewport.width}x${viewport.height})...`,
+        current: i + 1,
+        total: viewports.length,
+        viewport: viewport.name
       });
+
+      await wait(300);
+
+      const captureResult = await handleCapture(viewport, true);
+
+      if (captureResult && captureResult.data) {
+        captures.push({
+          viewport: viewport.name,
+          width: viewport.width,
+          height: viewport.height,
+          data: captureResult.data,
+          validationReport: captureResult.validationReport,
+          previewWithOverlay: captureResult.previewWithOverlay
+        });
+
+        chrome.runtime.sendMessage({
+          type: 'CAPTURE_PROGRESS',
+          status: `${viewport.name} captured ✓`,
+          current: i + 1,
+          total: viewports.length,
+          viewport: viewport.name,
+          completed: true
+        });
+      }
+
+      if (i < viewports.length - 1) {
+        await wait(500);
+      }
     }
 
-    // Send to popup
-    console.log('📍 Step 7: Notify popup');
-    overlay.update('✅ Data ready for Figma');
-    chrome.runtime.sendMessage({
+    console.log(`📦 Sending ${captures.length} viewport captures to popup`);
+    const captureData = {
+      version: '2.0.0',
+      multiViewport: true,
+      captures
+    };
+
+    const totalSize = JSON.stringify(captureData).length;
+    const totalSizeKB = (totalSize / 1024).toFixed(1);
+    const maxSizeKB = 32768;
+
+    if (totalSize / 1024 > maxSizeKB) {
+      console.warn(`⚠️ Capture data is ${totalSizeKB}KB, exceeding ${maxSizeKB}KB limit. Attempting chunked transfer.`);
+      chrome.runtime.sendMessage({
+        type: 'CAPTURE_SIZE_WARNING',
+        sizeKB: totalSizeKB,
+        maxSizeKB: maxSizeKB
+      });
+      await sendLargeCaptureData(captureData, totalSize, totalSizeKB);
+      return;
+    }
+
+    await chrome.runtime.sendMessage({
       type: 'CAPTURE_COMPLETE',
-      data,
-      handoffDelivered
+      data: captureData,
+      dataSize: totalSize,
+      dataSizeKB: totalSizeKB
     });
 
-    overlay.update('✅ Capture complete!');
+    overlay.update(`✅ All ${captures.length} viewports captured! (${totalSizeKB} KB)`);
     await wait(2000);
     overlay.hide();
+  } finally {
+    try {
+      await chrome.runtime.sendMessage({ type: 'RESET_VIEWPORT' });
+    } catch (error) {
+      console.warn('Viewport reset request failed:', error);
+    }
+  }
+}
+
+async function handleCapture(viewport?: CaptureViewportTarget, skipInject?: boolean): Promise<any> {
+  try {
+    // Inject script only if not already injected
+    if (!skipInject) {
+      console.log('📍 Step 1: Inject script');
+      await injectScript();
+      await wait(300);
+    }
+
+    // Set viewport first to match requested size
+    const viewportConfig = getViewportDimensions(viewport);
+    if (viewportConfig) {
+      console.log('🪟 Resizing viewport to', viewportConfig.width, 'x', viewportConfig.height);
+      await chrome.runtime.sendMessage({
+        type: 'SET_VIEWPORT',
+        width: viewportConfig.width,
+        height: viewportConfig.height,
+        deviceScaleFactor: viewportConfig.deviceScaleFactor
+      });
+      await wait(250);
+    }
+
+    // Scroll page
+    console.log('📍 Step 2: Scroll page');
+    overlay.update('📜 Scrolling page...');
+    await scroller.scrollPage();
+    await wait(300);
+
+    // Capture screenshot
+    console.log('📍 Step 3: Capture screenshot');
+    overlay.update('📸 Taking screenshot...');
+    const screenshot = await captureScreenshot();
+    const optimizedScreenshot = await optimizeScreenshot(screenshot);
+    console.log('📸 Screenshot captured:', screenshot ? 'yes' : 'no');
+    // Wait longer to respect Chrome's MAX_CAPTURE_VISIBLE_TAB_CALLS_PER_SECOND quota (2 per second)
+    await wait(600);
+
+    // Extract DOM
+    console.log('📍 Step 4: Extract DOM');
+    overlay.update('🌳 Extracting page structure...');
+    const result = await extractPage(optimizedScreenshot || screenshot, viewportConfig || undefined);
+    console.log('🌳 DOM extracted:', result.data ? 'yes' : 'no');
+
+    if (viewport?.name && result.data?.metadata) {
+      result.data.metadata.viewportName = viewport.name;
+    }
+    if (viewportConfig?.width && result.data?.metadata) {
+      result.data.metadata.viewportWidth = viewportConfig.width;
+    }
+    if (viewportConfig?.height && result.data?.metadata) {
+      result.data.metadata.viewportHeight = viewportConfig.height;
+    }
+
+    return result;
 
   } catch (error) {
     console.error('❌ Capture failed:', error);
     overlay.update('❌ Capture failed: ' + String(error));
-    await wait(3000);
-    overlay.hide();
+    await wait(2000);
     throw error;
   }
 }
@@ -132,22 +245,62 @@ async function captureScreenshot(): Promise<string> {
   }
 }
 
-function extractPage(screenshot: string): Promise<any> {
+function extractPage(screenshot: string, viewport?: CaptureViewportTarget | null): Promise<any> {
   return new Promise((resolve, reject) => {
     console.log('🌳 Setting up extraction listener...');
-    
+    let timeoutId: number | null = null;
+    const timeoutMs = 600000; // 10 minutes, refreshed on progress
+    const extractionStartTime = Date.now();
+
+    const cleanup = () => {
+      window.removeEventListener('message', handler);
+      if (timeoutId !== null) {
+        clearTimeout(timeoutId);
+        timeoutId = null;
+      }
+    };
+
     const handler = (event: MessageEvent) => {
       if (event.source !== window) return;
-      
+
       console.log('📨 Received message from injected script:', event.data.type);
-      
-      if (event.data.type === 'EXTRACTION_COMPLETE') {
+
+      if (event.data.type === 'EXTRACTION_PROGRESS') {
+        lastProgressTime = Date.now();
+        progressCount++;
+        scheduleTimeout(); // keep extraction alive while progress arrives
+
+        // Forward extraction progress to popup
+        chrome.runtime.sendMessage({
+          type: 'EXTRACTION_PROGRESS',
+          phase: event.data.phase,
+          message: event.data.message,
+          percent: event.data.percent,
+          stats: event.data.stats
+        }).catch(() => {
+          // Ignore errors if popup is closed
+        });
+
+        // Update overlay with progress and diagnostic info
+        const diagnostics = `(${progressCount} updates, ${((Date.now() - extractionStartTime) / 1000).toFixed(1)}s)`;
+        const messageWithDiagnostics = `${event.data.message} ${diagnostics}`;
+        if (event.data.message) {
+          overlay.update(messageWithDiagnostics);
+        }
+      } else if (event.data.type === 'EXTRACTION_COMPLETE') {
         console.log('✅ Extraction complete');
-        window.removeEventListener('message', handler);
-        resolve(event.data.data);
+        cleanup();
+        resolve({
+          data: event.data.data,
+          validationReport: event.data.validationReport,
+          previewWithOverlay: event.data.previewWithOverlay
+        });
+      } else if (event.data.type === 'EXTRACTION_HEARTBEAT') {
+        lastProgressTime = Date.now();
+        scheduleTimeout();
       } else if (event.data.type === 'EXTRACTION_ERROR') {
         console.error('❌ Extraction error:', event.data.error);
-        window.removeEventListener('message', handler);
+        cleanup();
         reject(new Error(event.data.error));
       }
     };
@@ -157,102 +310,162 @@ function extractPage(screenshot: string): Promise<any> {
     console.log('📤 Posting START_EXTRACTION message...');
     window.postMessage({
       type: 'START_EXTRACTION',
-      screenshot
+      screenshot,
+      viewport
     }, '*');
 
-    setTimeout(() => {
-      console.log('⏰ Extraction timeout');
-      window.removeEventListener('message', handler);
-      reject(new Error('Extraction timeout'));
-    }, 30000);
+    let lastProgressTime = Date.now();
+    let progressCount = 0;
+
+    const scheduleTimeout = () => {
+      if (timeoutId !== null) {
+        clearTimeout(timeoutId);
+      }
+      timeoutId = window.setTimeout(() => {
+        const timeSinceLastProgress = Date.now() - lastProgressTime;
+        const timeoutMinutes = Math.floor(timeoutMs / 60000);
+        
+        console.log(`⏰ Extraction timeout after ${timeoutMinutes} minutes`);
+        console.log(`📊 Progress events received: ${progressCount}`);
+        console.log(`🕐 Time since last progress: ${(timeSinceLastProgress / 1000).toFixed(1)}s`);
+        
+        cleanup();
+        reject(new Error(`Extraction timeout after ${timeoutMinutes} minutes - received ${progressCount} progress updates, ${(timeSinceLastProgress / 1000).toFixed(1)}s since last progress`));
+      }, timeoutMs);
+    };
+
+    scheduleTimeout();
   });
 }
 
-async function transmitToHandoffServer(payload: any): Promise<void> {
-  const maxAttempts = 3;
-  let lastError: unknown = null;
-
-  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
-    try {
-      await sendPayloadToBackground(payload);
-      return;
-    } catch (error) {
-      lastError = error;
-      if (attempt < maxAttempts) {
-        await wait(300 * Math.pow(2, attempt - 1));
-      }
-    }
-  }
-
-    if (lastError instanceof Error) {
-    throw lastError;
-  }
-
-  throw new Error('Unknown handoff error');
-}
-
-async function sendPayloadToBackground(payload: any): Promise<void> {
-  const payloadString = JSON.stringify(payload);
-  const messageId = `handoff-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
-  const totalChunks = Math.max(1, Math.ceil(payloadString.length / HANDOFF_CHUNK_SIZE));
-
+async function sendLargeCaptureData(captureData: any, totalSize: number, totalSizeKB: string): Promise<void> {
   try {
-    const initResponse = await sendBackgroundMessage<{ ok: boolean; error?: string }>({
-      type: 'TRANSMIT_TO_HANDOFF_INIT',
-      messageId,
-      totalChunks
-    });
-    if (!initResponse.ok) {
-      throw new Error(initResponse.error || 'Failed to initialise handoff transfer');
+    const chunkSize = 1024 * 1024; // 1MB chunks
+    const jsonString = JSON.stringify(captureData);
+    const chunks: string[] = [];
+    
+    // Split into chunks
+    for (let i = 0; i < jsonString.length; i += chunkSize) {
+      chunks.push(jsonString.slice(i, i + chunkSize));
     }
-
-    for (let index = 0; index < totalChunks; index++) {
-      const chunk = payloadString.slice(index * HANDOFF_CHUNK_SIZE, (index + 1) * HANDOFF_CHUNK_SIZE);
-      const chunkResponse = await sendBackgroundMessage<{ ok: boolean; error?: string }>({
-        type: 'TRANSMIT_TO_HANDOFF_CHUNK',
-        messageId,
-        index,
-        chunk
+    
+    console.log(`📦 Splitting large capture into ${chunks.length} chunks`);
+    
+    // Send metadata first
+    await chrome.runtime.sendMessage({
+      type: 'CAPTURE_CHUNKED_START',
+      totalChunks: chunks.length,
+      totalSize: totalSize,
+      totalSizeKB: totalSizeKB
+    });
+    
+    // Send chunks sequentially
+    for (let i = 0; i < chunks.length; i++) {
+      await chrome.runtime.sendMessage({
+        type: 'CAPTURE_CHUNKED_DATA',
+        chunkIndex: i,
+        chunkData: chunks[i],
+        totalChunks: chunks.length
       });
-      if (!chunkResponse.ok) {
-        throw new Error(chunkResponse.error || `Failed to send chunk ${index + 1}/${totalChunks}`);
-      }
+      
+      // Small delay between chunks to avoid overwhelming the background script
+      await wait(50);
     }
-
-    const commitResponse = await sendBackgroundMessage<{ ok: boolean; error?: string }>({
-      type: 'TRANSMIT_TO_HANDOFF_COMMIT',
-      messageId
+    
+    // Send completion signal
+    await chrome.runtime.sendMessage({
+      type: 'CAPTURE_CHUNKED_COMPLETE',
+      totalChunks: chunks.length
     });
-    if (!commitResponse.ok) {
-      throw new Error(commitResponse.error || 'Handoff transmission failed');
-    }
+    
   } catch (error) {
-    await sendBackgroundMessage({ type: 'TRANSMIT_TO_HANDOFF_ABORT', messageId }).catch(() => {
-      // no-op: best effort cleanup
+    console.error('❌ Failed to send large capture data:', error);
+    // Fallback to regular send (may fail due to size)
+    chrome.runtime.sendMessage({
+      type: 'CAPTURE_COMPLETE',
+      data: captureData,
+      dataSize: totalSize,
+      dataSizeKB: totalSizeKB,
+      sizeLimitExceeded: true
     });
-    throw error;
   }
-}
-
-function sendBackgroundMessage<T = { ok: boolean; error?: string }>(message: any): Promise<T> {
-  return new Promise((resolve, reject) => {
-    chrome.runtime.sendMessage(message, (response: T) => {
-      const runtimeError = chrome.runtime.lastError;
-      if (runtimeError) {
-        reject(new Error(runtimeError.message));
-        return;
-      }
-
-      if (!response) {
-        reject(new Error('No response from background service worker'));
-        return;
-      }
-
-      resolve(response);
-    });
-  });
 }
 
 function wait(ms: number): Promise<void> {
   return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+function getViewportDimensions(target?: CaptureViewportTarget) {
+  if (!target) return null;
+  if (target.width && target.height) {
+    return {
+      width: target.width,
+      height: target.height,
+      deviceScaleFactor: target.deviceScaleFactor ?? 1
+    };
+  }
+
+  if (target.name) {
+    const normalized = target.name.toLowerCase();
+    if (normalized === 'mobile') {
+      return { width: 375, height: 812, deviceScaleFactor: 2 };
+    }
+    if (normalized === 'tablet') {
+      return { width: 768, height: 1024, deviceScaleFactor: 2 };
+    }
+    if (normalized === 'desktop') {
+      // Auto-detect current screen dimensions instead of hardcoded values
+      const currentWidth = Math.max(document.documentElement.clientWidth, window.innerWidth || 0);
+      const currentHeight = Math.max(document.documentElement.clientHeight, window.innerHeight || 0);
+      
+      // Use screen dimensions if available, fallback to viewport dimensions
+      const desktopWidth = screen.width || currentWidth || 1440; // fallback to 1440 if detection fails
+      const desktopHeight = screen.height || currentHeight || 900; // fallback to 900 if detection fails
+      
+      return { 
+        width: desktopWidth, 
+        height: desktopHeight, 
+        deviceScaleFactor: window.devicePixelRatio || 1 
+      };
+    }
+  }
+  return null;
+}
+
+async function optimizeScreenshot(dataUrl: string): Promise<string | null> {
+  if (!dataUrl) return null;
+  try {
+    const image = await loadImage(dataUrl);
+    const maxSide = 1400;
+    let { width, height } = image;
+
+    if (width <= 0 || height <= 0) return dataUrl;
+
+    if (width > maxSide || height > maxSide) {
+      const scale = Math.min(maxSide / width, maxSide / height);
+      width = Math.round(width * scale);
+      height = Math.round(height * scale);
+    }
+
+    const canvas = document.createElement('canvas');
+    canvas.width = width;
+    canvas.height = height;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return dataUrl;
+
+    ctx.drawImage(image, 0, 0, width, height);
+    return canvas.toDataURL('image/jpeg', 0.55);
+  } catch (error) {
+    console.warn('⚠️ Failed to optimize screenshot, using original.', error);
+    return dataUrl;
+  }
+}
+
+function loadImage(dataUrl: string): Promise<HTMLImageElement> {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => resolve(img);
+    img.onerror = reject;
+    img.src = dataUrl;
+  });
 }

@@ -24,8 +24,7 @@
     "cors": "^2.8.5",
     "express": "^5.1.0",
     "puppeteer": "^24.26.1",
-    "uuid": "^13.0.0",
-    "yoga-layout-prebuilt": "^1.10.0"
+    "uuid": "^13.0.0"
   },
   "devDependencies": {
     "pixelmatch": "^7.1.0",
