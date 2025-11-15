@@ -1,7 +1,16 @@
+import { CDPCapture, transformCDPSnapshotToSchema } from './background-cdp';
+
 console.log('Web to Figma extension loaded');
 
-const HANDOFF_ENDPOINT = 'http://127.0.0.1:4411/jobs';
-const HANDOFF_HEALTH_ENDPOINT = 'http://127.0.0.1:4411/health?source=extension';
+// Handoff server endpoint - supports both cloud and local
+const CLOUD_CAPTURE_URL = 'https://capture-service-sandy.vercel.app'; // Production Vercel URL
+const CLOUD_API_KEY = 'f7df13dd6f622998e79f8ec581cc2f4dc908331cadb426b74ac4b8879d186da2';
+
+const HANDOFF_ENDPOINT = CLOUD_CAPTURE_URL ? `${CLOUD_CAPTURE_URL}/api/capture/direct` : 'http://127.0.0.1:4411/jobs';
+const HANDOFF_HEALTH_ENDPOINT = CLOUD_CAPTURE_URL ? `${CLOUD_CAPTURE_URL}/health` : 'http://127.0.0.1:4411/health';
+
+// CDP capture mode flag (html.to.design-level accuracy)
+let useCDPCapture = true; // Enable by default for maximum accuracy
 
 type HandoffTrigger = 'auto' | 'manual';
 type HandoffStatus = 'idle' | 'queued' | 'sending' | 'success' | 'error';
@@ -106,6 +115,53 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     return false;
   }
 
+  if (message.type === 'START_CAPTURE') {
+    (async () => {
+      try {
+        const tabId = message.tabId;
+        const allowNavigation = Boolean(message.allowNavigation);
+        if (!tabId) {
+          throw new Error('No tab ID provided');
+        }
+
+        // Send progress update
+        chrome.runtime.sendMessage({
+          type: 'CAPTURE_PROGRESS',
+          phase: 'Initializing',
+          progress: 10,
+          details: { tabId }
+        }, () => void chrome.runtime.lastError);
+
+        // Inject content script
+        await chrome.scripting.executeScript({
+          target: { tabId },
+          files: ['content-script.js']
+        });
+
+        // Send capture command to content script
+        chrome.tabs.sendMessage(
+          tabId,
+          { type: 'START_CAPTURE', allowNavigation },
+          (response) => {
+            if (chrome.runtime.lastError) {
+              console.error('Failed to start extraction:', chrome.runtime.lastError);
+            }
+          }
+        );
+
+        sendResponse({ ok: true });
+      } catch (error) {
+        const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+        chrome.runtime.sendMessage({
+          type: 'CAPTURE_ERROR',
+          error: errorMessage
+        }, () => void chrome.runtime.lastError);
+        sendResponse({ ok: false, error: errorMessage });
+      }
+    })();
+    return true;
+  }
+
   if (message.type === 'REMOTE_CAPTURE_REQUEST') {
     (async () => {
       try {
@@ -113,9 +169,16 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         if (!targetUrl) {
           throw new Error('Missing target URL');
         }
-        const response = await fetch(`${HANDOFF_ENDPOINT.replace('/jobs', '')}/capture`, {
+        const captureHeaders: Record<string, string> = { 'Content-Type': 'application/json' };
+        
+        // Add API key for cloud service
+        if (CLOUD_CAPTURE_URL && CLOUD_API_KEY) {
+          captureHeaders['x-api-key'] = CLOUD_API_KEY;
+        }
+
+        const response = await fetch(`${HANDOFF_ENDPOINT.replace('/api/jobs', '/api/capture').replace('/jobs', '/capture')}`, {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: captureHeaders,
           body: JSON.stringify({ url: targetUrl })
         });
         if (!response.ok) {
@@ -314,24 +377,85 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     return true;
   }
 
+  // CDP-based capture (html.to.design method)
+  if (message.type === 'CAPTURE_CDP') {
+    const tabId = sender.tab?.id;
+    if (!tabId) {
+      sendResponse({ ok: false, error: 'No tab context' });
+      return false;
+    }
+
+    (async () => {
+      const capturer = new CDPCapture(tabId);
+      try {
+        console.log('🔬 Starting CDP capture (html.to.design method)...');
+        const cdpResult = await capturer.captureComplete();
+        const schema = transformCDPSnapshotToSchema(cdpResult);
+        schema.screenshot = cdpResult.screenshot;
+
+        console.log('✅ CDP capture complete');
+        sendResponse({ ok: true, schema, cdpResult });
+      } catch (error) {
+        const errorMessage = error instanceof Error ? error.message : 'CDP capture failed';
+        console.error('❌ CDP capture failed:', errorMessage);
+        sendResponse({ ok: false, error: errorMessage });
+      }
+    })();
+    return true;
+  }
+
   if (message.type === 'CAPTURE_SCREENSHOT') {
-    if (sender.tab?.id) {
+    const tabId = sender.tab?.id;
+    const windowId = sender.tab?.windowId;
+    if (!tabId || !windowId) {
+      sendResponse({ screenshot: '' });
+      return false;
+    }
+
+    if (useCDPCapture) {
+      // Use CDP for higher quality screenshots
+      (async () => {
+        const capturer = new CDPCapture(tabId);
+        try {
+          await capturer.attach();
+          const screenshot = await capturer.captureScreenshot();
+          await capturer.detach();
+          sendResponse({ screenshot });
+        } catch (error) {
+          // Fallback to regular capture
+          chrome.tabs.captureVisibleTab(
+            windowId,
+            { format: 'jpeg', quality: 75 },
+            (dataUrl) => {
+              sendResponse({ screenshot: dataUrl || '' });
+            }
+          );
+        }
+      })();
+    } else {
       chrome.tabs.captureVisibleTab(
-        sender.tab.windowId,
+        windowId,
         { format: 'jpeg', quality: 75 },
         (dataUrl) => {
           sendResponse({ screenshot: dataUrl || '' });
         }
       );
-      return true;
     }
+    return true;
   }
 
   if (message.type === 'HANDOFF_HEALTH_CHECK') {
     (async () => {
       try {
+        const healthHeaders: Record<string, string> = { 'cache-control': 'no-cache' };
+        
+        // Add API key for cloud service
+        if (CLOUD_CAPTURE_URL && CLOUD_API_KEY) {
+          healthHeaders['x-api-key'] = CLOUD_API_KEY;
+        }
+        
         const response = await fetch(HANDOFF_HEALTH_ENDPOINT, {
-          headers: { 'cache-control': 'no-cache' }
+          headers: healthHeaders
         });
         if (!response.ok) {
           throw new Error(`Server responded with ${response.status}`);
@@ -454,22 +578,39 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 });
 
 async function postToHandoffServer(payload: unknown): Promise<void> {
-  const jsonPayload = JSON.stringify(payload);
+  // Extract screenshot from schema and wrap in cloud service format
+  const schema = payload as any;
+  const screenshot = schema.screenshot || '';
+
+  // Cloud service expects: { schema: {...}, screenshot: "..." }
+  const requestBody = {
+    schema: schema,
+    screenshot: screenshot
+  };
+
+  const jsonPayload = JSON.stringify(requestBody);
   const payloadSizeBytes = new TextEncoder().encode(jsonPayload).length;
   const payloadSizeMB = payloadSizeBytes / (1024 * 1024);
-  
-  console.log(`📦 Sending payload: ${payloadSizeMB.toFixed(2)}MB`);
-  
+
+  console.log(`📦 Sending payload to cloud service: ${payloadSizeMB.toFixed(2)}MB`);
+
   // Warn if payload is getting large
   if (payloadSizeMB > 50) {
     console.warn(`⚠️ Large payload detected: ${payloadSizeMB.toFixed(2)}MB - this may fail if over 200MB`);
   }
 
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json'
+  };
+
+  // Add API key for cloud service
+  if (CLOUD_CAPTURE_URL && CLOUD_API_KEY) {
+    headers['x-api-key'] = CLOUD_API_KEY;
+  }
+
   const response = await fetch(HANDOFF_ENDPOINT, {
     method: 'POST',
-    headers: {
-      'Content-Type': 'application/json'
-    },
+    headers,
     body: jsonPayload
   });
 
@@ -477,7 +618,8 @@ async function postToHandoffServer(payload: unknown): Promise<void> {
     if (response.status === 413) {
       throw new Error(`Payload too large (${payloadSizeMB.toFixed(2)}MB). Try capturing a smaller page or fewer viewport sizes.`);
     }
-    throw new Error(`Server responded with ${response.status}`);
+    const errorText = await response.text();
+    throw new Error(`Server responded with ${response.status}: ${errorText}`);
   }
 }
 

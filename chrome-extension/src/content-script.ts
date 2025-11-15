@@ -13,6 +13,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message.type === 'START_CAPTURE' && !isCapturing) {
     console.log('🚀 Starting capture...');
     isCapturing = true;
+    const allowNavigation = Boolean(message.allowNavigation);
 
     // Get current viewport dimensions more accurately
   const currentViewport = {
@@ -28,7 +29,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   }];
     console.log(`📐 Will capture ${viewports.length} viewport(s):`, viewports);
 
-    handleMultiViewportCapture(viewports)
+    handleMultiViewportCapture(viewports, allowNavigation)
       .then(() => {
         console.log('✅ All viewport captures finished');
       })
@@ -51,7 +52,7 @@ type CaptureViewportTarget = {
   deviceScaleFactor?: number;
 };
 
-async function handleMultiViewportCapture(viewports: CaptureViewportTarget[]) {
+async function handleMultiViewportCapture(viewports: CaptureViewportTarget[], allowNavigation: boolean) {
   const captures: any[] = [];
 
   try {
@@ -84,7 +85,7 @@ async function handleMultiViewportCapture(viewports: CaptureViewportTarget[]) {
 
       await wait(300);
 
-      const captureResult = await handleCapture(viewport, true);
+      const captureResult = await handleCapture(viewport, true, allowNavigation);
 
       if (captureResult && captureResult.data) {
         captures.push({
@@ -152,7 +153,7 @@ async function handleMultiViewportCapture(viewports: CaptureViewportTarget[]) {
   }
 }
 
-async function handleCapture(viewport?: CaptureViewportTarget, skipInject?: boolean): Promise<any> {
+async function handleCapture(viewport?: CaptureViewportTarget, skipInject?: boolean, allowNavigation: boolean = false): Promise<any> {
   try {
     // Inject script only if not already injected
     if (!skipInject) {
@@ -192,7 +193,7 @@ async function handleCapture(viewport?: CaptureViewportTarget, skipInject?: bool
     // Extract DOM
     console.log('📍 Step 4: Extract DOM');
     overlay.update('🌳 Extracting page structure...');
-    const result = await extractPage(optimizedScreenshot || screenshot, viewportConfig || undefined);
+    const result = await extractPage(optimizedScreenshot || screenshot, viewportConfig || undefined, allowNavigation);
     console.log('🌳 DOM extracted:', result.data ? 'yes' : 'no');
 
     if (viewport?.name && result.data?.metadata) {
@@ -245,7 +246,7 @@ async function captureScreenshot(): Promise<string> {
   }
 }
 
-function extractPage(screenshot: string, viewport?: CaptureViewportTarget | null): Promise<any> {
+function extractPage(screenshot: string, viewport?: CaptureViewportTarget | null, allowNavigation: boolean = false): Promise<any> {
   return new Promise((resolve, reject) => {
     console.log('🌳 Setting up extraction listener...');
     let timeoutId: number | null = null;
@@ -311,7 +312,8 @@ function extractPage(screenshot: string, viewport?: CaptureViewportTarget | null
     window.postMessage({
       type: 'START_EXTRACTION',
       screenshot,
-      viewport
+      viewport,
+      allowNavigation
     }, '*');
 
     let lastProgressTime = Date.now();

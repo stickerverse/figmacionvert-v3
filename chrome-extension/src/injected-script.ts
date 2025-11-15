@@ -2,8 +2,124 @@ import { DOMExtractor } from './utils/dom-extractor';
 import { WebToFigmaSchema } from './types/schema';
 import { LayoutValidator } from './utils/layout-validator';
 import { PreviewGenerator } from './utils/preview-generator';
+import { StateCapturer } from './utils/state-capturer';
+import { VariantsCollector } from './utils/variants-collector';
+import { ComponentDetector } from './utils/component-detector';
+import { DesignTokenExtractor } from './utils/design-token-extractor';
+import { ComprehensiveStateCapturer } from './utils/comprehensive-state-capturer';
+import { IntelligentInteractionDiscoverer } from './utils/intelligent-interaction-discoverer';
 
 console.log('🎯 Enhanced injected script loaded - with page scrolling and design tokens');
+
+class NavigationGuard {
+  private allowNavigation: boolean;
+  private cleanupFns: Array<() => void> = [];
+  private originalUrl: string = window.location.href;
+  private originalPushState = history.pushState;
+  private originalReplaceState = history.replaceState;
+
+  constructor(allowNavigation: boolean = false) {
+    this.allowNavigation = allowNavigation;
+  }
+
+  enable() {
+    if (this.allowNavigation) return;
+
+    const blockNavigationAttempt = (reason: string) => {
+      console.log(`🛑 Navigation blocked during capture (${reason})`);
+    };
+
+    const clickHandler = (event: MouseEvent) => {
+      const target = event.target as Element | null;
+      const anchor = target?.closest('a[href], area[href]') as HTMLAnchorElement | HTMLAreaElement | null;
+      if (!anchor) return;
+
+      const href = anchor.getAttribute('href');
+      if (!href) return;
+
+      try {
+        const destination = new URL(href, window.location.href);
+        const isSameDocument =
+          destination.origin === window.location.origin &&
+          destination.pathname === window.location.pathname &&
+          destination.search === window.location.search;
+
+        if (!isSameDocument || (destination.hash && destination.hash !== window.location.hash)) {
+          event.preventDefault();
+          event.stopPropagation();
+          blockNavigationAttempt(destination.href);
+        }
+      } catch {
+        event.preventDefault();
+        event.stopPropagation();
+      }
+    };
+
+    const submitHandler = (event: Event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      blockNavigationAttempt('form submission');
+    };
+
+    const originalOpen = window.open;
+    // Block new windows/tabs that could take us away from the captured page
+    window.open = ((...args: any[]) => {
+      blockNavigationAttempt(`window.open ${args[0]}`);
+      return null;
+    }) as typeof window.open;
+
+    // Block SPA navigations via History API
+    history.pushState = ((...args: any) => {
+      blockNavigationAttempt('history.pushState');
+      return undefined as any;
+    }) as typeof history.pushState;
+    history.replaceState = ((...args: any) => {
+      blockNavigationAttempt('history.replaceState');
+      return undefined as any;
+    }) as typeof history.replaceState;
+
+    const beforeUnloadHandler = (event: BeforeUnloadEvent) => {
+      blockNavigationAttempt('beforeunload');
+      event.preventDefault();
+      event.returnValue = '';
+    };
+    window.addEventListener('beforeunload', beforeUnloadHandler, { capture: true });
+
+    document.addEventListener('click', clickHandler, true);
+    document.addEventListener('submit', submitHandler, true);
+
+    this.cleanupFns.push(() => document.removeEventListener('click', clickHandler, true));
+    this.cleanupFns.push(() => document.removeEventListener('submit', submitHandler, true));
+    this.cleanupFns.push(() => window.removeEventListener('beforeunload', beforeUnloadHandler, { capture: true } as any));
+    this.cleanupFns.push(() => {
+      window.open = originalOpen;
+    });
+    this.cleanupFns.push(() => {
+      history.pushState = this.originalPushState;
+      history.replaceState = this.originalReplaceState;
+    });
+  }
+
+  restoreIfNavigated() {
+    if (this.allowNavigation) return;
+    if (window.location.href !== this.originalUrl) {
+      try {
+        // Use replaceState instead of location.href to avoid page reload
+        // This preserves the URL without triggering navigation that closes the extension popup
+        history.replaceState(history.state, '', this.originalUrl);
+        console.log('🔄 URL restored without page reload:', this.originalUrl);
+      } catch (error) {
+        console.warn('⚠️ Failed to restore URL:', error);
+        // Ignore if navigation fails; the guard prevented most redirects already
+      }
+    }
+  }
+
+  disable() {
+    this.cleanupFns.forEach((fn) => fn());
+    this.cleanupFns = [];
+  }
+}
 
 // Enhanced extraction with page scrolling and design token generation
 class EnhancedExtractor {
@@ -148,10 +264,15 @@ class EnhancedExtractor {
     return new Promise(resolve => setTimeout(resolve, ms));
   }
 
-  async performCompleteExtraction(viewport?: { width?: number; height?: number; deviceScaleFactor?: number }) {
+  async performCompleteExtraction(
+    viewport?: { width?: number; height?: number; deviceScaleFactor?: number },
+    options?: { allowNavigation?: boolean }
+  ) {
     const heartbeatId = window.setInterval(() => {
       window.postMessage({ type: 'EXTRACTION_HEARTBEAT' }, '*');
     }, 10000);
+    const navigationGuard = new NavigationGuard(options?.allowNavigation ?? false);
+    navigationGuard.enable();
 
     try {
       console.log('🚀 Starting complete extraction with scrolling and design tokens...');
@@ -196,15 +317,20 @@ class EnhancedExtractor {
       schema.metadata.viewport.devicePixelRatio = viewport.deviceScaleFactor;
     }
 
-    // Step 4: Extract design tokens from all visible elements
-    console.log('🎨 Extracting design tokens...');
+    // Step 4: Extract enhanced design tokens with CSS variables
+    console.log('🎨 Extracting enhanced design tokens with CSS variables...');
     window.postMessage({
       type: 'EXTRACTION_PROGRESS',
       phase: 'processing-assets',
-      message: 'Analyzing design tokens (colors, typography, spacing)...',
+      message: 'Analyzing design tokens and CSS variables...',
       percent: 88
     }, '*');
 
+    // Enhanced design token extraction
+    const designTokenExtractor = new DesignTokenExtractor();
+    const designTokensRegistry = await designTokenExtractor.extractTokens();
+
+    // Legacy design token extraction for backward compatibility
     const allElements = document.querySelectorAll('*');
     let tokenCount = 0;
 
@@ -215,7 +341,7 @@ class EnhancedExtractor {
 
         // Progress update every 200 elements
         if (index % 200 === 0) {
-          const tokenProgress = 88 + ((index / allElements.length) * 5);
+          const tokenProgress = 88 + ((index / allElements.length) * 3);
           window.postMessage({
             type: 'EXTRACTION_PROGRESS',
             phase: 'processing-assets',
@@ -226,25 +352,87 @@ class EnhancedExtractor {
       }
     });
 
-    const generatedTokens = this.designTokens.generateTokens();
+    const legacyTokens = this.designTokens.generateTokens();
 
-    console.log('✅ Design token extraction complete:', {
-      colors: Object.keys(generatedTokens.colors).length,
-      typography: Object.keys(generatedTokens.typography).length,
-      spacing: Object.keys(generatedTokens.spacing).length,
-      shadows: Object.keys(generatedTokens.shadows).length,
-      borderRadius: Object.keys(generatedTokens.borderRadius).length
+    console.log('✅ Enhanced design token extraction complete:', {
+      variables: Object.keys(designTokensRegistry.variables).length,
+      collections: Object.keys(designTokensRegistry.collections).length,
+      aliases: Object.keys(designTokensRegistry.aliases).length,
+      legacy: {
+        colors: Object.keys(legacyTokens.colors).length,
+        typography: Object.keys(legacyTokens.typography).length,
+        spacing: Object.keys(legacyTokens.spacing).length,
+        shadows: Object.keys(legacyTokens.shadows).length,
+        borderRadius: Object.keys(legacyTokens.borderRadius).length
+      }
     });
 
-    schema.designTokens = generatedTokens;
+    // Store both legacy and enhanced design tokens
+    schema.designTokens = legacyTokens;
+    schema.designTokensRegistry = designTokensRegistry;
     schema.metadata.extractionSummary = {
       scrollComplete: true,
       tokensExtracted: true,
       totalElements: allElements.length,
-      visibleElements: tokenCount
+      visibleElements: tokenCount,
+      enhancedComponentDetection: true, // Flag for enhanced visual similarity detection
+      componentDetectionMethod: 'visual-similarity' // Track detection method used
     };
 
-    // Step 5: Detect and group components
+    // Step 5: Comprehensive interaction state capture
+    console.log('🎯 Capturing all interactive states and hidden content...');
+    window.postMessage({
+      type: 'EXTRACTION_PROGRESS',
+      phase: 'state-capture',
+      message: 'Discovering and capturing interactive states...',
+      percent: 85
+    }, '*');
+
+    const comprehensiveStateCapturer = new ComprehensiveStateCapturer();
+    comprehensiveStateCapturer.setProgressCallback((progress) => {
+      window.postMessage({
+        type: 'EXTRACTION_PROGRESS',
+        phase: 'state-capture',
+        message: progress.message,
+        percent: 85 + (progress.progress * 0.08) // 8% of total progress for state capture
+      }, '*');
+    });
+
+    const allInteractiveStates = await comprehensiveStateCapturer.captureAllStates(document.body);
+    console.log(`🎉 Captured ${allInteractiveStates.size} interactive elements with full state variations!`);
+    
+    // Convert comprehensive states to schema format
+    schema.comprehensiveStates = {
+      totalElements: allInteractiveStates.size,
+      capturedStates: Array.from(allInteractiveStates.entries()).map(([elementId, result]) => ({
+        elementId: result.elementId,
+        baseStateId: result.baseState.id,
+        discoveredStatesCount: result.discoveredStates.length,
+        variantStatesCount: result.variantStates.length,
+        hiddenContentCount: result.hiddenContentRevealed.length,
+        interactionFlowsCount: result.interactionFlows.length,
+        states: [
+          // Base state
+          result.baseState,
+          // All discovered states as additional nodes
+          ...result.discoveredStates.map(state => state.capturedNode),
+          // Variant states converted to nodes
+          ...result.variantStates.map(variant => ({
+            ...result.baseState,
+            id: `${result.baseState.id}-${variant.state}`,
+            name: `${result.baseState.name} (${variant.state})`,
+            ...variant.properties
+          }))
+        ],
+        hiddenContent: result.hiddenContentRevealed.map(hidden => ({
+          triggerElementId: hidden.triggerElement.id,
+          revealedContent: hidden.revealedContent,
+          visibilityMethod: hidden.visibilityMethod
+        }))
+      }))
+    };
+
+    // Step 6: Detect and group components
     console.log('🔍 Detecting repeated components...');
     window.postMessage({
       type: 'EXTRACTION_PROGRESS',
@@ -253,100 +441,220 @@ class EnhancedExtractor {
       percent: 94
     }, '*');
 
-    const detectedComponents = this.detectComponents(schema.tree);
+    const componentDetector = new ComponentDetector();
+    const detectedComponents = componentDetector.detectComponents(schema.tree);
     schema.components = detectedComponents;
-    console.log(`✅ Found ${Object.keys(detectedComponents.definitions).length} component patterns`);
+    console.log(`✅ Found ${Object.keys(detectedComponents.definitions).length} component patterns with enhanced visual similarity`);
+
+    // Step 5.5: Capture interactive states if enabled
+    const captureOptions = schema.metadata.captureOptions;
+    if (captureOptions?.captureHoverStates || captureOptions?.captureFocusStates) {
+      console.log('🎭 Capturing interactive states...');
+      window.postMessage({
+        type: 'EXTRACTION_PROGRESS',
+        phase: 'building-schema',
+        message: 'Capturing interactive states (hover, focus, active)...',
+        percent: 95
+      }, '*');
+
+      const stateCapturer = new StateCapturer();
+      
+      // Set up progress callback for state capture
+      stateCapturer.setProgressCallback((progress) => {
+        window.postMessage({
+          type: 'EXTRACTION_PROGRESS',
+          phase: 'building-schema',
+          message: progress.message,
+          percent: 95 + (progress.elementIndex || 0) / (progress.totalElements || 1) * 2 // 95-97%
+        }, '*');
+      });
+
+      // Capture states and collect into variants
+      const stateCaptures = await stateCapturer.captureInteractiveStates();
+      
+      // Build element map for variants collector
+      const elementNodes = new Map<Element, any>();
+      this.buildElementMap(schema.tree, elementNodes);
+      
+      const variantsCollector = new VariantsCollector();
+      variantsCollector.setProgressCallback((progress) => {
+        window.postMessage({
+          type: 'EXTRACTION_PROGRESS',
+          phase: 'building-schema',
+          message: progress.message,
+          percent: 96.5
+        }, '*');
+      });
+
+      const variantsRegistry = await variantsCollector.collectVariants(
+        stateCaptures,
+        elementNodes,
+        schema.components
+      );
+
+      schema.variants = variantsRegistry;
+      
+      console.log('✅ Interactive state capture complete:', {
+        elementsWithVariants: variantsRegistry.statistics.elementsWithVariants,
+        totalVariants: variantsRegistry.statistics.totalVariants,
+        states: variantsRegistry.statistics.statesPerElement
+      });
+
+      // Log variants summary
+      console.log(VariantsCollector.generateVariantsSummary(variantsRegistry));
+    }
+
+    // Step 6: Validate positioning accuracy and layout structure
+    console.log('🔍 Validating positioning accuracy and layout structure...');
+    window.postMessage({
+      type: 'EXTRACTION_PROGRESS',
+      phase: 'building-schema',
+      message: 'Validating positioning accuracy and detecting layout issues...',
+      percent: 97
+    }, '*');
+
+    const validator = new LayoutValidator(
+      schema.metadata.viewport.width,
+      schema.metadata.viewport.height,
+      {
+        positionTolerance: 1.0, // 1px tolerance
+        confidenceThreshold: 0.8, // 80% confidence threshold
+        transformDeterminantThreshold: 0.001
+      }
+    );
+
+    const validationReport = validator.validate(schema);
+    schema.validation = validationReport;
+
+    console.log('✅ Validation complete:', {
+      valid: validationReport.valid,
+      issues: validationReport.issuesCount,
+      accuracy: `${validationReport.accuracyMetrics.averagePositionAccuracy.toFixed(2)}px avg`,
+      confidence: `${(validationReport.accuracyMetrics.averageConfidence * 100).toFixed(1)}%`,
+      errors: validationReport.issues.filter(i => i.severity === 'error').length,
+      warnings: validationReport.issues.filter(i => i.severity === 'warning').length
+    });
+
+    // Log validation summary for debugging
+    if (validationReport.issuesCount > 0) {
+      console.log('📋 Validation summary:\n' + LayoutValidator.generateSummary(validationReport));
+    }
+
+    const variantCount = schema.variants?.statistics.elementsWithVariants || 0;
+    const componentCount = Object.keys(detectedComponents.definitions).length;
+    
+    let completionMessage = `Extraction complete! Found ${componentCount} components`;
+    if (variantCount > 0) {
+      completionMessage += ` and ${variantCount} interactive elements`;
+    }
 
     window.postMessage({
       type: 'EXTRACTION_PROGRESS',
       phase: 'complete',
-      message: `Extraction complete! Found ${Object.keys(detectedComponents.definitions).length} components`,
+      message: completionMessage,
       percent: 100
     }, '*');
 
       return schema;
     } finally {
+      navigationGuard.restoreIfNavigated();
+      navigationGuard.disable();
       window.clearInterval(heartbeatId);
     }
   }
 
-  private detectComponents(tree: any): any {
-    const componentRegistry: any = { definitions: {} };
-    const signatureMap = new Map<string, any[]>();
-    const visitedNodes = new WeakSet<any>(); // Prevent circular reference issues
+  // Legacy component detection method - replaced by ComponentDetector class
+  // private detectComponents(tree: any): any {
+  //   console.log('⚠️ Legacy component detection method - now using enhanced ComponentDetector');
+  //   return { definitions: {} };
+  // }
 
-    // Traverse tree and collect nodes by signature with circular reference protection
+  /**
+   * Build a map of DOM elements to their extracted ElementNode data
+   * This is needed for the variants collector to associate captured states with schema nodes
+   */
+  private buildElementMap(tree: any, elementMap: Map<Element, any>) {
+    const visitedNodes = new WeakSet<any>();
+
     const traverse = (node: any) => {
-      // Prevent infinite loops from circular references
+      // Prevent circular references
       if (visitedNodes.has(node)) {
-        console.warn('Circular reference detected in component detection, skipping node');
         return;
       }
       visitedNodes.add(node);
-      
-      if (node?.componentSignature) {
-        if (!signatureMap.has(node.componentSignature)) {
-          signatureMap.set(node.componentSignature, []);
+
+      // Try to find the original DOM element for this node
+      // The DOM extractor should have stored element references or selectors
+      if (node.id && typeof node.id === 'string') {
+        // Try to find element by various means
+        let element: Element | null = null;
+
+        // Method 1: Try by CSS selector if available
+        if (node.cssId) {
+          element = document.getElementById(node.cssId);
         }
-        signatureMap.get(node.componentSignature)!.push(node);
+
+        // Method 2: Try by data attribute if available
+        if (!element && node.dataAttributes) {
+          const dataSelector = Object.entries(node.dataAttributes)
+            .map(([key, value]) => `[data-${key}="${value}"]`)
+            .join('');
+          if (dataSelector) {
+            try {
+              element = document.querySelector(dataSelector);
+            } catch (e) {
+              // Invalid selector, continue
+            }
+          }
+        }
+
+        // Method 3: Try by tag + classes combination
+        if (!element && node.htmlTag && node.cssClasses) {
+          const classSelector = node.cssClasses.length > 0 
+            ? '.' + node.cssClasses.slice(0, 3).join('.') // Limit to first 3 classes
+            : '';
+          try {
+            const selector = node.htmlTag + classSelector;
+            const candidates = document.querySelectorAll(selector);
+            
+            // If we have a unique match, use it
+            if (candidates.length === 1) {
+              element = candidates[0];
+            }
+            // TODO: For multiple matches, we could use additional heuristics like position, content, etc.
+          } catch (e) {
+            // Invalid selector, continue
+          }
+        }
+
+        if (element) {
+          elementMap.set(element, node);
+        }
       }
-      
-      if (Array.isArray(node?.children)) {
+
+      // Recursively process children
+      if (Array.isArray(node.children)) {
         node.children.forEach((child: any) => {
           if (child && typeof child === 'object') {
             traverse(child);
           }
         });
       }
+
+      // Process pseudo-elements
+      if (node.pseudoElements) {
+        if (node.pseudoElements.before) {
+          traverse(node.pseudoElements.before);
+        }
+        if (node.pseudoElements.after) {
+          traverse(node.pseudoElements.after);
+        }
+      }
     };
 
     if (tree && typeof tree === 'object') {
       traverse(tree);
     }
-
-    // Create component definitions for signatures with multiple instances
-    let componentCounter = 0;
-    for (const [signature, nodes] of signatureMap.entries()) {
-      // Validate signature and nodes before processing
-      if (!signature || !Array.isArray(nodes) || nodes.length < 2) {
-        continue;
-      }
-      
-      // Ensure we have valid nodes with required properties
-      const validNodes = nodes.filter(node => 
-        node && 
-        typeof node === 'object' && 
-        node.htmlTag && 
-        typeof node.htmlTag === 'string'
-      );
-      
-      if (validNodes.length >= 2) { // At least 2 valid instances to be a component
-        const firstNode = validNodes[0];
-        const componentId = `component-${componentCounter++}`;
-
-        componentRegistry.definitions[componentId] = {
-          id: componentId,
-          name: `${firstNode.htmlTag} (${validNodes.length}x)`,
-          description: `Repeated ${firstNode.htmlTag} element`,
-          signature: signature.substring(0, 100), // Limit signature length
-          instanceCount: validNodes.length,
-          properties: {
-            tag: firstNode.htmlTag,
-            classes: Array.isArray(firstNode.cssClasses) ? firstNode.cssClasses : []
-          }
-        };
-
-        // Mark all instances with component ID
-        validNodes.forEach((node: any, index: number) => {
-          if (node && typeof node === 'object') {
-            node.componentId = componentId;
-            node.isComponent = index === 0; // First instance is the main component
-          }
-        });
-      }
-    }
-
-    return componentRegistry;
   }
 
   public async emergencyCompression(schema: any): Promise<any> {
@@ -533,7 +841,10 @@ window.addEventListener('message', async (event) => {
 
   try {
     const enhancedExtractor = new EnhancedExtractor();
-    let schema = await enhancedExtractor.performCompleteExtraction(event.data.viewport);
+    let schema = await enhancedExtractor.performCompleteExtraction(
+      event.data.viewport,
+      { allowNavigation: Boolean(event.data.allowNavigation) }
+    );
     if (event.data.screenshot) {
       schema.screenshot = event.data.screenshot;
     }
@@ -581,15 +892,42 @@ window.addEventListener('message', async (event) => {
       }
     }
 
-    // Monitor payload size before sending with aggressive early compression
+    // Monitor payload size and apply intelligent optimization as needed
     let payloadSizeBytes = new TextEncoder().encode(JSON.stringify(schema)).length;
     let payloadSizeMB = payloadSizeBytes / (1024 * 1024);
     
-    console.log(`📦 Initial payload size: ${payloadSizeMB.toFixed(2)}MB`);
+    console.log(`📦 Final payload size: ${payloadSizeMB.toFixed(2)}MB`);
     
-    // EXTREME AGGRESSIVE: Start compression at 25MB to ensure under 200MB limit
-    if (payloadSizeMB > 25) {
-      console.log(`🚨 EXTREME compression activated at ${payloadSizeMB.toFixed(2)}MB...`);
+    // Check if intelligent optimization was applied and successful
+    const optimizationApplied = schema.assetOptimization?.applied;
+    const optimizationFailed = schema.assetOptimization?.error;
+    const fallbackRequested = schema.assetOptimization?.fallbackToEmergencyCompression;
+    
+    if (optimizationApplied && !optimizationFailed && schema.assetOptimization) {
+      console.log(`🎯 Intelligent asset optimization was successful:`, {
+        originalMB: schema.assetOptimization.originalPayloadSizeMB?.toFixed(2),
+        optimizedMB: schema.assetOptimization.optimizedPayloadSizeMB?.toFixed(2),
+        compressionRatio: schema.assetOptimization.compressionRatio ? (schema.assetOptimization.compressionRatio * 100).toFixed(1) + '%' : 'N/A',
+        rounds: schema.assetOptimization.optimizationRounds
+      });
+    }
+    
+    // Only fall back to emergency compression if:
+    // 1. Intelligent optimization failed or wasn't applied
+    // 2. Payload is still too large after intelligent optimization
+    // 3. Intelligent optimization explicitly requested fallback
+    const needsEmergencyCompression = 
+      (!optimizationApplied || optimizationFailed || fallbackRequested || payloadSizeMB > 180);
+    
+    if (needsEmergencyCompression && payloadSizeMB > 25) {
+      console.log(`🚨 Falling back to emergency compression at ${payloadSizeMB.toFixed(2)}MB...`);
+      console.log(`   - Reason:`, {
+        optimizationApplied,
+        optimizationFailed: !!optimizationFailed,
+        fallbackRequested,
+        payloadTooLarge: payloadSizeMB > 180
+      });
+      
       schema = await enhancedExtractor.emergencyCompression(schema);
       
       // Re-measure after compression
@@ -597,7 +935,7 @@ window.addEventListener('message', async (event) => {
       payloadSizeMB = payloadSizeBytes / (1024 * 1024);
       console.log(`📦 After emergency compression: ${payloadSizeMB.toFixed(2)}MB`);
       
-      // If still over 50MB, apply ultra-aggressive compression immediately
+      // If still over 50MB, apply ultra-aggressive compression
       if (payloadSizeMB > 50) {
         console.log(`🔥 ULTRA-EXTREME compression activated at ${payloadSizeMB.toFixed(2)}MB...`);
         schema = await enhancedExtractor.ultraAggressiveCompression(schema);
@@ -605,16 +943,17 @@ window.addEventListener('message', async (event) => {
         payloadSizeMB = payloadSizeBytes / (1024 * 1024);
         console.log(`📦 After ultra-extreme compression: ${payloadSizeMB.toFixed(2)}MB`);
         
-        // If STILL over 100MB, apply final emergency measures
+        // Final fallback if still too large
         if (payloadSizeMB > 100) {
           console.log(`💀 FINAL EMERGENCY compression - removing more assets...`);
-          // Apply emergency compression again with even lower limits
           schema = await enhancedExtractor.emergencyCompression(schema);
           payloadSizeBytes = new TextEncoder().encode(JSON.stringify(schema)).length;
           payloadSizeMB = payloadSizeBytes / (1024 * 1024);
           console.log(`📦 After final emergency: ${payloadSizeMB.toFixed(2)}MB`);
         }
       }
+    } else {
+      console.log(`✅ No emergency compression needed - payload acceptable at ${payloadSizeMB.toFixed(2)}MB`);
     }
 
     window.postMessage({
@@ -633,3 +972,21 @@ window.addEventListener('message', async (event) => {
     }, '*');
   }
 });
+
+// Expose functions globally for testing and Puppeteer
+(window as any).DOMExtractor = DOMExtractor;
+(window as any).extractPageToSchema = async (options: any = {}) => {
+  console.log('🔧 Starting global extraction with options:', options);
+  
+  try {
+    // Use the same extraction logic as the main script
+    const extractor = new DOMExtractor();
+    const schema = await extractor.extractPage();
+    
+    return schema;
+  } catch (error) {
+    console.error('❌ Global extraction failed:', error);
+    throw error;
+  }
+};
+console.log('🔧 DOMExtractor and extractPageToSchema exposed globally for testing');

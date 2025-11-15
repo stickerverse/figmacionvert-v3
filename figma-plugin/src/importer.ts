@@ -6,6 +6,7 @@ import { DesignSystemBuilder } from './design-system-builder';
 import { upgradeToAutoLayout } from './layout-upgrader';
 import { PhysicsLayoutSolver, LayoutSolution } from './physics-layout-solver';
 import { ScreenshotOverlay } from './screenshot-overlay';
+import { DesignTokensManager } from './design-tokens-manager';
 
 type AbsoluteRect = { left: number; top: number; width?: number; height?: number };
 type AutoLayoutTarget = { node: FrameNode | GroupNode; data: any; depth: number };
@@ -28,10 +29,38 @@ export class FigmaImporter {
   private componentManager: ComponentManager;
   private variantsBuilder: VariantsFrameBuilder;
   private designSystemBuilder: DesignSystemBuilder;
+  private designTokensManager?: DesignTokensManager;
   private autoLayoutTargets: AutoLayoutTarget[] = [];
   private autoLayoutTargetIds = new Set<string>();
   private documentOrigin: AbsoluteRect = { left: 0, top: 0 };
-  
+  private debugPlacement = true;
+  private placementDiagnostics = {
+    total: 0,
+    missingAbsolute: 0,
+    deltasOverThreshold: 0,
+    missingPaint: 0,
+    missingImages: 0,
+    zeroOpacity: 0,
+    driftSamples: [] as Array<{
+      id: string;
+      name: string;
+      expected: { x: number; y: number };
+      actual: { x: number; y: number };
+      delta: { dx: number; dy: number };
+    }>,
+    paintSamples: [] as Array<{
+      id: string;
+      name: string;
+      expectedFills: number;
+      actualFills: number;
+    }>,
+    imageSamples: [] as Array<{
+      id: string;
+      name: string;
+      note: string;
+    }>
+  };
+
   private stats = {
     elements: 0,
     components: 0,
@@ -41,12 +70,18 @@ export class FigmaImporter {
   };
 
   constructor(private data: any, private options: ImportOptions) {
-    this.styleManager = new StyleManager(data.styles);
+    // Initialize design tokens manager if enhanced tokens are available
+    if (data.designTokensRegistry) {
+      this.designTokensManager = new DesignTokensManager(data.designTokensRegistry);
+    }
+    
+    this.styleManager = new StyleManager(data.styles, this.designTokensManager);
     this.componentManager = new ComponentManager(data.components);
-    this.nodeBuilder = new NodeBuilder(this.styleManager, this.componentManager, options, data.assets);
+    this.nodeBuilder = new NodeBuilder(this.styleManager, this.componentManager, options, data.assets, this.designTokensManager);
     this.variantsBuilder = new VariantsFrameBuilder(this.nodeBuilder);
     this.designSystemBuilder = new DesignSystemBuilder(data.styles);
     this.documentOrigin = this.computeDocumentOrigin();
+    console.warn('🛰️ Placement diagnostics enabled. Expect verbose logging.');
   }
 
   async run(): Promise<void> {
@@ -59,6 +94,20 @@ export class FigmaImporter {
     }
 
     await this.loadFonts();
+
+    // Create design tokens/variables if available
+    if (this.designTokensManager) {
+      figma.ui.postMessage({ type: 'progress', message: 'Creating design tokens and variables...', percent: 5 });
+      await this.designTokensManager.createFigmaVariables();
+      
+      const tokenStats = this.designTokensManager.getStatistics();
+      console.log('✅ Design tokens created:', tokenStats);
+      
+      figma.ui.postMessage({
+        type: 'message',
+        message: `Created ${tokenStats.variables} variables in ${tokenStats.collections} collections`
+      });
+    }
 
     if (this.options.createStyles) {
       figma.ui.postMessage({ type: 'progress', message: 'Creating styles...', percent: 10 });
@@ -115,6 +164,7 @@ export class FigmaImporter {
     figma.ui.postMessage({ type: 'progress', message: 'Finalizing...', percent: 100 });
 
     figma.viewport.scrollAndZoomIntoView(page.children);
+    this.flushPlacementDiagnostics();
   }
 
   private async runMultiViewport(): Promise<void> {
@@ -174,6 +224,7 @@ export class FigmaImporter {
 
     figma.ui.postMessage({ type: 'progress', message: 'Finalizing...', percent: 100 });
     figma.viewport.scrollAndZoomIntoView(page.children);
+    this.flushPlacementDiagnostics();
   }
 
   /**
@@ -198,6 +249,8 @@ export class FigmaImporter {
     if (this.options.applyAutoLayout) {
       this.registerAutoLayoutCandidate(node, nodeData, depth);
     }
+
+    this.recordPlacementDiagnostics(nodeData, node);
     
     // Build children recursively
     if (nodeData.children && 'appendChild' in node) {
@@ -269,6 +322,125 @@ export class FigmaImporter {
     return count;
   }
 
+  private recordPlacementDiagnostics(nodeData: any, node: SceneNode) {
+    if (!this.debugPlacement) return;
+    this.placementDiagnostics.total++;
+
+    const absolute = nodeData.absoluteLayout;
+    if (!absolute) {
+      this.placementDiagnostics.missingAbsolute++;
+      console.warn('[placement] Missing absoluteLayout for node', nodeData.id, nodeData.name);
+      return;
+    }
+
+    const transform = node.absoluteTransform;
+    const actualX = transform[0][2];
+    const actualY = transform[1][2];
+    const expectedX = absolute.left ?? nodeData.layout?.x ?? 0;
+    const expectedY = absolute.top ?? nodeData.layout?.y ?? 0;
+    const dx = actualX - expectedX;
+    const dy = actualY - expectedY;
+    const deltaMagnitude = Math.hypot(dx, dy);
+    const THRESHOLD = 0.5;
+
+    if (deltaMagnitude > THRESHOLD) {
+      this.placementDiagnostics.deltasOverThreshold++;
+      if (this.placementDiagnostics.driftSamples.length < 50) {
+        this.placementDiagnostics.driftSamples.push({
+          id: nodeData.id,
+          name: nodeData.name,
+          expected: { x: Number(expectedX.toFixed(2)), y: Number(expectedY.toFixed(2)) },
+          actual: { x: Number(actualX.toFixed(2)), y: Number(actualY.toFixed(2)) },
+          delta: { dx: Number(dx.toFixed(3)), dy: Number(dy.toFixed(3)) }
+        });
+      }
+      console.warn(
+        `[placement] Drift detected for ${nodeData.id} (${nodeData.name}): Δ=(${dx.toFixed(
+          3
+        )}, ${dy.toFixed(3)})`
+      );
+    }
+
+    this.checkPaintDiagnostics(nodeData, node);
+  }
+
+  private checkPaintDiagnostics(nodeData: any, node: SceneNode) {
+    const expectedFillCount = Array.isArray(nodeData.fills) ? nodeData.fills.length : 0;
+    const supportsFills = 'fills' in node;
+    let actualFillCount = 0;
+    let hasImageFill = false;
+
+    if (supportsFills) {
+      const fills = (node as SceneNode & GeometryMixin).fills;
+      if (fills !== figma.mixed && Array.isArray(fills)) {
+        actualFillCount = fills.length;
+        hasImageFill = fills.some(fill => (fill as Paint).type === 'IMAGE');
+      }
+    }
+
+    if (expectedFillCount > 0 && actualFillCount === 0) {
+      this.placementDiagnostics.missingPaint++;
+      if (this.placementDiagnostics.paintSamples.length < 25) {
+        this.placementDiagnostics.paintSamples.push({
+          id: nodeData.id,
+          name: nodeData.name,
+          expectedFills: expectedFillCount,
+          actualFills: actualFillCount
+        });
+      }
+      console.warn(
+        `[paint] Missing fills for ${nodeData.id} (${nodeData.name}). Expected ${expectedFillCount}, found ${actualFillCount}`
+      );
+    }
+
+    if (nodeData.imageHash && !hasImageFill) {
+      this.placementDiagnostics.missingImages++;
+      if (this.placementDiagnostics.imageSamples.length < 25) {
+        this.placementDiagnostics.imageSamples.push({
+          id: nodeData.id,
+          name: nodeData.name,
+          note: 'Image hash present but no IMAGE fill applied'
+        });
+      }
+      console.warn(
+        `[paint] Missing image fill for ${nodeData.id} (${nodeData.name}) despite imageHash ${nodeData.imageHash}`
+      );
+    }
+
+    if ('opacity' in node && node.opacity === 0) {
+      this.placementDiagnostics.zeroOpacity++;
+      console.warn(`[paint] Node ${nodeData.id} (${nodeData.name}) has 0 opacity; it will appear invisible.`);
+    }
+  }
+
+  private flushPlacementDiagnostics() {
+    const summary = {
+      totalNodes: this.placementDiagnostics.total,
+      missingAbsolute: this.placementDiagnostics.missingAbsolute,
+      overThreshold: this.placementDiagnostics.deltasOverThreshold,
+      missingPaint: this.placementDiagnostics.missingPaint,
+      missingImages: this.placementDiagnostics.missingImages,
+      zeroOpacity: this.placementDiagnostics.zeroOpacity
+    };
+    console.log('📐 Placement diagnostics summary', summary);
+    if (this.placementDiagnostics.driftSamples.length) {
+      console.table(this.placementDiagnostics.driftSamples);
+    }
+    if (this.placementDiagnostics.paintSamples.length) {
+      console.table(this.placementDiagnostics.paintSamples);
+    }
+    if (this.placementDiagnostics.imageSamples.length) {
+      console.table(this.placementDiagnostics.imageSamples);
+    }
+    figma.ui.postMessage({
+      type: 'placement-diagnostics',
+      summary,
+      driftSamples: this.placementDiagnostics.driftSamples,
+      paintSamples: this.placementDiagnostics.paintSamples,
+      imageSamples: this.placementDiagnostics.imageSamples
+    });
+  }
+
   private getRootBounds(): { width: number; height: number } {
     const absolute = this.data?.tree?.absoluteLayout;
     if (absolute?.width && absolute?.height) {
@@ -286,14 +458,35 @@ export class FigmaImporter {
 
   private computeDocumentOrigin(): AbsoluteRect {
     const absolute = this.data?.tree?.absoluteLayout;
+
+    // CRITICAL FIX: Document origin should always be (0,0) in the web document coordinate system.
+    // The root element's absoluteLayout.left/top represent its position in the document,
+    // which may be non-zero due to CSS margin, padding, or transforms.
+    // When we create the main Figma frame to represent this root element,
+    // the frame itself is at (0,0) in Figma coordinates, so we must offset
+    // all children by the root element's document position to maintain relative positioning.
+
     if (absolute) {
-      return {
+      // Use root element's absolute position as the document origin
+      // This ensures child elements are positioned correctly relative to the root
+      const origin = {
         left: absolute.left ?? 0,
         top: absolute.top ?? 0,
         width: absolute.width,
         height: absolute.height
       };
+
+      console.log(`📐 Document origin calculated from root element:`, {
+        origin,
+        rootElement: this.data.tree.name,
+        explanation: 'Root element absoluteLayout provides the offset from document (0,0)',
+        viewport: this.data.metadata?.viewport
+      });
+
+      return origin;
     }
+
+    console.warn(`⚠️ No absolute layout found for root element, using (0,0) origin`);
     return { left: 0, top: 0 };
   }
 
@@ -305,16 +498,61 @@ export class FigmaImporter {
     const originLeft = parentAbsolute?.left ?? this.documentOrigin.left ?? 0;
     const originTop = parentAbsolute?.top ?? this.documentOrigin.top ?? 0;
 
+    // ENHANCED: Comprehensive coordinate validation and logging
+    console.log(`📍 Positioning ${data.name || 'unnamed'}:`, {
+      nodeType: node.type,
+      absoluteLayout: data?.absoluteLayout,
+      parentOrigin: { left: originLeft, top: originTop },
+      documentOrigin: this.documentOrigin
+    });
+
     if (data?.absoluteLayout) {
       const { left = 0, top = 0, width, height } = data.absoluteLayout;
-      if (Number.isFinite(left)) {
-        node.x = left - originLeft;
+      
+      // Enhanced coordinate validation with bounds checking
+      if (!Number.isFinite(left) || !Number.isFinite(top)) {
+        console.error(`❌ Invalid coordinates for ${data.name}: left=${left}, top=${top}`);
+        return;
       }
-      if (Number.isFinite(top)) {
-        node.y = top - originTop;
+      
+      // Calculate final Figma coordinates
+      const figmaX = left - originLeft;
+      const figmaY = top - originTop;
+      
+      // Validate final Figma coordinates are reasonable
+      if (Math.abs(figmaX) > 20000 || Math.abs(figmaY) > 20000) {
+        console.warn(`⚠️ Extreme Figma coordinates for ${data.name}:`, {
+          calculated: { x: figmaX, y: figmaY },
+          source: { left, top },
+          origin: { left: originLeft, top: originTop }
+        });
       }
-      if (typeof width === 'number' && typeof height === 'number') {
-        this.resizeNode(node, width, height);
+      
+      // Apply validated coordinates
+      node.x = Math.round(figmaX * 100) / 100; // Round to 2 decimal places
+      node.y = Math.round(figmaY * 100) / 100;
+
+      console.log(`✅ Applied coordinates: (${node.x}, ${node.y})`);
+
+      // CRITICAL FIX: Always apply size, with fallback to layout.width/height
+      let finalWidth = width;
+      let finalHeight = height;
+
+      // Fallback to layout dimensions if absoluteLayout dimensions are missing or invalid
+      if (!(typeof finalWidth === 'number' && finalWidth > 0)) {
+        finalWidth = data.layout?.width;
+        console.warn(`⚠️ Using layout.width fallback for ${data.name}: ${finalWidth}`);
+      }
+      if (!(typeof finalHeight === 'number' && finalHeight > 0)) {
+        finalHeight = data.layout?.height;
+        console.warn(`⚠️ Using layout.height fallback for ${data.name}: ${finalHeight}`);
+      }
+
+      if (typeof finalWidth === 'number' && typeof finalHeight === 'number' && finalWidth > 0 && finalHeight > 0) {
+        this.resizeNode(node, Math.round(finalWidth * 100) / 100, Math.round(finalHeight * 100) / 100);
+        console.log(`✅ Applied size: ${finalWidth.toFixed(2)}×${finalHeight.toFixed(2)}`);
+      } else {
+        console.error(`❌ Invalid size for ${data.name}: width=${finalWidth}, height=${finalHeight}`);
       }
       return;
     }

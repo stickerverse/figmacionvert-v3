@@ -1,0 +1,187 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Image Import Test</title>
+  <style>
+    body {
+      margin: 0;
+      padding: 40px;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    }
+
+    .container {
+      max-width: 1200px;
+      margin: 0 auto;
+      background: white;
+      border-radius: 16px;
+      padding: 40px;
+      box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+    }
+
+    h1 {
+      color: #1a202c;
+      margin: 0 0 32px 0;
+      font-size: 36px;
+    }
+
+    .test-section {
+      margin-bottom: 48px;
+    }
+
+    .test-section h2 {
+      color: #2d3748;
+      font-size: 24px;
+      margin: 0 0 20px 0;
+      padding-bottom: 12px;
+      border-bottom: 2px solid #e2e8f0;
+    }
+
+    .image-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap: 24px;
+    }
+
+    .image-card {
+      border: 1px solid #e2e8f0;
+      border-radius: 8px;
+      padding: 16px;
+      background: #f7fafc;
+    }
+
+    .image-card img {
+      width: 100%;
+      height: 150px;
+      object-fit: cover;
+      border-radius: 4px;
+      margin-bottom: 12px;
+      background: #cbd5e0;
+    }
+
+    .image-card h3 {
+      margin: 0 0 8px 0;
+      font-size: 14px;
+      color: #4a5568;
+      font-weight: 600;
+    }
+
+    .image-card p {
+      margin: 0;
+      font-size: 12px;
+      color: #718096;
+    }
+
+    .bg-test {
+      height: 300px;
+      background-image: url('https://images.unsplash.com/photo-1557683316-973673baf926?w=800');
+      background-size: cover;
+      background-position: center;
+      border-radius: 8px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: white;
+      font-size: 32px;
+      font-weight: bold;
+      text-shadow: 0 2px 4px rgba(0, 0, 0, 0.5);
+    }
+
+    .inline-svg {
+      width: 48px;
+      height: 48px;
+      fill: #667eea;
+    }
+
+    .mixed-content {
+      display: flex;
+      gap: 20px;
+      align-items: center;
+      padding: 20px;
+      background: linear-gradient(90deg, #ffeaa7 0%, #fdcb6e 100%);
+      border-radius: 8px;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>🖼️ Image Import Test Page</h1>
+
+    <div class="test-section">
+      <h2>1. IMG Tags (External URLs)</h2>
+      <div class="image-grid">
+        <div class="image-card">
+          <img src="https://images.unsplash.com/photo-1557683316-973673baf926?w=400" alt="Gradient">
+          <h3>Cover (default)</h3>
+          <p>object-fit: cover</p>
+        </div>
+        <div class="image-card">
+          <img src="https://images.unsplash.com/photo-1558591710-4b4a1ae0f04d?w=400" alt="Abstract" style="object-fit: contain;">
+          <h3>Contain</h3>
+          <p>object-fit: contain</p>
+        </div>
+        <div class="image-card">
+          <img src="https://images.unsplash.com/photo-1557682250-33bd709cbe85?w=400" alt="Blue gradient" style="object-fit: fill;">
+          <h3>Fill (stretch)</h3>
+          <p>object-fit: fill</p>
+        </div>
+      </div>
+    </div>
+
+    <div class="test-section">
+      <h2>2. Background Images</h2>
+      <div class="bg-test">
+        Background Image
+      </div>
+    </div>
+
+    <div class="test-section">
+      <h2>3. Inline SVG</h2>
+      <div style="display: flex; gap: 20px;">
+        <svg class="inline-svg" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+          <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5" stroke="currentColor" stroke-width="2" fill="none"/>
+        </svg>
+        <svg class="inline-svg" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+          <circle cx="12" cy="12" r="10" fill="currentColor"/>
+        </svg>
+        <svg class="inline-svg" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+          <path d="M3 3h18v18H3z" fill="currentColor"/>
+        </svg>
+      </div>
+    </div>
+
+    <div class="test-section">
+      <h2>4. Mixed Content</h2>
+      <div class="mixed-content">
+        <img src="https://images.unsplash.com/photo-1557683325-3ba8f0df79de?w=200" alt="Small" style="width: 80px; height: 80px; border-radius: 50%; object-fit: cover;">
+        <div style="flex: 1;">
+          <h3 style="margin: 0 0 8px 0; color: #2d3748;">Image + Text Combo</h3>
+          <p style="margin: 0; color: #4a5568;">This tests images alongside text content and gradient backgrounds.</p>
+        </div>
+        <svg width="60" height="60" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <path d="M5 12h14M12 5l7 7-7 7" stroke="#2d3748" stroke-width="2" stroke-linecap="round"/>
+        </svg>
+      </div>
+    </div>
+
+    <div class="test-section">
+      <h2>5. Data URI Images</h2>
+      <div class="image-grid">
+        <div class="image-card">
+          <img src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='200' height='150'%3E%3Crect fill='%23667eea' width='200' height='150'/%3E%3Ctext x='50%25' y='50%25' text-anchor='middle' dy='.3em' fill='white' font-family='sans-serif' font-size='24'%3ESVG Data URI%3C/text%3E%3C/svg%3E" alt="SVG Data URI">
+          <h3>SVG Data URI</h3>
+          <p>Inline SVG as data URI</p>
+        </div>
+        <div class="image-card">
+          <img src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAoAAAAKCAYAAACNMs+9AAAAFUlEQVR42mP8z8BQz0AEYBxVSF+FABJADveWkH6oAAAAAElFTkSuQmCC" alt="PNG Data URI" style="object-fit: none; image-rendering: pixelated;">
+          <h3>PNG Data URI</h3>
+          <p>Base64 PNG (tiny 10x10)</p>
+        </div>
+      </div>
+    </div>
+  </div>
+</body>
+</html>

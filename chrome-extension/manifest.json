@@ -7,13 +7,16 @@
     "activeTab",
     "scripting",
     "storage",
-    "tabs"
+    "tabs",
+    "downloads",
+    "debugger"
   ],
   "host_permissions": [
     "<all_urls>"
   ],
   "action": {
-    "default_title": "Web to Figma Capture",
+    "default_title": "HTML to Figma",
+    "default_popup": "popup/popup-new.html",
     "default_icon": {
       "16": "icons/icon16.png",
       "48": "icons/icon48.png",

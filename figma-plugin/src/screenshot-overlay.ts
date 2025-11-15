@@ -142,7 +142,7 @@ export class ScreenshotOverlay {
     marker.name = label;
     marker.resize(12, 12);
     marker.fills = [{ type: 'SOLID', color }];
-    marker.strokes = [{ type: 'SOLID', color: { r: 1, g: 1, b: 1, a: 1 } }];
+    marker.strokes = [{ type: 'SOLID', color: { r: 1, g: 1, b: 1 } }];
     marker.strokeWeight = 2;
     return marker;
   }
@@ -162,7 +162,7 @@ export class ScreenshotOverlay {
     line.rotation = Math.atan2(to.y - from.y, to.x - from.x);
     line.strokes = [{ 
       type: 'SOLID', 
-      color: { r: 1, g: 0, b: 0, a: 0.8 } 
+      color: { r: 1, g: 0, b: 0 } 
     }];
     line.strokeWeight = 3;
     return line;

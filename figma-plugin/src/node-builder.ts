@@ -1,6 +1,7 @@
 import { StyleManager } from './style-manager';
 import { ComponentManager } from './component-manager';
 import { ImportOptions } from './importer';
+import { DesignTokensManager } from './design-tokens-manager';
 
 type SceneNodeWithGeometry = SceneNode & GeometryMixin;
 
@@ -14,13 +15,40 @@ export class NodeBuilder {
     private styleManager: StyleManager,
     private componentManager: ComponentManager,
     private options: ImportOptions,
-    assets?: any
+    assets?: any,
+    private designTokensManager?: DesignTokensManager
   ) {
     this.assets = assets;
   }
 
   setAssets(assets: any): void {
     this.assets = assets;
+  }
+
+  /**
+   * Find a matching design token for a color value
+   */
+  private findColorToken(color: { r: number; g: number; b: number; a?: number }): string | undefined {
+    if (!this.designTokensManager) return undefined;
+
+    // Look through the design tokens registry to find a matching color
+    // This is a simplified matching - in practice you'd want more sophisticated color matching
+    const tolerance = 0.01; // Allow small differences in color values
+    
+    for (const [tokenId, token] of Object.entries((this.designTokensManager as any).tokensRegistry.variables)) {
+      if (token.type === 'COLOR' && token.resolvedValue) {
+        const tokenColor = token.resolvedValue;
+        if (
+          Math.abs(tokenColor.r - color.r) < tolerance &&
+          Math.abs(tokenColor.g - color.g) < tolerance &&
+          Math.abs(tokenColor.b - color.b) < tolerance
+        ) {
+          return tokenId;
+        }
+      }
+    }
+
+    return undefined;
   }
 
   private async loadFontWithFallbacks(requestedFamily: string, requestedStyle: string): Promise<{ family: string; style: string }> {
@@ -99,7 +127,28 @@ export class NodeBuilder {
       console.warn(`❌ Using last resort font Inter Regular for: ${cleanFamily} ${requestedStyle}`);
       return result;
     } catch (error) {
-      throw new Error(`Critical error: Cannot load any font including Inter Regular`);
+      console.error(`❌ Critical: Cannot load Inter Regular. Trying system fallback.`);
+      // Try system fonts before throwing critical error
+      const systemFonts = [
+        { family: 'Arial', style: 'Regular' },
+        { family: 'Helvetica', style: 'Regular' },
+        { family: 'San Francisco', style: 'Regular' },
+        { family: 'Roboto', style: 'Regular' }
+      ];
+      
+      for (const font of systemFonts) {
+        try {
+          await figma.loadFontAsync(font);
+          console.warn(`✅ Using system fallback font: ${font.family}`);
+          return font;
+        } catch (fallbackError) {
+          continue;
+        }
+      }
+      
+      console.error(`❌ Critical: No fonts available - will create rectangle placeholders`);
+      // Don't throw - return null to indicate font failure
+      return null;
     }
   }
 
@@ -190,6 +239,19 @@ export class NodeBuilder {
       // Progressive font fallback strategy for better fidelity
       const originalFontFamily = fontFamily;
       const fontLoadResult = await this.loadFontWithFallbacks(fontFamily, fontStyle);
+      
+      if (!fontLoadResult) {
+        console.error(`❌ Font loading failed completely for ${originalFontFamily}. Creating rectangle placeholder.`);
+        // Create rectangle placeholder instead of text when fonts fail
+        const placeholder = figma.createRectangle();
+        placeholder.name = `${data.name || 'Text'} (font failed)`;
+        placeholder.resize(Math.max(data.layout.width || 100, 1), Math.max(data.layout.height || 20, 1));
+        placeholder.fills = [{ type: 'SOLID', color: { r: 0.9, g: 0.9, b: 0.9 } }];
+        placeholder.strokes = [{ type: 'SOLID', color: { r: 0.7, g: 0.7, b: 0.7 } }];
+        placeholder.strokeWeight = 1;
+        return placeholder as any; // Return as TextNode for compatibility
+      }
+      
       fontFamily = fontLoadResult.family;
       finalFontStyle = fontLoadResult.style;
 
@@ -350,21 +412,70 @@ export class NodeBuilder {
       let width = data.layout.width || 1;
       let height = data.layout.height || 1;
       
-      // Critical fix: Compensate for Figma stroke expansion
-      if (data.strokes?.length && data.strokeWeight) {
-        const strokeWeight = data.strokeWeight || 0;
+      // Critical fix: Compensate for Figma stroke expansion based on stroke alignment
+      if (data.strokes?.length) {
+        let totalWidthCompensation = 0;
+        let totalHeightCompensation = 0;
+        const compensationDetails: any[] = [];
         
-        if (data.layout.boxSizing === 'border-box') {
-          // Border-box: CSS dimensions include borders, but Figma strokes expand beyond
-          // Reduce content area to compensate for Figma's stroke expansion
-          width = Math.max(width - strokeWeight, 1);
-          height = Math.max(height - strokeWeight, 1);
+        // Calculate compensation for each stroke based on its alignment and thickness
+        for (const stroke of data.strokes) {
+          const strokeWeight = stroke.thickness || data.strokeWeight || 0;
+          const strokeAlign = stroke.strokeAlign || data.strokeAlign || 'CENTER';
           
-          this.safeSetPluginData(node, 'borderBoxCompensation', strokeWeight.toString());
-        } else {
-          // Content-box: No adjustment needed as strokes are additional
-          this.safeSetPluginData(node, 'contentBoxStroke', strokeWeight.toString());
+          let widthCompensation = 0;
+          let heightCompensation = 0;
+          
+          if (data.layout.boxSizing === 'border-box') {
+            // Border-box: CSS dimensions include borders, compensation depends on stroke alignment
+            switch (strokeAlign) {
+              case 'INSIDE':
+                // Stroke stays within bounds - no compensation needed
+                widthCompensation = 0;
+                heightCompensation = 0;
+                break;
+              case 'CENTER':
+                // Stroke expands outward by strokeWeight/2
+                widthCompensation = strokeWeight / 2;
+                heightCompensation = strokeWeight / 2;
+                break;
+              case 'OUTSIDE':
+                // Stroke expands fully outward - but for outline in CSS, this doesn't affect box dimensions
+                // Only apply compensation if this is a border stroke that affects layout
+                widthCompensation = 0;
+                heightCompensation = 0;
+                break;
+            }
+          } else {
+            // Content-box: No adjustment needed as strokes are additional to content dimensions
+            widthCompensation = 0;
+            heightCompensation = 0;
+          }
+          
+          totalWidthCompensation += widthCompensation;
+          totalHeightCompensation += heightCompensation;
+          
+          compensationDetails.push({
+            strokeWeight,
+            strokeAlign,
+            widthCompensation,
+            heightCompensation
+          });
         }
+        
+        // Apply total compensation
+        width = Math.max(width - totalWidthCompensation, 1);
+        height = Math.max(height - totalHeightCompensation, 1);
+        
+        // Store detailed compensation metadata for debugging and future processing
+        this.safeSetPluginData(node, 'strokeCompensationDetails', JSON.stringify({
+          boxSizing: data.layout.boxSizing,
+          totalWidthCompensation,
+          totalHeightCompensation,
+          originalWidth: data.layout.width,
+          originalHeight: data.layout.height,
+          strokes: compensationDetails
+        }));
       }
       
       node.x = data.layout.x || 0;
@@ -417,6 +528,25 @@ export class NodeBuilder {
       }
     }
 
+    // Store enhanced layout context for layout upgrader
+    if (data.layoutContext) {
+      this.safeSetPluginData(node, 'cssLayoutContext', JSON.stringify(data.layoutContext));
+      
+      // Store specific CSS properties that affect layout decisions
+      if (data.layoutContext.transform && data.layoutContext.transform !== 'none') {
+        this.safeSetPluginData(node, 'cssTransform', data.layoutContext.transform);
+      }
+      
+      if (data.layoutContext.position) {
+        this.safeSetPluginData(node, 'cssPosition', data.layoutContext.position);
+      }
+      
+      // Store flexbox analysis if available
+      if (data.autoLayout && (data.autoLayout as any).flexAnalysis) {
+        this.safeSetPluginData(node, 'flexAnalysis', JSON.stringify((data.autoLayout as any).flexAnalysis));
+      }
+    }
+
     // layoutGrow and layoutAlign can only be set on children of Auto Layout containers
     if ('layoutGrow' in node && typeof data.autoLayout?.layoutGrow === 'number') {
       try {
@@ -435,10 +565,11 @@ export class NodeBuilder {
       }
     }
 
-    // DISABLED: Applying relativeTransform causes "rotation is not invertible" errors
-    // and conflicts with Figma's layout system. Use simple x/y positioning instead.
-    // Complex CSS transforms (scale, skew, 3D) are stored in plugin data for reference.
+    // Apply CSS transform matrix to positioning
     if (data.transform?.matrix) {
+      this.applyTransformMatrix(node, data.transform, data.transformOrigin, data.layout);
+      
+      // Store transform data for reference
       this.safeSetPluginData(node, 'cssTransform', JSON.stringify(data.transform));
     }
 
@@ -538,6 +669,31 @@ export class NodeBuilder {
     } else if (data.fills && 'fills' in node && node.type !== 'TEXT') {
       // Fallback to basic fills if no backgrounds
       (node as SceneNodeWithGeometry).fills = await this.convertFillsAsync(data.fills);
+    } else if (data.imageHash && 'fills' in node && node.type !== 'TEXT') {
+      // CRITICAL FIX: Handle IMAGE type nodes (<img> tags)
+      // The Chrome extension sets imageHash directly on the node for img elements
+      const imageFill = {
+        type: 'IMAGE' as const,
+        imageHash: data.imageHash,
+        scaleMode: (data.objectFit ? this.mapObjectFitToScaleMode(data.objectFit) : 'FILL') as 'FILL' | 'FIT' | 'CROP' | 'TILE',
+        visible: true
+      };
+
+      console.log(`🖼️ Applying image fill for ${data.name} with hash ${data.imageHash}`);
+      (node as SceneNodeWithGeometry).fills = [await this.resolveImagePaint(imageFill)];
+    } else if ('fills' in node && node.type !== 'TEXT') {
+      // DEBUGGING: Make elements without extracted backgrounds visible with a semi-transparent fill
+      // This helps identify which elements are missing proper background extraction
+      // Pink tint makes it obvious these need proper background/fill data
+      (node as SceneNodeWithGeometry).fills = [{
+        type: 'SOLID',
+        color: { r: 1, g: 0.9, b: 0.95 }, // Light pink to indicate "missing background data"
+        opacity: 0.2, // 20% visible for debugging
+        visible: true
+      }];
+
+      // Log this so we can track which elements are missing fills
+      console.warn(`⚠️ Element "${data.name}" has no backgrounds/fills - using debug fill`);
     }
 
     if (data.strokes && 'strokes' in node) {
@@ -594,10 +750,21 @@ export class NodeBuilder {
     }
   }
 
-  private applyCornerRadius(node: any, radius: any) {
+  private applyCornerRadius(node: any, radius: any, tokenId?: string) {
     if (typeof radius === 'number') {
+      // Try to bind to a variable if available
+      if (this.designTokensManager && tokenId) {
+        const variable = this.designTokensManager.getVariableByTokenId(tokenId);
+        if (variable && variable.resolvedType === 'FLOAT' && 'boundVariables' in node) {
+          node.boundVariables = { 
+            ...(node.boundVariables || {}),
+            cornerRadius: { type: 'VARIABLE_ALIAS', id: variable.id }
+          };
+        }
+      }
       node.cornerRadius = radius;
     } else {
+      // For individual corner radius, we could bind each corner separately if variables exist
       node.topLeftRadius = radius.topLeft || 0;
       node.topRightRadius = radius.topRight || 0;
       node.bottomRightRadius = radius.bottomRight || 0;
@@ -611,17 +778,26 @@ export class NodeBuilder {
   }
 
   /**
-   * Store CSS Grid layout metadata in plugin data for reference
-   * Note: Figma's Auto Layout cannot represent true 2D grids, so we store the original
-   * grid properties for documentation/debugging purposes
+   * Apply enhanced CSS Grid layout conversion to nested Auto Layout structures
+   * Now handles fr units, minmax(), grid-template-areas, and complex positioning
    */
   private applyGridLayoutMetadata(node: SceneNode, data: any) {
     if (!data.gridLayout) return;
 
     const grid = data.gridLayout;
 
-    // Store grid layout information in plugin data
-    this.safeSetPluginData(node, 'gridLayout', JSON.stringify({
+    // Apply immediate grid layout conversion based on strategy
+    this.applyGridLayoutConversion(node as FrameNode, grid, data);
+
+    // Store comprehensive grid layout information for layout-upgrader and debugging
+    this.safeSetPluginData(node, 'enhancedGridLayout', JSON.stringify({
+      ...grid,
+      conversionApplied: true,
+      timestamp: Date.now()
+    }));
+
+    // Store legacy format for backward compatibility
+    this.safeSetPluginData(node, 'cssGridLayout', JSON.stringify({
       templateColumns: grid.templateColumns,
       templateRows: grid.templateRows,
       columnGap: grid.columnGap,
@@ -638,11 +814,143 @@ export class NodeBuilder {
       this.safeSetPluginData(node, 'gridChild', JSON.stringify(data.gridChild));
     }
 
-    // Add visual indicator that this was a grid layout
+    // Add visual indicator with conversion strategy
     if ('name' in node && typeof node.name === 'string') {
-      if (!node.name.includes('[Grid]')) {
-        node.name = `${node.name} [Grid]`;
+      const strategy = grid.conversionStrategy || 'auto';
+      if (!node.name.includes('[Grid')) {
+        node.name = `${node.name} [Grid:${strategy}]`;
       }
+    }
+
+    // Add annotations for complex features
+    if (grid.figmaAnnotations && grid.figmaAnnotations.length > 0) {
+      this.safeSetPluginData(node, 'gridAnnotations', JSON.stringify(grid.figmaAnnotations));
+    }
+  }
+
+  /**
+   * Apply grid layout conversion based on the determined strategy
+   */
+  private applyGridLayoutConversion(node: FrameNode, gridData: any, elementData: any) {
+    switch (gridData.conversionStrategy) {
+      case 'nested-auto-layout':
+        this.applyNestedAutoLayoutConversion(node, gridData);
+        break;
+      case 'absolute-positioning':
+        this.applyAbsolutePositioningConversion(node, gridData);
+        break;
+      case 'hybrid':
+        this.applyHybridLayoutConversion(node, gridData);
+        break;
+      default:
+        // Fallback to basic Auto Layout
+        this.applyBasicGridAutoLayout(node, gridData);
+    }
+  }
+
+  /**
+   * Convert grid to nested Auto Layout frames for simple uniform grids
+   */
+  private applyNestedAutoLayoutConversion(node: FrameNode, gridData: any) {
+    if (!('layoutMode' in node)) return;
+
+    // Determine primary direction based on grid analysis
+    const isRowMajor = gridData.computedRowSizes.length <= gridData.computedColumnSizes.length;
+    
+    // Apply Auto Layout to main container
+    node.layoutMode = isRowMajor ? 'VERTICAL' : 'HORIZONTAL';
+    node.primaryAxisAlignItems = this.mapGridAlignment(gridData.alignContent || gridData.justifyContent);
+    node.counterAxisAlignItems = this.mapGridAlignment(gridData.justifyContent || gridData.alignContent);
+    node.itemSpacing = isRowMajor ? gridData.rowGap : gridData.columnGap;
+
+    // Store metadata for child frame creation by layout-upgrader
+    this.safeSetPluginData(node, 'gridConversionData', JSON.stringify({
+      strategy: 'nested-auto-layout',
+      isRowMajor,
+      rowCount: gridData.computedRowSizes.length,
+      columnCount: gridData.computedColumnSizes.length,
+      rowSizes: gridData.computedRowSizes,
+      columnSizes: gridData.computedColumnSizes,
+      rowGap: gridData.rowGap,
+      columnGap: gridData.columnGap
+    }));
+
+    console.log(`✅ Applied nested Auto Layout to grid: ${gridData.computedColumnSizes.length}x${gridData.computedRowSizes.length}`);
+  }
+
+  /**
+   * Handle grids that require absolute positioning due to complexity
+   */
+  private applyAbsolutePositioningConversion(node: FrameNode, gridData: any) {
+    if (!('layoutMode' in node)) return;
+
+    // Keep manual positioning for complex grids
+    node.layoutMode = 'NONE';
+
+    // Store detailed positioning data for manual layout
+    this.safeSetPluginData(node, 'gridConversionData', JSON.stringify({
+      strategy: 'absolute-positioning',
+      templateAreas: gridData.templateAreas,
+      computedColumnSizes: gridData.computedColumnSizes,
+      computedRowSizes: gridData.computedRowSizes,
+      positioning: 'manual'
+    }));
+
+    console.log(`⚠️ Applied absolute positioning to complex grid`);
+  }
+
+  /**
+   * Apply hybrid conversion combining Auto Layout and absolute positioning
+   */
+  private applyHybridLayoutConversion(node: FrameNode, gridData: any) {
+    // Start with nested Auto Layout structure
+    this.applyNestedAutoLayoutConversion(node, gridData);
+
+    // Store additional data for complex item positioning
+    this.safeSetPluginData(node, 'gridHybridData', JSON.stringify({
+      strategy: 'hybrid',
+      complexItems: gridData.templateAreas || [],
+      fallbackToAbsolute: true
+    }));
+
+    console.log(`🔀 Applied hybrid layout conversion to grid`);
+  }
+
+  /**
+   * Fallback basic grid-to-Auto Layout conversion
+   */
+  private applyBasicGridAutoLayout(node: FrameNode, gridData: any) {
+    if (!('layoutMode' in node)) return;
+
+    // Simple horizontal/vertical layout approximation
+    const hasMoreColumns = gridData.computedColumnSizes.length > gridData.computedRowSizes.length;
+    
+    node.layoutMode = hasMoreColumns ? 'HORIZONTAL' : 'VERTICAL';
+    node.itemSpacing = hasMoreColumns ? gridData.columnGap : gridData.rowGap;
+    node.primaryAxisAlignItems = 'MIN';
+    node.counterAxisAlignItems = 'STRETCH';
+
+    console.log(`📐 Applied basic Auto Layout to grid (${gridData.computedColumnSizes.length}x${gridData.computedRowSizes.length})`);
+  }
+
+  /**
+   * Map CSS Grid alignment to Figma Auto Layout alignment
+   */
+  private mapGridAlignment(value?: string): 'MIN' | 'CENTER' | 'MAX' | 'SPACE_BETWEEN' {
+    switch (value) {
+      case 'start':
+      case 'flex-start':
+        return 'MIN';
+      case 'center':
+        return 'CENTER';
+      case 'end':
+      case 'flex-end':
+        return 'MAX';
+      case 'space-between':
+        return 'SPACE_BETWEEN';
+      case 'stretch':
+      default:
+        return 'MIN';
     }
   }
 
@@ -836,7 +1144,7 @@ export class NodeBuilder {
     return paints;
   }
 
-  private async convertFillsAsync(fills: any[]): Promise<Paint[]> {
+  private async convertFillsAsync(fills: any[], context?: { tokenId?: string; property?: string }): Promise<Paint[]> {
     const paints: Paint[] = [];
 
     for (const fill of fills) {
@@ -844,12 +1152,34 @@ export class NodeBuilder {
 
       if (fill.type === 'SOLID' && fill.color) {
         const { r, g, b } = fill.color;
-        paints.push({
+        
+        // Try to use a variable if available and design tokens manager exists
+        const paint: SolidPaint = {
           type: 'SOLID',
           color: { r, g, b },
           opacity: fill.opacity !== undefined ? fill.opacity : fill.color.a ?? 1,
           visible: fill.visible !== false
-        } as SolidPaint);
+        };
+
+        // Check if we can bind this to a variable
+        if (this.designTokensManager) {
+          // First try to use the provided token ID
+          let tokenId = context?.tokenId;
+          
+          // If no token ID provided, try to find a matching color token
+          if (!tokenId) {
+            tokenId = this.findColorToken({ r, g, b, a: fill.color.a });
+          }
+          
+          if (tokenId) {
+            const variable = this.designTokensManager.getVariableByTokenId(tokenId);
+            if (variable && variable.resolvedType === 'COLOR') {
+              paint.boundVariables = { color: { type: 'VARIABLE_ALIAS', id: variable.id } };
+            }
+          }
+        }
+
+        paints.push(paint);
         continue;
       }
 
@@ -945,36 +1275,58 @@ export class NodeBuilder {
       type: 'IMAGE',
       imageHash,
       scaleMode,
-      visible: fill.visible !== false
+      visible: fill.visible !== false,
+      ...(imageTransform && { imageTransform }),
+      ...(fill.rotation !== undefined && { rotation: fill.rotation }),
+      ...(fill.scalingFactor !== undefined && { scalingFactor: fill.scalingFactor })
     };
-
-    // Apply transform if calculated
-    if (imageTransform) {
-      paint.imageTransform = imageTransform;
-    }
-
-    // Apply rotation if present
-    if (fill.rotation !== undefined) {
-      paint.rotation = fill.rotation;
-    }
-
-    // Apply scaling factor if needed
-    if (fill.scalingFactor !== undefined) {
-      paint.scalingFactor = fill.scalingFactor;
-    }
 
     return paint;
   }
 
   private async resolveImagePaint(fill: any): Promise<Paint> {
     const hash = fill.imageHash;
-    if (!hash || !this.assets?.images?.[hash]) {
+
+    // CRITICAL: Debug image lookup failures
+    if (!hash) {
+      console.error('❌ resolveImagePaint: No imageHash provided in fill:', fill);
       return {
         type: 'SOLID',
-        color: { r: 0.9, g: 0.9, b: 0.9 },
-        opacity: 1
+        color: { r: 1, g: 0, b: 0 }, // RED = missing hash
+        opacity: 0.5
       } as SolidPaint;
     }
+
+    if (!this.assets) {
+      console.error('❌ resolveImagePaint: No assets available! Hash:', hash);
+      return {
+        type: 'SOLID',
+        color: { r: 1, g: 0.5, b: 0 }, // ORANGE = no assets
+        opacity: 0.5
+      } as SolidPaint;
+    }
+
+    if (!this.assets.images) {
+      console.error('❌ resolveImagePaint: assets.images is undefined! Available keys:', Object.keys(this.assets));
+      return {
+        type: 'SOLID',
+        color: { r: 1, g: 1, b: 0 }, // YELLOW = no images registry
+        opacity: 0.5
+      } as SolidPaint;
+    }
+
+    if (!this.assets.images[hash]) {
+      console.error(`❌ resolveImagePaint: Image hash "${hash}" not found in assets.images`);
+      console.error(`Available image hashes (${Object.keys(this.assets.images).length}):`, Object.keys(this.assets.images).slice(0, 10));
+      return {
+        type: 'SOLID',
+        color: { r: 0.5, g: 0, b: 1 }, // PURPLE = hash not found
+        opacity: 0.5
+      } as SolidPaint;
+    }
+
+    console.log(`✅ Found image asset for hash: ${hash}`);
+
 
     if (this.imagePaintCache.has(hash)) {
       const cachedHash = this.imagePaintCache.get(hash)!;
@@ -989,24 +1341,35 @@ export class NodeBuilder {
         type: 'IMAGE',
         imageHash: cachedHash,
         scaleMode,
-        visible: fill.visible !== false
+        visible: fill.visible !== false,
+        ...(fill.objectPosition && fill.objectPosition !== 'center center' && {
+          imageTransform: this.parseObjectPositionToTransform(fill.objectPosition)
+        })
       };
-
-      // Apply object-position as image transform if specified
-      if (fill.objectPosition && fill.objectPosition !== 'center center') {
-        imagePaint.imageTransform = this.parseObjectPositionToTransform(fill.objectPosition);
-      }
 
       return imagePaint;
     }
 
     try {
       const asset = this.assets.images[hash];
+      console.log(`🔍 Processing image asset:`, {
+        hash,
+        hasBase64: !!asset.base64,
+        hasUrl: !!asset.url,
+        base64Length: asset.base64?.length,
+        url: asset.url,
+        width: asset.width,
+        height: asset.height
+      });
+
       let imageBytes: Uint8Array | undefined;
 
       if (asset.base64) {
+        console.log(`📦 Converting base64 to bytes (length: ${asset.base64.length})`);
         imageBytes = this.base64ToUint8Array(asset.base64);
+        console.log(`✅ Converted to ${imageBytes.length} bytes`);
       } else if (asset.url) {
+        console.log(`🌐 Fetching image from URL: ${asset.url}`);
         imageBytes = await this.fetchImage(asset.url);
       }
 
@@ -1014,8 +1377,10 @@ export class NodeBuilder {
         throw new Error('No image data available');
       }
 
+      console.log(`🎨 Creating Figma image from ${imageBytes.length} bytes`);
       const image = figma.createImage(imageBytes);
       this.imagePaintCache.set(hash, image.hash);
+      console.log(`✅ Created Figma image with hash: ${image.hash}`);
 
       // Enhanced scale mode mapping from object-fit
       let scaleMode = fill.scaleMode || 'FILL';
@@ -1027,21 +1392,20 @@ export class NodeBuilder {
         type: 'IMAGE',
         imageHash: image.hash,
         scaleMode,
-        visible: fill.visible !== false
+        visible: fill.visible !== false,
+        ...(fill.objectPosition && fill.objectPosition !== 'center center' && {
+          imageTransform: this.parseObjectPositionToTransform(fill.objectPosition)
+        })
       };
 
-      // Apply object-position as image transform if specified
-      if (fill.objectPosition && fill.objectPosition !== 'center center') {
-        imagePaint.imageTransform = this.parseObjectPositionToTransform(fill.objectPosition);
-      }
-
+      console.log(`✅ Successfully created image paint with scaleMode: ${scaleMode}`);
       return imagePaint;
     } catch (error) {
-      console.warn('Failed to resolve image paint', error);
+      console.error(`❌ Failed to resolve image paint for hash ${hash}:`, error);
       return {
         type: 'SOLID',
-        color: { r: 0.9, g: 0.9, b: 0.9 },
-        opacity: 1
+        color: { r: 0, g: 1, b: 0 }, // GREEN = image processing error
+        opacity: 0.5
       } as SolidPaint;
     }
   }
@@ -1387,6 +1751,165 @@ export class NodeBuilder {
       900: 'Black'
     };
     return map[weight] || 'Regular';
+  }
+
+  /**
+   * Apply CSS transform matrix to Figma node positioning
+   */
+  private applyTransformMatrix(
+    node: SceneNode, 
+    transform: any, 
+    transformOrigin?: { x: number; y: number; z?: number },
+    layout?: { width: number; height: number; x: number; y: number }
+  ): void {
+    if (!transform?.matrix || !layout) {
+      return;
+    }
+
+    const matrix = transform.matrix;
+    
+    // For 2D transforms, apply positioning and rotation
+    if (matrix.length === 6) {
+      const [a, b, c, d, tx, ty] = matrix;
+      
+      // Calculate effective position with transform-origin offset
+      let finalX = layout.x;
+      let finalY = layout.y;
+      
+      if (transformOrigin) {
+        // Convert transform-origin from percentage/pixels to center-relative offset
+        const originX = this.calculateTransformOriginOffset(transformOrigin.x, layout.width);
+        const originY = this.calculateTransformOriginOffset(transformOrigin.y, layout.height);
+        
+        // Apply transform-origin offset to matrix translation
+        const offsetTx = tx + originX * (1 - a) - originY * c;
+        const offsetTy = ty + originY * (1 - d) - originX * b;
+        
+        finalX += offsetTx;
+        finalY += offsetTy;
+      } else {
+        // No transform-origin, apply translation directly
+        finalX += tx;
+        finalY += ty;
+      }
+      
+      // Apply position
+      node.x = finalX;
+      node.y = finalY;
+      
+      // Extract and apply rotation if the node supports it
+      if ('rotation' in node && this.shouldApplyRotation(matrix)) {
+        const rotation = Math.atan2(b, a);
+        (node as any).rotation = rotation;
+      }
+      
+      // Apply scale to dimensions if significant and node supports resize
+      if ('resize' in node && this.shouldApplyScale(matrix)) {
+        const scaleX = Math.hypot(a, b);
+        const scaleY = Math.hypot(c, d);
+        
+        // Only apply scale if it's not too extreme (to avoid breaking layouts)
+        if (scaleX > 0.1 && scaleX < 10 && scaleY > 0.1 && scaleY < 10) {
+          const newWidth = Math.max(layout.width * scaleX, 1);
+          const newHeight = Math.max(layout.height * scaleY, 1);
+          (node as LayoutMixin).resize(newWidth, newHeight);
+          
+          // Store scale info for reference
+          this.safeSetPluginData(node, 'appliedScale', JSON.stringify({ 
+            scaleX, 
+            scaleY, 
+            originalWidth: layout.width, 
+            originalHeight: layout.height 
+          }));
+        }
+      }
+      
+      // Store complex transforms that can't be fully represented
+      if (this.hasComplexTransform(matrix)) {
+        this.safeSetPluginData(node, 'complexTransform', JSON.stringify({
+          matrix,
+          skew: transform.skew,
+          decomposed: {
+            translate: transform.translate,
+            scale: transform.scale,
+            rotate: transform.rotate,
+            skew: transform.skew
+          }
+        }));
+      }
+    }
+    
+    // Handle 3D transforms (store for reference, limited Figma support)
+    else if (matrix.length === 16) {
+      // Extract 2D components from 3D matrix for basic positioning
+      const tx = matrix[12] || 0;
+      const ty = matrix[13] || 0;
+      const tz = matrix[14] || 0;
+      
+      node.x = (layout.x + tx);
+      node.y = (layout.y + ty);
+      
+      // Store full 3D transform for reference
+      this.safeSetPluginData(node, 'transform3D', JSON.stringify({
+        matrix,
+        translate: { x: tx, y: ty, z: tz },
+        originalPosition: { x: layout.x, y: layout.y }
+      }));
+      
+      console.warn(`3D transform applied to "${node.name}" - limited Figma support, stored for reference`);
+    }
+  }
+
+  /**
+   * Calculate transform-origin offset in pixels
+   */
+  private calculateTransformOriginOffset(value: number, dimension: number): number {
+    // If value is between 0-100, treat as percentage
+    if (value >= 0 && value <= 100) {
+      return (value / 100) * dimension - (dimension / 2);
+    }
+    // Otherwise treat as pixel value, center-relative
+    return value - (dimension / 2);
+  }
+
+  /**
+   * Check if rotation should be applied (avoid very small rotations)
+   */
+  private shouldApplyRotation(matrix: number[]): boolean {
+    if (matrix.length !== 6) return false;
+    const [a, b] = matrix;
+    const rotation = Math.atan2(b, a);
+    return Math.abs(rotation) > 0.01; // ~0.6 degrees threshold
+  }
+
+  /**
+   * Check if scale should be applied (avoid identity scale)
+   */
+  private shouldApplyScale(matrix: number[]): boolean {
+    if (matrix.length !== 6) return false;
+    const [a, b, c, d] = matrix;
+    const scaleX = Math.hypot(a, b);
+    const scaleY = Math.hypot(c, d);
+    return Math.abs(scaleX - 1) > 0.01 || Math.abs(scaleY - 1) > 0.01;
+  }
+
+  /**
+   * Check if transform has complex components (skew, non-uniform scale)
+   */
+  private hasComplexTransform(matrix: number[]): boolean {
+    if (matrix.length !== 6) return true; // 3D is always complex
+    const [a, b, c, d] = matrix;
+    
+    // Check for skew (non-perpendicular axes)
+    const crossProduct = a * c + b * d;
+    const hasSkew = Math.abs(crossProduct) > 0.01;
+    
+    // Check for non-uniform scale
+    const scaleX = Math.hypot(a, b);
+    const scaleY = Math.hypot(c, d);
+    const hasNonUniformScale = Math.abs(scaleX - scaleY) > 0.01;
+    
+    return hasSkew || hasNonUniformScale;
   }
 
   private safeSetPluginData(node: SceneNode, key: string, value: string) {

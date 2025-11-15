@@ -13,6 +13,7 @@ HTML to Figma is a three-part system that converts web pages into pixel-perfect,
 ## Build Commands
 
 ### Chrome Extension
+
 ```bash
 cd chrome-extension
 npm install
@@ -23,6 +24,7 @@ npm run watch       # Development build with watch mode
 After building, load the unpacked extension from `chrome-extension/` directory in Chrome Developer Mode (chrome://extensions/).
 
 ### Figma Plugin
+
 ```bash
 cd figma-plugin
 npm install
@@ -57,17 +59,20 @@ The complete workflow involves three stages:
 The extension operates in three isolated JavaScript contexts that communicate via message passing:
 
 1. **Content Script** ([content-script.ts](chrome-extension/src/content-script.ts)):
+
    - Injects the extraction script into the page
    - Acts as message relay between injected script and background
    - Sends progress updates to the popup UI
    - Handles chunked message passing to avoid Chrome's 32 MB message limit
 
 2. **Injected Script** ([injected-script.ts](chrome-extension/src/injected-script.ts)):
+
    - Runs in the page's JavaScript context (full DOM access)
    - Orchestrates the extraction pipeline using specialized utilities
    - Produces the final `WebToFigmaSchema` JSON
 
 3. **Background Service Worker** ([background.ts](chrome-extension/src/background.ts)):
+
    - Manages extension state and storage
    - Reassembles chunked payloads
    - Posts complete JSON to handoff server
@@ -84,6 +89,7 @@ The extension operates in three isolated JavaScript contexts that communicate vi
 The injected script coordinates multiple specialized utilities in sequence:
 
 1. **DOMExtractor** ([dom-extractor.ts](chrome-extension/src/utils/dom-extractor.ts)):
+
    - Recursively traverses the DOM tree
    - Extracts computed styles via `StyleParser`
    - Handles assets (images/SVGs) via `AssetHandler`
@@ -91,11 +97,13 @@ The injected script coordinates multiple specialized utilities in sequence:
    - Generates semantic node names from HTML structure
 
 2. **ComponentDetector** ([component-detector.ts](chrome-extension/src/utils/component-detector.ts)):
+
    - Detects repeated UI patterns (buttons, cards, inputs)
    - Groups similar elements into component definitions
    - Identifies component instances for Figma component system
 
 3. **StateCapturer** ([state-capturer.ts](chrome-extension/src/utils/state-capturer.ts)):
+
    - Captures interactive states (hover, focus, active, disabled)
    - Programmatically triggers pseudo-states and re-extracts styles
    - Stores state variations for variant generation
@@ -114,11 +122,13 @@ The handoff server ([handoff-server.js](handoff-server.js)) is an Express server
 - Logs all queue events for debugging
 
 **Start the server before testing the full workflow:**
+
 ```bash
 npm run handoff-server
 ```
 
 **Remote `/capture` endpoint prerequisites**
+
 - Build the injected extractor once via `cd chrome-extension && npm run build` so that `chrome-extension/dist/injected-script.js` exists (the server loads this file into Puppeteer).
 - Ensure Puppeteer can launch Chromium. The default install downloads a bundled Chromium; alternatively set `PUPPETEER_EXECUTABLE_PATH` to a local Chrome/Chromium binary if downloads are blocked.
 - The headless capture has a 90 s timeout and requires normal network access to the target URL.
@@ -132,12 +142,14 @@ For headless capture and testing, several Puppeteer scripts are available:
 - Other `puppeteer-*.js` scripts: Various workflow variations
 
 These scripts:
+
 - Launch headless Chromium
 - Navigate to target URLs
 - Execute the same DOM extraction logic as the extension
 - Post results directly to the handoff server
 
 **Usage:**
+
 ```bash
 npm run capture  # Uses puppeteer-auto-import.js
 # OR
@@ -162,6 +174,7 @@ The central data contract between extension and plugin is `WebToFigmaSchema` ([t
 ```
 
 **ElementNode** is the core building block:
+
 - Contains Figma-compatible properties (layout, fills, strokes, effects, corner radius)
 - Includes `autoLayout` data for Figma Auto Layout conversion
 - Preserves HTML metadata (tag, classes, selectors) for reference
@@ -186,6 +199,7 @@ The plugin ([figma-plugin/src/code.ts](figma-plugin/src/code.ts)) reconstructs F
 4. **Auto-Import**: Plugin UI polls handoff server and automatically imports when new data arrives
 
 **Key modules:**
+
 - [node-builder.ts](figma-plugin/src/node-builder.ts): Core Figma node creation logic
 - [style-manager.ts](figma-plugin/src/style-manager.ts): Creates reusable Figma color/text styles
 - [component-manager.ts](figma-plugin/src/component-manager.ts): Converts component definitions to Figma components
@@ -197,6 +211,7 @@ The plugin ([figma-plugin/src/code.ts](figma-plugin/src/code.ts)) reconstructs F
 ### Auto Layout Conversion
 
 The extension analyzes CSS Flexbox/Grid properties and converts them to Figma Auto Layout:
+
 - `display: flex` → `layoutMode: HORIZONTAL | VERTICAL`
 - `justify-content` → `primaryAxisAlignItems`
 - `align-items` → `counterAxisAlignItems`
@@ -206,6 +221,7 @@ The extension analyzes CSS Flexbox/Grid properties and converts them to Figma Au
 ### Asset Handling
 
 Images and SVGs are:
+
 - Extracted with unique content-based hashes
 - Stored as base64 in the JSON (for images)
 - Stored as raw SVG code (for vectors)
@@ -215,6 +231,7 @@ Images and SVGs are:
 ### Style Deduplication
 
 The `StyleRegistry` tracks:
+
 - **Colors**: RGBA values with usage counts (for creating Figma color styles)
 - **Text Styles**: Font family, weight, size, line height, letter spacing
 - **Effects**: Drop shadows, inner shadows, blurs
@@ -224,6 +241,7 @@ Styles used frequently are converted to reusable Figma styles.
 ### Component Detection Algorithm
 
 The ComponentDetector identifies components by:
+
 1. Analyzing DOM structure similarity (same tag, classes, attributes)
 2. Calculating visual similarity scores
 3. Grouping elements with high similarity as component instances
@@ -232,6 +250,7 @@ The ComponentDetector identifies components by:
 ### Yoga Layout Integration
 
 For accurate flex layout positioning:
+
 - [server/yoga-processor.js](server/yoga-processor.js) uses Facebook's Yoga layout engine
 - Computes Auto Layout positions to mirror CSS flexbox inside Figma
 - Optional - included in schema as `yogaLayout` field
@@ -239,12 +258,14 @@ For accurate flex layout positioning:
 ### Build Output Structure
 
 Chrome Extension builds to `chrome-extension/dist/`:
+
 - `background.js` - Service worker
 - `content-script.js` - Content script
 - `injected-script.js` - Page context script
 - `popup/` - Popup UI files
 
 Figma Plugin compiles to `figma-plugin/dist/`:
+
 - `code.js` - Main plugin code
 - `ui.js` - Plugin UI (not currently used, auto-import is handled via polling)
 
@@ -253,25 +274,31 @@ Figma Plugin compiles to `figma-plugin/dist/`:
 ### Full End-to-End Testing
 
 1. **Start the handoff server:**
+
    ```bash
    npm run handoff-server
    ```
 
 2. **Build and load the Chrome extension:**
+
    ```bash
    cd chrome-extension
    npm run watch  # Keep running in watch mode
    ```
+
    Then load the unpacked extension from `chrome-extension/` in chrome://extensions/
 
 3. **Build and load the Figma plugin:**
+
    ```bash
    cd figma-plugin
    npm run watch  # Keep running in watch mode
    ```
+
    Then load the plugin in Figma Desktop
 
 4. **Capture a page:**
+
    - Navigate to any web page (must be non-restricted URL)
    - Click extension icon → "Capture Page"
    - Wait for completion - handoff LED should turn green
@@ -284,6 +311,7 @@ Figma Plugin compiles to `figma-plugin/dist/`:
 ### Headless Testing
 
 Instead of steps 4-5 above, use Puppeteer:
+
 ```bash
 npm run capture
 # OR

@@ -1,0 +1,447 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CSS Grid Layout Tests</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 20px;
+            background-color: #f0f0f0;
+        }
+
+        .test-section {
+            margin-bottom: 40px;
+            padding: 20px;
+            background: white;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+
+        .test-title {
+            font-size: 18px;
+            font-weight: bold;
+            margin-bottom: 10px;
+            color: #333;
+        }
+
+        .test-description {
+            font-size: 14px;
+            margin-bottom: 15px;
+            color: #666;
+        }
+
+        .grid-container {
+            border: 2px solid #333;
+            background-color: #e8f4fd;
+            min-height: 200px;
+        }
+
+        .grid-item {
+            background-color: #ff6b6b;
+            color: white;
+            padding: 10px;
+            text-align: center;
+            font-weight: bold;
+            border: 1px solid #333;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        /* Test 1: Simple 3x3 Grid with Equal Columns */
+        .grid-simple {
+            display: grid;
+            grid-template-columns: 1fr 1fr 1fr;
+            grid-template-rows: 100px 100px 100px;
+            gap: 10px;
+            padding: 10px;
+        }
+
+        /* Test 2: Grid with Mixed Units (fr, px, %) */
+        .grid-mixed-units {
+            display: grid;
+            grid-template-columns: 100px 2fr 1fr 50px;
+            grid-template-rows: 80px 1fr 60px;
+            column-gap: 15px;
+            row-gap: 20px;
+            padding: 15px;
+        }
+
+        /* Test 3: Grid with minmax() and repeat() */
+        .grid-minmax {
+            display: grid;
+            grid-template-columns: repeat(3, minmax(100px, 1fr));
+            grid-template-rows: minmax(50px, auto) 1fr minmax(40px, 80px);
+            gap: 12px;
+            padding: 12px;
+        }
+
+        /* Test 4: Grid Template Areas */
+        .grid-areas {
+            display: grid;
+            grid-template-columns: 1fr 2fr 1fr;
+            grid-template-rows: auto 1fr auto;
+            grid-template-areas:
+                "header header header"
+                "sidebar content aside"
+                "footer footer footer";
+            gap: 15px;
+            padding: 15px;
+            min-height: 300px;
+        }
+
+        .grid-areas .header { grid-area: header; background-color: #4ecdc4; }
+        .grid-areas .sidebar { grid-area: sidebar; background-color: #45b7d1; }
+        .grid-areas .content { grid-area: content; background-color: #96ceb4; }
+        .grid-areas .aside { grid-area: aside; background-color: #ffeaa7; }
+        .grid-areas .footer { grid-area: footer; background-color: #dda0dd; }
+
+        /* Test 5: Complex Grid with Spanning Items */
+        .grid-spanning {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            grid-template-rows: repeat(3, 100px);
+            gap: 10px;
+            padding: 10px;
+        }
+
+        .grid-spanning .item-span-2 { 
+            grid-column: span 2; 
+            background-color: #3742fa; 
+        }
+        .grid-spanning .item-span-row { 
+            grid-row: span 2; 
+            background-color: #2ed573; 
+        }
+        .grid-spanning .item-positioned { 
+            grid-column: 2 / 4; 
+            grid-row: 2 / 3; 
+            background-color: #ff5722; 
+        }
+
+        /* Test 6: Dense Grid with Auto-flow */
+        .grid-dense {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(80px, 1fr));
+            grid-auto-rows: 60px;
+            grid-auto-flow: row dense;
+            gap: 8px;
+            padding: 10px;
+        }
+
+        .grid-dense .big-item { 
+            grid-column: span 2; 
+            grid-row: span 2; 
+            background-color: #ff6b35; 
+        }
+
+        /* Test 7: Grid with Different Alignments */
+        .grid-alignment {
+            display: grid;
+            grid-template-columns: 1fr 1fr 1fr;
+            grid-template-rows: 120px 120px;
+            gap: 15px;
+            padding: 20px;
+            justify-content: space-between;
+            align-content: center;
+            justify-items: center;
+            align-items: stretch;
+        }
+
+        .grid-alignment .item-start { justify-self: start; background-color: #e17055; }
+        .grid-alignment .item-center { justify-self: center; background-color: #6c5ce7; }
+        .grid-alignment .item-end { justify-self: end; background-color: #a29bfe; }
+
+        /* Test 8: Responsive Grid */
+        .grid-responsive {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+            grid-auto-rows: 100px;
+            gap: 10px;
+            padding: 10px;
+        }
+
+        /* Test 9: Nested Grids */
+        .grid-nested {
+            display: grid;
+            grid-template-columns: 1fr 2fr;
+            grid-template-rows: 1fr 1fr;
+            gap: 15px;
+            padding: 15px;
+            min-height: 250px;
+        }
+
+        .grid-nested .nested-inner {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 5px;
+            background-color: #74b9ff;
+            padding: 10px;
+        }
+
+        .grid-nested .nested-item {
+            background-color: #0984e3;
+            min-height: 40px;
+        }
+
+        /* Test 10: Grid with Overlapping Items */
+        .grid-overlap {
+            display: grid;
+            grid-template-columns: repeat(3, 100px);
+            grid-template-rows: repeat(3, 80px);
+            gap: 5px;
+            padding: 10px;
+        }
+
+        .grid-overlap .overlap-1 {
+            grid-column: 1 / 3;
+            grid-row: 1 / 3;
+            background-color: rgba(255, 107, 107, 0.8);
+            z-index: 1;
+        }
+
+        .grid-overlap .overlap-2 {
+            grid-column: 2 / 4;
+            grid-row: 2 / 4;
+            background-color: rgba(116, 185, 255, 0.8);
+            z-index: 2;
+        }
+    </style>
+</head>
+<body>
+    <h1>CSS Grid Layout Conversion Tests</h1>
+    <p>These test cases demonstrate various CSS Grid features that should be converted to Figma Auto Layout structures.</p>
+
+    <div class="test-section">
+        <div class="test-title">Test 1: Simple 3x3 Grid with Equal Columns (1fr each)</div>
+        <div class="test-description">
+            Strategy: nested-auto-layout | Features: equal fr units, uniform structure
+        </div>
+        <div class="grid-container grid-simple">
+            <div class="grid-item">Item 1</div>
+            <div class="grid-item">Item 2</div>
+            <div class="grid-item">Item 3</div>
+            <div class="grid-item">Item 4</div>
+            <div class="grid-item">Item 5</div>
+            <div class="grid-item">Item 6</div>
+            <div class="grid-item">Item 7</div>
+            <div class="grid-item">Item 8</div>
+            <div class="grid-item">Item 9</div>
+        </div>
+    </div>
+
+    <div class="test-section">
+        <div class="test-title">Test 2: Mixed Units (px, fr, %)</div>
+        <div class="test-description">
+            Strategy: nested-auto-layout | Features: px + fr units, different gaps
+        </div>
+        <div class="grid-container grid-mixed-units">
+            <div class="grid-item">100px</div>
+            <div class="grid-item">2fr</div>
+            <div class="grid-item">1fr</div>
+            <div class="grid-item">50px</div>
+            <div class="grid-item">Col 1</div>
+            <div class="grid-item">Col 2</div>
+            <div class="grid-item">Col 3</div>
+            <div class="grid-item">Col 4</div>
+            <div class="grid-item">Bottom</div>
+            <div class="grid-item">Row</div>
+            <div class="grid-item">Items</div>
+            <div class="grid-item">End</div>
+        </div>
+    </div>
+
+    <div class="test-section">
+        <div class="test-title">Test 3: minmax() and repeat() Functions</div>
+        <div class="test-description">
+            Strategy: nested-auto-layout | Features: minmax(), repeat(), complex track sizing
+        </div>
+        <div class="grid-container grid-minmax">
+            <div class="grid-item">Min 100px</div>
+            <div class="grid-item">Max 1fr</div>
+            <div class="grid-item">Flexible</div>
+            <div class="grid-item">Auto Size</div>
+            <div class="grid-item">Middle</div>
+            <div class="grid-item">Content</div>
+            <div class="grid-item">Min 40px</div>
+            <div class="grid-item">Max 80px</div>
+            <div class="grid-item">Bottom</div>
+        </div>
+    </div>
+
+    <div class="test-section">
+        <div class="test-title">Test 4: Grid Template Areas</div>
+        <div class="test-description">
+            Strategy: absolute-positioning | Features: named grid areas, semantic layout
+        </div>
+        <div class="grid-container grid-areas">
+            <div class="grid-item header">Header Area</div>
+            <div class="grid-item sidebar">Sidebar</div>
+            <div class="grid-item content">Main Content Area</div>
+            <div class="grid-item aside">Aside</div>
+            <div class="grid-item footer">Footer Area</div>
+        </div>
+    </div>
+
+    <div class="test-section">
+        <div class="test-title">Test 5: Complex Grid with Spanning Items</div>
+        <div class="test-description">
+            Strategy: hybrid | Features: grid-column/row span, positioned items
+        </div>
+        <div class="grid-container grid-spanning">
+            <div class="grid-item">Item 1</div>
+            <div class="grid-item item-span-2">Spans 2 Columns</div>
+            <div class="grid-item">Item 3</div>
+            <div class="grid-item item-span-row">Spans 2 Rows</div>
+            <div class="grid-item item-positioned">Positioned Item</div>
+            <div class="grid-item">Item 6</div>
+            <div class="grid-item">Item 7</div>
+            <div class="grid-item">Item 8</div>
+        </div>
+    </div>
+
+    <div class="test-section">
+        <div class="test-title">Test 6: Dense Auto-flow Grid</div>
+        <div class="test-description">
+            Strategy: hybrid | Features: auto-fill, auto-flow dense, variable item sizes
+        </div>
+        <div class="grid-container grid-dense">
+            <div class="grid-item">1</div>
+            <div class="grid-item big-item">Big Item</div>
+            <div class="grid-item">3</div>
+            <div class="grid-item">4</div>
+            <div class="grid-item">5</div>
+            <div class="grid-item">6</div>
+            <div class="grid-item">7</div>
+            <div class="grid-item">8</div>
+            <div class="grid-item">9</div>
+            <div class="grid-item">10</div>
+        </div>
+    </div>
+
+    <div class="test-section">
+        <div class="test-title">Test 7: Grid Alignment Properties</div>
+        <div class="test-description">
+            Strategy: nested-auto-layout | Features: justify-content, align-items, item self-alignment
+        </div>
+        <div class="grid-container grid-alignment">
+            <div class="grid-item item-start">Start</div>
+            <div class="grid-item item-center">Center</div>
+            <div class="grid-item item-end">End</div>
+            <div class="grid-item">Stretch</div>
+            <div class="grid-item">Normal</div>
+            <div class="grid-item">Item</div>
+        </div>
+    </div>
+
+    <div class="test-section">
+        <div class="test-title">Test 8: Responsive Auto-fit Grid</div>
+        <div class="test-description">
+            Strategy: nested-auto-layout | Features: auto-fit, responsive columns
+        </div>
+        <div class="grid-container grid-responsive">
+            <div class="grid-item">Responsive 1</div>
+            <div class="grid-item">Responsive 2</div>
+            <div class="grid-item">Responsive 3</div>
+            <div class="grid-item">Responsive 4</div>
+            <div class="grid-item">Responsive 5</div>
+            <div class="grid-item">Responsive 6</div>
+        </div>
+    </div>
+
+    <div class="test-section">
+        <div class="test-title">Test 9: Nested Grids</div>
+        <div class="test-description">
+            Strategy: nested-auto-layout | Features: grid within grid, multiple layout levels
+        </div>
+        <div class="grid-container grid-nested">
+            <div class="grid-item">Simple Item</div>
+            <div class="nested-inner">
+                <div class="grid-item nested-item">Nested 1</div>
+                <div class="grid-item nested-item">Nested 2</div>
+                <div class="grid-item nested-item">Nested 3</div>
+                <div class="grid-item nested-item">Nested 4</div>
+            </div>
+            <div class="grid-item">Another Item</div>
+            <div class="grid-item">Last Item</div>
+        </div>
+    </div>
+
+    <div class="test-section">
+        <div class="test-title">Test 10: Overlapping Grid Items</div>
+        <div class="test-description">
+            Strategy: absolute-positioning | Features: overlapping items, z-index, complex positioning
+        </div>
+        <div class="grid-container grid-overlap">
+            <div class="grid-item">Item 1</div>
+            <div class="grid-item">Item 2</div>
+            <div class="grid-item">Item 3</div>
+            <div class="grid-item overlap-1">Overlap 1</div>
+            <div class="grid-item overlap-2">Overlap 2</div>
+            <div class="grid-item">Item 6</div>
+        </div>
+    </div>
+
+    <script>
+        // Test script to analyze grid properties
+        function analyzeGrids() {
+            const grids = document.querySelectorAll('[class*="grid-"]');
+            console.log('=== Grid Layout Analysis ===');
+            
+            grids.forEach((grid, index) => {
+                if (grid.classList.contains('grid-container')) {
+                    const styles = window.getComputedStyle(grid);
+                    console.log(`Grid ${index + 1}:`, {
+                        className: grid.className,
+                        display: styles.display,
+                        gridTemplateColumns: styles.gridTemplateColumns,
+                        gridTemplateRows: styles.gridTemplateRows,
+                        gridTemplateAreas: styles.gridTemplateAreas,
+                        gap: styles.gap,
+                        columnGap: styles.columnGap,
+                        rowGap: styles.rowGap,
+                        gridAutoFlow: styles.gridAutoFlow,
+                        justifyContent: styles.justifyContent,
+                        alignContent: styles.alignContent,
+                        justifyItems: styles.justifyItems,
+                        alignItems: styles.alignItems
+                    });
+                }
+            });
+        }
+
+        // Run analysis on page load
+        window.addEventListener('load', () => {
+            setTimeout(analyzeGrids, 1000);
+        });
+    </script>
+
+    <div style="margin-top: 40px; padding: 20px; background: #f8f9fa; border-radius: 8px;">
+        <h3>Testing Instructions:</h3>
+        <ol>
+            <li><strong>Load this page in a browser</strong> with the enhanced chrome extension</li>
+            <li><strong>Capture the page</strong> using the extension's capture functionality</li>
+            <li><strong>Import into Figma</strong> via the plugin to test grid conversion</li>
+            <li><strong>Verify conversions</strong>:
+                <ul>
+                    <li>Simple grids → nested Auto Layout frames</li>
+                    <li>Complex grids → absolute positioning or hybrid approach</li>
+                    <li>Grid annotations appear in node names and plugin data</li>
+                    <li>fr units converted to proper flex-grow values</li>
+                    <li>minmax() functions simplified to computed values</li>
+                </ul>
+            </li>
+            <li><strong>Check console logs</strong> for grid conversion details</li>
+        </ol>
+
+        <h3>Expected Results:</h3>
+        <ul>
+            <li><strong>Tests 1, 2, 3, 7, 8, 9:</strong> Nested Auto Layout (good conversion)</li>
+            <li><strong>Tests 4, 10:</strong> Absolute positioning (complex features)</li>
+            <li><strong>Tests 5, 6:</strong> Hybrid approach (mixed complexity)</li>
+        </ul>
+    </div>
+</body>
+</html>

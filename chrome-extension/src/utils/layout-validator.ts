@@ -3,30 +3,15 @@
  * Detects common issues that would cause incorrect Figma rendering
  */
 
-import { ElementNode, WebToFigmaSchema } from '../types/schema';
-
-export interface ValidationIssue {
-  severity: 'error' | 'warning' | 'info';
-  type: 'positioning' | 'sizing' | 'layout' | 'structure';
-  nodeId: string;
-  nodeName: string;
-  message: string;
-  suggestion?: string;
-}
-
-export interface ValidationReport {
-  valid: boolean;
-  totalNodes: number;
-  issuesCount: number;
-  issues: ValidationIssue[];
-  stats: {
-    zeroSizeNodes: number;
-    offScreenNodes: number;
-    overlappingNodes: number;
-    missingLayoutNodes: number;
-    negativePositions: number;
-  };
-}
+import { 
+  ElementNode, 
+  WebToFigmaSchema, 
+  ValidationIssue, 
+  ValidationReport, 
+  PositionAccuracy, 
+  TransformValidation, 
+  ValidationThresholds 
+} from '../types/schema';
 
 export class LayoutValidator {
   private issues: ValidationIssue[] = [];
@@ -35,15 +20,38 @@ export class LayoutValidator {
     offScreenNodes: 0,
     overlappingNodes: 0,
     missingLayoutNodes: 0,
-    negativePositions: 0
+    negativePositions: 0,
+    inaccuratePositions: 0,
+    degenerateTransforms: 0,
+    unsupported3DTransforms: 0,
+    layoutStructureIssues: 0
   };
   private totalNodes = 0;
   private viewportWidth: number;
   private viewportHeight: number;
+  private thresholds: ValidationThresholds;
+  private accuracyMetrics = {
+    totalDeltaX: 0,
+    totalDeltaY: 0,
+    totalConfidence: 0,
+    worstDelta: 0,
+    coordinateSystemsUsed: new Set<string>()
+  };
 
-  constructor(viewportWidth: number, viewportHeight: number) {
+  constructor(
+    viewportWidth: number, 
+    viewportHeight: number,
+    thresholds: Partial<ValidationThresholds> = {}
+  ) {
     this.viewportWidth = viewportWidth;
     this.viewportHeight = viewportHeight;
+    this.thresholds = {
+      positionTolerance: 1.0, // 1 pixel tolerance
+      sizeTolerance: 1.0,
+      confidenceThreshold: 0.8,
+      transformDeterminantThreshold: 0.001,
+      ...thresholds
+    };
   }
 
   /**
@@ -56,9 +64,20 @@ export class LayoutValidator {
       offScreenNodes: 0,
       overlappingNodes: 0,
       missingLayoutNodes: 0,
-      negativePositions: 0
+      negativePositions: 0,
+      inaccuratePositions: 0,
+      degenerateTransforms: 0,
+      unsupported3DTransforms: 0,
+      layoutStructureIssues: 0
     };
     this.totalNodes = 0;
+    this.accuracyMetrics = {
+      totalDeltaX: 0,
+      totalDeltaY: 0,
+      totalConfidence: 0,
+      worstDelta: 0,
+      coordinateSystemsUsed: new Set<string>()
+    };
 
     // Validate the tree
     this.validateNode(schema.tree);
@@ -66,12 +85,28 @@ export class LayoutValidator {
     // Check for overlapping siblings at each level
     this.checkOverlappingSiblings(schema.tree);
 
+    // Calculate accuracy metrics
+    const avgPositionAccuracy = this.totalNodes > 0 
+      ? Math.sqrt((this.accuracyMetrics.totalDeltaX ** 2 + this.accuracyMetrics.totalDeltaY ** 2) / this.totalNodes)
+      : 0;
+    
+    const avgConfidence = this.totalNodes > 0
+      ? this.accuracyMetrics.totalConfidence / this.totalNodes
+      : 1;
+
     return {
       valid: this.issues.filter(i => i.severity === 'error').length === 0,
       totalNodes: this.totalNodes,
       issuesCount: this.issues.length,
       issues: this.issues,
-      stats: this.stats
+      stats: this.stats,
+      accuracyMetrics: {
+        averagePositionAccuracy: avgPositionAccuracy,
+        worstPositionDelta: this.accuracyMetrics.worstDelta,
+        averageConfidence: avgConfidence,
+        coordinateSystemsUsed: Array.from(this.accuracyMetrics.coordinateSystemsUsed)
+      },
+      thresholds: this.thresholds
     };
   }
 
@@ -151,14 +186,18 @@ export class LayoutValidator {
       });
     }
 
+    // Validate coordinate accuracy if multiple coordinate systems are available
+    this.validateCoordinateAccuracy(node);
+
+    // Validate transforms if present
+    this.validateTransforms(node);
+
+    // Validate layout structure decisions
+    this.validateLayoutStructure(node);
+
     // Validate Auto Layout if present
     if (node.autoLayout) {
       this.validateAutoLayout(node);
-    }
-
-    // Validate Grid Layout if present
-    if (node.gridLayout) {
-      this.validateGridLayout(node);
     }
 
     // Recursively validate children
@@ -316,6 +355,270 @@ export class LayoutValidator {
   }
 
   /**
+   * Validate coordinate accuracy using multiple coordinate systems
+   */
+  private validateCoordinateAccuracy(node: ElementNode): PositionAccuracy | null {
+    // Only validate if we have multiple coordinate systems available
+    if (!node.viewportLayout || !node.absoluteLayout || !node.layout) {
+      return null;
+    }
+
+    const scrollX = (typeof window !== 'undefined' ? window.pageXOffset || window.scrollX : 0) || 0;
+    const scrollY = (typeof window !== 'undefined' ? window.pageYOffset || window.scrollY : 0) || 0;
+
+    // Calculate expected absolute position from viewport position + scroll
+    const expectedAbsoluteX = node.viewportLayout.left + scrollX;
+    const expectedAbsoluteY = node.viewportLayout.top + scrollY;
+
+    // Calculate deltas between coordinate systems
+    const deltaX = Math.abs(node.absoluteLayout.left - expectedAbsoluteX);
+    const deltaY = Math.abs(node.absoluteLayout.top - expectedAbsoluteY);
+
+    // Calculate confidence based on how close the coordinates match
+    const maxDelta = Math.max(deltaX, deltaY);
+    const confidence = Math.max(0, 1 - (maxDelta / this.thresholds.positionTolerance));
+
+    const accuracy: PositionAccuracy = {
+      isAccurate: deltaX <= this.thresholds.positionTolerance && deltaY <= this.thresholds.positionTolerance,
+      deltaX,
+      deltaY,
+      confidence,
+      coordinateSystem: 'dual-coordinate',
+      validationMethod: 'scroll-adjusted'
+    };
+
+    // Track metrics
+    this.accuracyMetrics.totalDeltaX += deltaX;
+    this.accuracyMetrics.totalDeltaY += deltaY;
+    this.accuracyMetrics.totalConfidence += confidence;
+    this.accuracyMetrics.worstDelta = Math.max(this.accuracyMetrics.worstDelta, maxDelta);
+    this.accuracyMetrics.coordinateSystemsUsed.add('dual-coordinate');
+
+    // Report issues if accuracy is poor
+    if (!accuracy.isAccurate) {
+      this.stats.inaccuratePositions++;
+      
+      const severity = maxDelta > this.thresholds.positionTolerance * 5 ? 'warning' : 'info';
+      
+      this.issues.push({
+        severity,
+        type: 'coordinate-accuracy',
+        nodeId: node.id,
+        nodeName: node.name,
+        message: `Coordinate accuracy issue: ${maxDelta.toFixed(2)}px delta between coordinate systems`,
+        suggestion: 'This may indicate transform or positioning calculation errors',
+        accuracy,
+        delta: { x: deltaX, y: deltaY },
+        confidence: confidence
+      });
+    }
+
+    // Warn about very low confidence even if within tolerance
+    if (confidence < this.thresholds.confidenceThreshold) {
+      this.issues.push({
+        severity: 'info',
+        type: 'coordinate-accuracy',
+        nodeId: node.id,
+        nodeName: node.name,
+        message: `Low positioning confidence: ${(confidence * 100).toFixed(1)}%`,
+        suggestion: 'Position may not be accurately represented in Figma',
+        accuracy,
+        confidence: confidence
+      });
+    }
+
+    return accuracy;
+  }
+
+  /**
+   * Validate CSS transforms and detect degenerate transforms
+   */
+  private validateTransforms(node: ElementNode): TransformValidation | null {
+    // Check if node has transform data
+    if (!node.transform) {
+      return null;
+    }
+
+    const warnings: string[] = [];
+    let isDegenerate = false;
+    let hasUnsupported3D = false;
+    let determinant = 1;
+
+    // Validate transform matrix if present (Transform2D is [[number, number, number], [number, number, number]])
+    if (node.transform && Array.isArray(node.transform) && node.transform.length === 2) {
+      const [[a, c, tx], [b, d, ty]] = node.transform;
+      
+      // Calculate determinant (ad - bc)
+      determinant = a * d - b * c;
+      
+      // Check for degenerate transform (determinant near zero)
+      if (Math.abs(determinant) < this.thresholds.transformDeterminantThreshold) {
+        isDegenerate = true;
+        this.stats.degenerateTransforms++;
+        warnings.push('Transform matrix is degenerate (determinant ≈ 0)');
+      }
+
+      // Check for extreme scaling
+      const scaleX = Math.sqrt(a * a + b * b);
+      const scaleY = Math.sqrt(c * c + d * d);
+      
+      if (scaleX < 0.01 || scaleY < 0.01) {
+        warnings.push('Extreme scaling detected that may cause rendering issues');
+      }
+      
+      if (scaleX > 100 || scaleY > 100) {
+        warnings.push('Very large scaling detected that may cause performance issues');
+      }
+    }
+
+    // For now, we can't easily detect 3D transforms from the Transform2D matrix
+    // 3D transform detection would require access to the original CSS transform functions
+    // This is a limitation we'll note but won't error on
+    hasUnsupported3D = false;
+
+    const validation: TransformValidation = {
+      isValid: !isDegenerate && warnings.length === 0,
+      isDegenerate,
+      hasUnsupported3D,
+      determinant,
+      warnings
+    };
+
+    // Report transform issues
+    if (isDegenerate) {
+      this.issues.push({
+        severity: 'warning',
+        type: 'transform',
+        nodeId: node.id,
+        nodeName: node.name,
+        message: 'Degenerate transform matrix detected',
+        suggestion: 'This element may not render correctly in Figma due to invalid transform'
+      });
+    }
+
+    if (hasUnsupported3D) {
+      this.issues.push({
+        severity: 'info',
+        type: 'transform',
+        nodeId: node.id,
+        nodeName: node.name,
+        message: '3D transform properties detected',
+        suggestion: '3D transforms will be flattened to 2D in Figma'
+      });
+    }
+
+    return validation;
+  }
+
+  /**
+   * Validate layout structure decisions (Auto Layout vs absolute positioning)
+   */
+  private validateLayoutStructure(node: ElementNode): void {
+    if (!node.children || node.children.length === 0) {
+      return;
+    }
+
+    const hasAutoLayout = node.autoLayout && node.autoLayout.layoutMode !== 'NONE';
+    
+    // Check if this should be Auto Layout but isn't
+    if (!hasAutoLayout && node.children.length >= 2) {
+      const childrenWithLayout = node.children.filter(child => child.layout);
+      
+      if (childrenWithLayout.length >= 2) {
+        // Check if children are arranged in a row or column
+        const isLinearArrangement = this.detectLinearArrangement(childrenWithLayout);
+        
+        if (isLinearArrangement.isLinear && isLinearArrangement.confidence > 0.8) {
+          this.stats.layoutStructureIssues++;
+          
+          this.issues.push({
+            severity: 'info',
+            type: 'structure',
+            nodeId: node.id,
+            nodeName: node.name,
+            message: `Children appear to be arranged ${isLinearArrangement.direction} but Auto Layout is not used`,
+            suggestion: 'Consider using Auto Layout for more maintainable designs in Figma',
+            confidence: isLinearArrangement.confidence
+          });
+        }
+      }
+    }
+
+    // Check for overlapping elements that might indicate z-index layering
+    if (hasAutoLayout && node.hasOverlappingElements) {
+      this.issues.push({
+        severity: 'warning',
+        type: 'structure',
+        nodeId: node.id,
+        nodeName: node.name,
+        message: 'Auto Layout container has overlapping elements',
+        suggestion: 'Overlapping elements in Auto Layout may not render as expected'
+      });
+    }
+  }
+
+  /**
+   * Detect if children are arranged in a linear pattern
+   */
+  private detectLinearArrangement(children: ElementNode[]): {
+    isLinear: boolean;
+    direction: 'horizontally' | 'vertically';
+    confidence: number;
+  } {
+    if (children.length < 2) {
+      return { isLinear: false, direction: 'horizontally', confidence: 0 };
+    }
+
+    // Sort children by position
+    const sortedByX = [...children].sort((a, b) => a.layout!.x - b.layout!.x);
+    const sortedByY = [...children].sort((a, b) => a.layout!.y - b.layout!.y);
+
+    // Check horizontal alignment
+    const horizontalAligned = this.checkAlignment(sortedByX, 'horizontal');
+    const verticalAligned = this.checkAlignment(sortedByY, 'vertical');
+
+    if (horizontalAligned.confidence > verticalAligned.confidence) {
+      return {
+        isLinear: horizontalAligned.confidence > 0.7,
+        direction: 'horizontally',
+        confidence: horizontalAligned.confidence
+      };
+    } else {
+      return {
+        isLinear: verticalAligned.confidence > 0.7,
+        direction: 'vertically',
+        confidence: verticalAligned.confidence
+      };
+    }
+  }
+
+  /**
+   * Check if elements are aligned in a direction
+   */
+  private checkAlignment(elements: ElementNode[], direction: 'horizontal' | 'vertical'): {
+    confidence: number;
+  } {
+    if (elements.length < 2) {
+      return { confidence: 0 };
+    }
+
+    const positions = elements.map(el => 
+      direction === 'horizontal' ? el.layout!.y : el.layout!.x
+    );
+
+    // Calculate variance in the perpendicular direction
+    const mean = positions.reduce((sum, pos) => sum + pos, 0) / positions.length;
+    const variance = positions.reduce((sum, pos) => sum + Math.pow(pos - mean, 2), 0) / positions.length;
+    const standardDeviation = Math.sqrt(variance);
+
+    // Lower standard deviation = better alignment
+    // Convert to confidence score (0-1)
+    const confidence = Math.max(0, 1 - (standardDeviation / 50)); // 50px tolerance
+
+    return { confidence };
+  }
+
+  /**
    * Generate a summary report string
    */
   static generateSummary(report: ValidationReport): string {
@@ -336,10 +639,23 @@ export class LayoutValidator {
       if (info > 0) lines.push(`ℹ️ Info: ${info}`);
     }
 
-    if (report.stats.zeroSizeNodes > 0 || report.stats.offScreenNodes > 0 ||
-        report.stats.overlappingNodes > 0 || report.stats.negativePositions > 0) {
+    // Add accuracy metrics
+    if (report.accuracyMetrics) {
       lines.push('');
-      lines.push('Statistics:');
+      lines.push('Positioning Accuracy:');
+      lines.push(`  • Average accuracy: ${report.accuracyMetrics.averagePositionAccuracy.toFixed(2)}px`);
+      lines.push(`  • Worst position delta: ${report.accuracyMetrics.worstPositionDelta.toFixed(2)}px`);
+      lines.push(`  • Average confidence: ${(report.accuracyMetrics.averageConfidence * 100).toFixed(1)}%`);
+      if (report.accuracyMetrics.coordinateSystemsUsed.length > 0) {
+        lines.push(`  • Coordinate systems: ${report.accuracyMetrics.coordinateSystemsUsed.join(', ')}`);
+      }
+    }
+
+    // Add detailed statistics
+    const hasAnyStats = Object.values(report.stats).some(value => value > 0);
+    if (hasAnyStats) {
+      lines.push('');
+      lines.push('Issue Statistics:');
       if (report.stats.zeroSizeNodes > 0) {
         lines.push(`  • Zero-size nodes: ${report.stats.zeroSizeNodes}`);
       }
@@ -351,6 +667,18 @@ export class LayoutValidator {
       }
       if (report.stats.negativePositions > 0) {
         lines.push(`  • Negative positions: ${report.stats.negativePositions}`);
+      }
+      if (report.stats.inaccuratePositions > 0) {
+        lines.push(`  • Inaccurate positions: ${report.stats.inaccuratePositions}`);
+      }
+      if (report.stats.degenerateTransforms > 0) {
+        lines.push(`  • Degenerate transforms: ${report.stats.degenerateTransforms}`);
+      }
+      if (report.stats.unsupported3DTransforms > 0) {
+        lines.push(`  • 3D transforms: ${report.stats.unsupported3DTransforms}`);
+      }
+      if (report.stats.layoutStructureIssues > 0) {
+        lines.push(`  • Layout structure issues: ${report.stats.layoutStructureIssues}`);
       }
     }
 

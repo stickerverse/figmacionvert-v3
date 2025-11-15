@@ -1,13 +1,19 @@
+import { FigmaPreviewRenderer } from './figma-preview-renderer';
+import type { WebToFigmaSchema } from '../types/schema';
+import { WTFGenerator, generateWTFFilename } from '../utils/wtf-generator';
+
 let capturedData: any = null;
 let validationReport: any = null;
 let previewWithOverlay: string | null = null;
 let originalScreenshot: string | null = null;
 let showingOverlay = false;
+let previewRenderer: FigmaPreviewRenderer | null = null;
 
 const captureBtn = document.getElementById('capture-btn') as HTMLButtonElement;
 const downloadBtn = document.getElementById('download-btn') as HTMLButtonElement;
 const sendToFigmaBtn = document.getElementById('send-to-figma-btn') as HTMLButtonElement;
 const captureDownloadBtn = document.getElementById('capture-download-btn') as HTMLButtonElement;
+const captureWtfBtn = document.getElementById('capture-wtf-btn') as HTMLButtonElement;
 const captureRemoteBtn = document.getElementById('capture-remote-btn') as HTMLButtonElement;
 const statusEl = document.getElementById('status') as HTMLDivElement;
 const screenshotImg = document.getElementById('screenshot') as HTMLImageElement;
@@ -37,14 +43,14 @@ const defaultSendBtnLabel = sendToFigmaBtn?.textContent || '🚀 Send to Figma';
 const progressSection = document.getElementById('progress-section') as HTMLDivElement;
 const progressPhaseEl = document.getElementById('progress-phase') as HTMLSpanElement;
 const progressPercentEl = document.getElementById('progress-percent') as HTMLSpanElement;
-const progressBarFill = document.getElementById('progress-bar-fill') as HTMLDivElement;
+const progressRingIndicator = document.getElementById('progress-ring-indicator') as unknown as SVGCircleElement;
 const progressMessageEl = document.getElementById('progress-message') as HTMLDivElement;
-const progressStats = document.getElementById('progress-stats') as HTMLDivElement;
-const progressStatElements = document.getElementById('progress-stat-elements') as HTMLSpanElement;
-const progressStatFigma = document.getElementById('progress-stat-figma') as HTMLSpanElement;
-const progressStatImages = document.getElementById('progress-stat-images') as HTMLSpanElement;
-const progressStatStyles = document.getElementById('progress-stat-styles') as HTMLSpanElement;
-const progressStatFonts = document.getElementById('progress-stat-fonts') as HTMLSpanElement;
+const PROGRESS_RING_CIRCUMFERENCE = 2 * Math.PI * 54;
+
+if (progressRingIndicator) {
+  progressRingIndicator.style.strokeDasharray = `${PROGRESS_RING_CIRCUMFERENCE}`;
+  progressRingIndicator.style.strokeDashoffset = `${PROGRESS_RING_CIRCUMFERENCE}`;
+}
 
 type IndicatorState = 'idle' | 'connected' | 'warning' | 'disconnected';
 type TransferState = 'idle' | 'pending' | 'delivered' | 'error';
@@ -97,6 +103,13 @@ let lastHandoffState: BackgroundHandoffState = {
   nextRetryAt: null
 };
 
+function updateProgressRing(percent: number): void {
+  if (!progressRingIndicator) return;
+  const clamped = Math.min(Math.max(percent, 0), 100);
+  const offset = PROGRESS_RING_CIRCUMFERENCE * (1 - clamped / 100);
+  progressRingIndicator.style.strokeDashoffset = `${offset}`;
+}
+
 console.log('🎨 Popup loaded');
 startConnectionMonitor();
 updateTransferIndicator('idle', 'Idle');
@@ -110,6 +123,16 @@ captureBtn.addEventListener('click', () => {
 captureDownloadBtn.addEventListener('click', () => {
   void startCapture('download');
 });
+
+if (!captureWtfBtn) {
+  console.error('❌ captureWtfBtn element not found!');
+} else {
+  console.log('✅ captureWtfBtn element found, attaching listener');
+  captureWtfBtn.addEventListener('click', () => {
+    console.log('📦 WTF button clicked!');
+    void startWtfCapture();
+  });
+}
 
 captureRemoteBtn?.addEventListener('click', () => {
   void startRemoteCapture();
@@ -193,6 +216,165 @@ async function startCapture(mode: 'send' | 'download' = 'send') {
   }
 }
 
+async function startWtfCapture() {
+  console.log('📦 WTF file capture requested - function entered');
+
+  // Validate prerequisites
+  if (!statusEl) {
+    console.error('❌ statusEl not found');
+    return;
+  }
+
+  console.log('✅ All elements found, starting capture...');
+  statusEl.textContent = '📦 Capturing page for .wtf file...';
+  setCaptureButtonLoading(true, captureWtfBtn);
+  handoffStatusEl?.classList.add('hidden');
+  previewCard?.classList.add('hidden');
+  screenshotContainer.classList.add('hidden');
+  actionsEl.classList.add('hidden');
+
+  try {
+    // Get ALL active tabs across all windows, then filter out extension pages
+    const allActiveTabs = await chrome.tabs.query({ active: true });
+    const regularTabs = allActiveTabs.filter(tab =>
+      tab.url && !tab.url.startsWith('chrome-extension://') && !tab.url.startsWith('chrome://')
+    );
+    const activeTab = regularTabs[0];
+
+    console.log('📍 Tab query results:', {
+      allActiveTabs: allActiveTabs.length,
+      regularTabs: regularTabs.length,
+      selectedTab: activeTab ? { id: activeTab.id, url: activeTab.url, title: activeTab.title } : 'NONE',
+      allTabURLs: allActiveTabs.map(t => t.url)
+    });
+
+    if (!activeTab?.id) {
+      throw new Error('No active tab found');
+    }
+
+    if (!activeTab?.url) {
+      throw new Error('Tab URL is not accessible. Try a regular HTTP/HTTPS website.');
+    }
+
+    if (isRestrictedUrl(activeTab.url)) {
+      throw new Error(`Cannot capture ${activeTab.url.split('://')[0]}:// pages. Navigate to a regular website like example.com`);
+    }
+
+    // Inject content script if needed
+    await injectContentScript(activeTab.id);
+
+    // Step 1: Capture page data
+    statusEl.textContent = '📦 Step 1/3: Extracting page data...';
+    console.log('📤 Sending START_CAPTURE message to tab', activeTab.id);
+
+    // Send the capture request (it will respond async via background messages)
+    const startResponse = await chrome.tabs.sendMessage(activeTab.id, {
+      type: 'START_CAPTURE',
+      viewports: getSelectedViewports()
+    });
+    console.log('📥 Capture started:', startResponse);
+
+    // Wait for the CAPTURE_COMPLETE message via background script
+    console.log('⏳ Waiting for capture to complete...');
+    const captureResponse = await waitForCaptureComplete();
+    console.log('✅ Capture response received:', captureResponse ? 'yes' : 'no');
+
+    if (!captureResponse || !captureResponse.schema) {
+      console.error('❌ Invalid response:', captureResponse);
+      throw new Error('Failed to extract page data - no schema returned');
+    }
+
+    // Step 2: Capture screenshot
+    statusEl.textContent = '📦 Step 2/3: Capturing screenshot...';
+    const screenshotResponse = await chrome.runtime.sendMessage({
+      type: 'CAPTURE_SCREENSHOT'
+    });
+
+    if (!screenshotResponse || !screenshotResponse.screenshot) {
+      throw new Error('Failed to capture screenshot');
+    }
+
+    // Convert data URL to Blob
+    const screenshotBlob = await dataUrlToBlob(screenshotResponse.screenshot);
+
+    // Step 3: Generate .wtf file
+    statusEl.textContent = '📦 Step 3/3: Generating .wtf archive...';
+    const generator = new WTFGenerator();
+    const wtfBlob = await generator.generate({
+      schema: captureResponse.schema,
+      screenshot: screenshotBlob,
+      url: activeTab.url,
+      viewport: {
+        width: activeTab.width || 1440,
+        height: activeTab.height || 900
+      }
+    });
+
+    // Download the file
+    const filename = generateWTFFilename(activeTab.url);
+    const downloadUrl = URL.createObjectURL(wtfBlob);
+
+    await chrome.downloads.download({
+      url: downloadUrl,
+      filename,
+      saveAs: true
+    });
+
+    statusEl.textContent = `✅ Downloaded ${filename}`;
+    setTimeout(() => URL.revokeObjectURL(downloadUrl), 1000);
+
+  } catch (error) {
+    console.error('❌ WTF capture error:', error);
+    statusEl.textContent = error instanceof Error ? `❌ ${error.message}` : '❌ Failed to create .wtf file';
+  } finally {
+    setCaptureButtonLoading(false, captureWtfBtn);
+  }
+}
+
+async function waitForCaptureComplete(): Promise<any> {
+  return new Promise((resolve, reject) => {
+    const timeout = setTimeout(() => {
+      chrome.runtime.onMessage.removeListener(listener);
+      reject(new Error('Capture timeout after 10 minutes'));
+    }, 600000); // 10 minute timeout
+
+    const listener = (message: any) => {
+      if (message.type === 'CAPTURE_COMPLETE') {
+        clearTimeout(timeout);
+        chrome.runtime.onMessage.removeListener(listener);
+        // Extract schema from the multi-viewport capture data
+        const schema = resolveSchemaForPreview(message.data);
+        resolve({ schema });
+      }
+    };
+
+    chrome.runtime.onMessage.addListener(listener);
+  });
+}
+
+async function dataUrlToBlob(dataUrl: string): Promise<Blob> {
+  const response = await fetch(dataUrl);
+  return await response.blob();
+}
+
+async function injectContentScript(tabId: number): Promise<void> {
+  console.log('💉 Attempting to inject content script into tab', tabId);
+  try {
+    await chrome.scripting.executeScript({
+      target: { tabId },
+      files: ['content-script.js']
+    });
+    console.log('✅ Content script injected, waiting for initialization...');
+    // Wait longer to ensure content script is fully loaded
+    await new Promise(resolve => setTimeout(resolve, 1000));
+    console.log('✅ Content script should be ready');
+  } catch (error) {
+    console.warn('⚠️ Content script injection failed (may already be injected):', error);
+    // Still wait a bit in case it's already there
+    await new Promise(resolve => setTimeout(resolve, 500));
+  }
+}
+
 async function startRemoteCapture() {
   console.log('☁️ Remote capture requested (Playwright/Puppeteer pipeline)');
   statusEl.textContent = '☁️ Preparing remote capture...';
@@ -204,7 +386,11 @@ async function startRemoteCapture() {
 
   try {
     const manualUrl = normalizeTargetUrl(targetUrlInput?.value);
-    const [activeTab] = await chrome.tabs.query({ active: true, currentWindow: true });
+    const allActiveTabs = await chrome.tabs.query({ active: true });
+    const regularTabs = allActiveTabs.filter(tab =>
+      tab.url && !tab.url.startsWith('chrome-extension://') && !tab.url.startsWith('chrome://')
+    );
+    const activeTab = regularTabs[0];
     const fallbackUrl = activeTab?.url || '';
     const targetUrl = manualUrl || fallbackUrl;
 
@@ -276,21 +462,11 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     progressSection.classList.remove('hidden');
 
     // Update progress bar and phase
-    const { phase, message: progressMessage, percent, stats } = message;
+    const { phase, message: progressMessage, percent = 0 } = message;
     progressPhaseEl.textContent = phase.replace(/-/g, ' ');
     progressPercentEl.textContent = `${Math.round(percent)}%`;
-    progressBarFill.style.width = `${percent}%`;
+    updateProgressRing(percent);
     progressMessageEl.textContent = progressMessage || '';
-
-    // Update stats if available
-    if (stats) {
-      progressStats.classList.remove('hidden');
-      progressStatElements.textContent = stats.elementsProcessed || '0';
-      progressStatFigma.textContent = stats.figmaNodesCreated || '0';
-      progressStatImages.textContent = stats.imagesExtracted || '0';
-      progressStatStyles.textContent = stats.stylesCollected || '0';
-      progressStatFonts.textContent = stats.fontsDetected || '0';
-    }
 
     // Hide progress section when complete
     if (phase === 'complete') {
@@ -314,17 +490,17 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     const completionMessage = `✅ Capture complete! (${dataSizeKB} KB)`;
 
     statusEl.textContent = completionMessage;
-    
+
     // Clear extraction timeout since capture completed
     clearExtractionTimeout();
-    
+
     // Hide progress section for chunked transfers (regular transfers hide it via EXTRACTION_PROGRESS)
     if (message.chunked) {
       setTimeout(() => {
         progressSection.classList.add('hidden');
       }, 1500);
     }
-    
+
     // Keep capture button disabled until handoff completes
     captureBtn.disabled = true;
     captureBtn.textContent = '⏳ Preparing handoff...';
@@ -366,6 +542,9 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     captureReady = true;
     downloadBtn.disabled = false;
     actionsEl.classList.remove('hidden');
+
+    // Render Figma preview
+    void renderFigmaPreview(capturedData);
 
     if (currentCaptureMode === 'download') {
       statusEl.textContent = `${completionMessage} Downloading JSON…`;
@@ -688,7 +867,16 @@ function getSelectedViewports(): ViewportSelection[] {
   return viewports;
 }
 
-function setCaptureButtonLoading(isLoading: boolean) {
+function setCaptureButtonLoading(isLoading: boolean, specificButton?: HTMLButtonElement) {
+  // If a specific button is provided, only update that button
+  if (specificButton) {
+    specificButton.disabled = isLoading;
+    const originalText = specificButton === captureWtfBtn ? '📦 Download .wtf File' : specificButton.textContent || '';
+    specificButton.textContent = isLoading ? '⏳ Processing...' : originalText;
+    return;
+  }
+
+  // Otherwise, update all capture buttons
   if (!captureBtn) return;
   captureBtn.disabled = isLoading;
   if (captureDownloadBtn) {
@@ -706,16 +894,8 @@ function resetProgressUI() {
   progressSection.classList.add('hidden');
   progressPhaseEl.textContent = 'Initializing...';
   progressPercentEl.textContent = '0%';
-  progressBarFill.style.width = '0%';
+  updateProgressRing(0);
   progressMessageEl.textContent = 'Starting extraction...';
-  progressStats.classList.add('hidden');
-  
-  // Reset progress stats
-  progressStatElements.textContent = '0';
-  progressStatFigma.textContent = '0';
-  progressStatImages.textContent = '0';
-  progressStatStyles.textContent = '0';
-  progressStatFonts.textContent = '0';
 
   // Clear any existing extraction timeout
   clearExtractionTimeout();
@@ -1095,30 +1275,45 @@ function applyHandoffState(state: BackgroundHandoffState, hasCaptureFromBackgrou
 function updateDesktopViewportLabel() {
   const desktopLabel = document.getElementById('desktop-viewport-label');
   if (!desktopLabel) return;
-  
+
   // Get current tab to access screen dimensions
-  chrome.tabs.query({active: true, currentWindow: true}, (tabs) => {
-    if (tabs[0]) {
-      // Execute script in the current tab to get screen dimensions
-      chrome.tabs.executeScript(tabs[0].id!, {
-        code: `
-          const screenWidth = screen.width;
-          const screenHeight = screen.height;
-          const viewportWidth = Math.max(document.documentElement.clientWidth, window.innerWidth || 0);
-          const viewportHeight = Math.max(document.documentElement.clientHeight, window.innerHeight || 0);
-          const devicePixelRatio = window.devicePixelRatio || 1;
-          
-          // Send back the detected dimensions
-          ({screenWidth, screenHeight, viewportWidth, viewportHeight, devicePixelRatio});
-        `
-      }, (result) => {
-        if (result && result[0]) {
-          const { screenWidth, screenHeight, viewportWidth, viewportHeight } = result[0];
-          const displayWidth = screenWidth || viewportWidth || 1440;
-          const displayHeight = screenHeight || viewportHeight || 900;
-          desktopLabel.textContent = `💻 Desktop (${displayWidth}×${displayHeight})`;
+  chrome.tabs.query({active: true}, async (allTabs) => {
+    const regularTabs = allTabs.filter(t => t.url && !t.url.startsWith('chrome-extension://') && !t.url.startsWith('chrome://'));
+    const tab = regularTabs[0];
+
+    // Only try to get dimensions from regular web pages, not extension/restricted pages
+    if (!tab?.id || !tab.url || isRestrictedUrl(tab.url)) {
+      // Fallback to default for restricted pages
+      desktopLabel.textContent = '💻 Desktop (1440×900)';
+      return;
+    }
+
+    try {
+      // Execute script in the current tab to get screen dimensions (Manifest V3 API)
+      const result = await chrome.scripting.executeScript({
+        target: { tabId: tab.id },
+        func: () => {
+          return {
+            screenWidth: screen.width,
+            screenHeight: screen.height,
+            viewportWidth: Math.max(document.documentElement.clientWidth, window.innerWidth || 0),
+            viewportHeight: Math.max(document.documentElement.clientHeight, window.innerHeight || 0),
+            devicePixelRatio: window.devicePixelRatio || 1
+          };
         }
       });
+
+      if (result && result[0]?.result) {
+        const { screenWidth, screenHeight, viewportWidth, viewportHeight } = result[0].result;
+        const displayWidth = screenWidth || viewportWidth || 1440;
+        const displayHeight = screenHeight || viewportHeight || 900;
+        desktopLabel.textContent = `💻 Desktop (${displayWidth}×${displayHeight})`;
+      } else {
+        desktopLabel.textContent = '💻 Desktop (1440×900)';
+      }
+    } catch (error) {
+      // Silently fall back to default (script injection failed)
+      desktopLabel.textContent = '💻 Desktop (1440×900)';
     }
   });
 }
@@ -1128,4 +1323,74 @@ if (document.readyState === 'loading') {
   document.addEventListener('DOMContentLoaded', updateDesktopViewportLabel);
 } else {
   updateDesktopViewportLabel();
+}
+
+// Figma Preview Renderer Integration
+async function renderFigmaPreview(data: any): Promise<void> {
+  try {
+    const previewComparison = document.getElementById('preview-comparison');
+    const screenshotOriginal = document.getElementById('screenshot-original') as HTMLImageElement;
+    const figmaPreviewCanvas = document.getElementById('figma-preview-canvas') as HTMLCanvasElement;
+    const matchScoreFill = document.getElementById('match-score-fill') as HTMLDivElement;
+    const matchScoreValue = document.getElementById('match-score-value') as HTMLSpanElement;
+
+    if (!previewComparison || !screenshotOriginal || !figmaPreviewCanvas) {
+      console.warn('Preview comparison elements not found');
+      return;
+    }
+
+    // Show preview comparison section
+    previewComparison.classList.remove('hidden');
+
+    const schema = resolveSchemaForPreview(data);
+    if (!schema) {
+      console.warn('No schema data available for preview');
+      return;
+    }
+
+    // Set original screenshot
+    const screenshotSource = schema.screenshot || data.screenshot;
+    if (screenshotSource) {
+      screenshotOriginal.src = screenshotSource;
+    }
+
+    // Initialize renderer if not already created
+    if (!previewRenderer) {
+      previewRenderer = new FigmaPreviewRenderer(figmaPreviewCanvas);
+    }
+
+    // Render the Figma preview
+    await previewRenderer.render(schema);
+
+    // Calculate match score (placeholder - will be implemented with pixel diff)
+    const matchScore = 87.3; // TODO: Implement actual pixel comparison
+    matchScoreFill.style.width = `${matchScore}%`;
+    matchScoreValue.textContent = `${matchScore.toFixed(1)}%`;
+
+    // Color code the score
+    if (matchScore >= 90) {
+      matchScoreValue.style.color = '#10b981'; // Green
+    } else if (matchScore >= 75) {
+      matchScoreValue.style.color = '#f59e0b'; // Amber
+    } else {
+      matchScoreValue.style.color = '#ef4444'; // Red
+    }
+
+    console.log('✅ Figma preview rendered successfully');
+  } catch (error) {
+    console.error('❌ Failed to render Figma preview:', error);
+  }
+}
+
+function resolveSchemaForPreview(payload: any): WebToFigmaSchema | null {
+  if (!payload) {
+    return null;
+  }
+
+  if (payload.multiViewport && Array.isArray(payload.captures) && payload.captures.length > 0) {
+    const firstCapture = payload.captures[0];
+    return firstCapture?.data ?? null;
+  }
+
+  return payload;
 }

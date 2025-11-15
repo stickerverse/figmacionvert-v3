@@ -1,3 +1,5 @@
+import { DesignTokensManager } from './design-tokens-manager';
+
 export class StyleManager {
   private paintStyles: Map<string, PaintStyle> = new Map();
   private textStyles: Map<string, TextStyle> = new Map();
@@ -5,9 +7,34 @@ export class StyleManager {
 
   private styles: any;
 
-  constructor(styles: any = {}) {
+  constructor(styles: any = {}, private designTokensManager?: DesignTokensManager) {
     // Ensure downstream style access always hits an object
     this.styles = styles || {};
+  }
+
+  /**
+   * Find a matching design token for a color value
+   */
+  private findColorToken(color: { r: number; g: number; b: number; a?: number }): string | undefined {
+    if (!this.designTokensManager) return undefined;
+
+    // Look through the design tokens registry to find a matching color
+    const tolerance = 0.01; // Allow small differences in color values
+    
+    for (const [tokenId, token] of Object.entries((this.designTokensManager as any).tokensRegistry.variables)) {
+      if (token.type === 'COLOR' && token.resolvedValue) {
+        const tokenColor = token.resolvedValue;
+        if (
+          Math.abs(tokenColor.r - color.r) < tolerance &&
+          Math.abs(tokenColor.g - color.g) < tolerance &&
+          Math.abs(tokenColor.b - color.b) < tolerance
+        ) {
+          return tokenId;
+        }
+      }
+    }
+
+    return undefined;
   }
 
   async createFigmaStyles(): Promise<void> {
@@ -16,11 +43,25 @@ export class StyleManager {
         const style = figma.createPaintStyle();
         style.name = `Colors/${colorData.name}`;
         const { r, g, b } = colorData.color;
-        style.paints = [{
+        
+        const paint: SolidPaint = {
           type: 'SOLID',
           color: { r, g, b },
           opacity: colorData.color.a ?? 1
-        }];
+        };
+
+        // Try to bind to a variable if design tokens manager is available
+        if (this.designTokensManager) {
+          const tokenId = this.findColorToken({ r, g, b, a: colorData.color.a });
+          if (tokenId) {
+            const variable = this.designTokensManager.getVariableByTokenId(tokenId);
+            if (variable && variable.resolvedType === 'COLOR') {
+              paint.boundVariables = { color: { type: 'VARIABLE_ALIAS', id: variable.id } };
+            }
+          }
+        }
+
+        style.paints = [paint];
         this.paintStyles.set(key, style);
       }
     }

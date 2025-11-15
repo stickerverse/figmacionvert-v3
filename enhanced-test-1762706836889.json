@@ -1,0 +1,1807 @@
+{
+  "version": "2.0.0",
+  "metadata": {
+    "url": "https://example.com/",
+    "title": "Example Domain",
+    "timestamp": "2025-11-09T16:47:16.855Z",
+    "viewport": {
+      "width": 800,
+      "height": 600,
+      "devicePixelRatio": 1
+    },
+    "fonts": [
+      {
+        "family": "system-ui",
+        "weights": [
+          700,
+          400
+        ],
+        "source": "system"
+      }
+    ]
+  },
+  "tree": {
+    "id": "node-0",
+    "type": "FRAME",
+    "name": "body",
+    "htmlTag": "body",
+    "cssClasses": [],
+    "layout": {
+      "x": 0,
+      "y": 0,
+      "width": 480,
+      "height": 114.078125,
+      "boxSizing": "content-box"
+    },
+    "children": [
+      {
+        "id": "node-1",
+        "type": "FRAME",
+        "name": "div",
+        "htmlTag": "div",
+        "cssClasses": [],
+        "layout": {
+          "x": 0,
+          "y": 0,
+          "width": 480,
+          "height": 114.08,
+          "boxSizing": "content-box"
+        },
+        "children": [
+          {
+            "id": "node-2",
+            "type": "TEXT",
+            "name": "h1",
+            "htmlTag": "h1",
+            "cssClasses": [],
+            "layout": {
+              "x": 0,
+              "y": 0,
+              "width": 480,
+              "height": 28,
+              "boxSizing": "content-box"
+            },
+            "children": [
+              {
+                "id": "node-3",
+                "type": "TEXT",
+                "name": "text",
+                "htmlTag": "#text",
+                "cssClasses": [],
+                "dataAttributes": {},
+                "layout": {
+                  "x": 0,
+                  "y": 0,
+                  "width": 186.375,
+                  "height": 28
+                },
+                "absoluteLayout": {
+                  "left": 160,
+                  "top": 90,
+                  "right": 346.375,
+                  "bottom": 118,
+                  "width": 186.375,
+                  "height": 28
+                },
+                "children": [],
+                "position": "static",
+                "display": "block",
+                "visibility": "visible",
+                "pointerEvents": "auto",
+                "overflow": {
+                  "horizontal": "visible",
+                  "vertical": "visible"
+                },
+                "isStackingContext": false,
+                "characters": "Example Domain",
+                "textStyle": {
+                  "fontFamily": "system-ui",
+                  "fontWeight": 700,
+                  "fontSize": 24,
+                  "lineHeight": {
+                    "value": 0,
+                    "unit": "AUTO"
+                  },
+                  "letterSpacing": {
+                    "value": 0,
+                    "unit": "PIXELS"
+                  },
+                  "textAlignHorizontal": "LEFT",
+                  "textAlignVertical": "TOP",
+                  "textCase": "ORIGINAL",
+                  "textDecoration": "NONE",
+                  "whiteSpace": "normal",
+                  "wordWrap": "normal",
+                  "textOverflow": "clip",
+                  "fontStretch": "100%",
+                  "textRendering": "auto",
+                  "fills": [
+                    {
+                      "type": "SOLID",
+                      "color": {
+                        "r": 0,
+                        "g": 0,
+                        "b": 0,
+                        "a": 1
+                      },
+                      "opacity": 1,
+                      "visible": true
+                    }
+                  ]
+                },
+                "fills": [
+                  {
+                    "type": "SOLID",
+                    "color": {
+                      "r": 0,
+                      "g": 0,
+                      "b": 0,
+                      "a": 1
+                    },
+                    "opacity": 1,
+                    "visible": true
+                  }
+                ],
+                "inlineTextSegments": [
+                  {
+                    "id": "node-3-segment-0",
+                    "characters": "Example Domain",
+                    "textStyle": {
+                      "fontFamily": "system-ui",
+                      "fontWeight": 700,
+                      "fontSize": 24,
+                      "lineHeight": {
+                        "value": 0,
+                        "unit": "AUTO"
+                      },
+                      "letterSpacing": {
+                        "value": 0,
+                        "unit": "PIXELS"
+                      },
+                      "textAlignHorizontal": "LEFT",
+                      "textAlignVertical": "TOP",
+                      "textCase": "ORIGINAL",
+                      "textDecoration": "NONE",
+                      "whiteSpace": "normal",
+                      "wordWrap": "normal",
+                      "textOverflow": "clip",
+                      "fontStretch": "100%",
+                      "textRendering": "auto",
+                      "fills": [
+                        {
+                          "type": "SOLID",
+                          "color": {
+                            "r": 0,
+                            "g": 0,
+                            "b": 0,
+                            "a": 1
+                          },
+                          "opacity": 1,
+                          "visible": true
+                        }
+                      ]
+                    },
+                    "layout": {
+                      "x": 0,
+                      "y": 0,
+                      "width": 186.375,
+                      "height": 28
+                    }
+                  }
+                ],
+                "contentHash": "asset-23e23fe1"
+              }
+            ],
+            "absoluteLayout": {
+              "left": 0,
+              "top": 0,
+              "right": 480,
+              "bottom": 28,
+              "width": 480,
+              "height": 28
+            },
+            "coordinateValidation": {
+              "accuracy": 1,
+              "precision": 1,
+              "transformStability": 1,
+              "issues": []
+            },
+            "viewportLayout": {
+              "left": 160,
+              "top": 90,
+              "right": 640,
+              "bottom": 118,
+              "width": 480,
+              "height": 28
+            },
+            "stackingContext": {
+              "zIndex": 0,
+              "isStackingContext": false,
+              "stackingParent": "div"
+            },
+            "hasOverlappingElements": false,
+            "position": "static",
+            "display": "block",
+            "visibility": "visible",
+            "pointerEvents": "auto",
+            "overflow": {
+              "horizontal": "visible",
+              "vertical": "visible"
+            },
+            "isStackingContext": false,
+            "autoLayout": {
+              "layoutMode": "NONE",
+              "primaryAxisAlignItems": "MIN",
+              "counterAxisAlignItems": "MIN",
+              "paddingTop": 0,
+              "paddingRight": 0,
+              "paddingBottom": 0,
+              "paddingLeft": 0,
+              "itemSpacing": 0
+            },
+            "layoutContext": {
+              "display": "block",
+              "position": "static",
+              "float": "none",
+              "clear": "none",
+              "overflow": "visible",
+              "overflowX": "visible",
+              "overflowY": "visible",
+              "transform": "none",
+              "transformOrigin": "240px 14px",
+              "zIndex": "auto",
+              "flexDirection": "row",
+              "flexWrap": "nowrap",
+              "justifyContent": "normal",
+              "alignItems": "normal",
+              "alignContent": "normal",
+              "gap": "normal",
+              "rowGap": "normal",
+              "columnGap": "normal",
+              "gridTemplateColumns": "none",
+              "gridTemplateRows": "none",
+              "gridAutoFlow": "row",
+              "gridAutoColumns": "auto",
+              "gridAutoRows": "auto",
+              "flex": "0 1 auto",
+              "flexGrow": "0",
+              "flexShrink": "1",
+              "flexBasis": "auto",
+              "alignSelf": "auto",
+              "justifySelf": "auto",
+              "gridColumn": "auto",
+              "gridRow": "auto",
+              "gridArea": "auto",
+              "width": "480px",
+              "height": "28px",
+              "minWidth": "0px",
+              "minHeight": "0px",
+              "maxWidth": "none",
+              "maxHeight": "none",
+              "margin": "16.08px 0px",
+              "padding": "0px"
+            },
+            "fills": [
+              {
+                "type": "SOLID",
+                "color": {
+                  "r": 0,
+                  "g": 0,
+                  "b": 0,
+                  "a": 0
+                },
+                "visible": false,
+                "opacity": 0
+              }
+            ],
+            "opacity": 1,
+            "blendMode": "NORMAL",
+            "mixBlendMode": "NORMAL",
+            "backgrounds": [
+              {
+                "type": "color",
+                "fill": {
+                  "type": "SOLID",
+                  "color": {
+                    "r": 0,
+                    "g": 0,
+                    "b": 0,
+                    "a": 0
+                  },
+                  "visible": false,
+                  "opacity": 0
+                },
+                "position": {
+                  "x": "0%",
+                  "y": "0%"
+                },
+                "size": {
+                  "width": "auto",
+                  "height": "auto"
+                },
+                "repeat": "repeat",
+                "clip": "border-box",
+                "origin": "padding-box",
+                "attachment": "scroll"
+              }
+            ],
+            "transformOrigin": {
+              "x": 240,
+              "y": 14
+            },
+            "mask": {
+              "type": "none",
+              "value": "border-box"
+            },
+            "characters": "Example Domain",
+            "textStyle": {
+              "fontFamily": "system-ui",
+              "fontWeight": 700,
+              "fontSize": 24,
+              "lineHeight": {
+                "value": 0,
+                "unit": "AUTO"
+              },
+              "letterSpacing": {
+                "value": 0,
+                "unit": "PIXELS"
+              },
+              "textAlignHorizontal": "LEFT",
+              "textAlignVertical": "TOP",
+              "textCase": "ORIGINAL",
+              "textDecoration": "NONE",
+              "whiteSpace": "normal",
+              "wordWrap": "normal",
+              "textOverflow": "clip",
+              "fontStretch": "100%",
+              "textRendering": "auto",
+              "fills": [
+                {
+                  "type": "SOLID",
+                  "color": {
+                    "r": 0,
+                    "g": 0,
+                    "b": 0,
+                    "a": 1
+                  },
+                  "opacity": 1,
+                  "visible": true
+                }
+              ]
+            },
+            "inlineTextSegments": [
+              {
+                "id": "node-2-segment-0",
+                "characters": "Example Domain",
+                "textStyle": {
+                  "fontFamily": "system-ui",
+                  "fontWeight": 700,
+                  "fontSize": 24,
+                  "lineHeight": {
+                    "value": 0,
+                    "unit": "AUTO"
+                  },
+                  "letterSpacing": {
+                    "value": 0,
+                    "unit": "PIXELS"
+                  },
+                  "textAlignHorizontal": "LEFT",
+                  "textAlignVertical": "TOP",
+                  "textCase": "ORIGINAL",
+                  "textDecoration": "NONE",
+                  "whiteSpace": "normal",
+                  "wordWrap": "normal",
+                  "textOverflow": "clip",
+                  "fontStretch": "100%",
+                  "textRendering": "auto",
+                  "fills": [
+                    {
+                      "type": "SOLID",
+                      "color": {
+                        "r": 0,
+                        "g": 0,
+                        "b": 0,
+                        "a": 1
+                      },
+                      "opacity": 1,
+                      "visible": true
+                    }
+                  ]
+                },
+                "layout": {
+                  "x": 0,
+                  "y": 0,
+                  "width": 480,
+                  "height": 28
+                }
+              }
+            ],
+            "componentSignature": "asset-5b0fa173",
+            "contentHash": "asset-3b3c65a"
+          },
+          {
+            "id": "node-4",
+            "type": "TEXT",
+            "name": "p",
+            "htmlTag": "p",
+            "cssClasses": [],
+            "layout": {
+              "x": 0,
+              "y": 44.08000000000001,
+              "width": 480,
+              "height": 36,
+              "boxSizing": "content-box"
+            },
+            "children": [
+              {
+                "id": "node-5",
+                "type": "TEXT",
+                "name": "text",
+                "htmlTag": "#text",
+                "cssClasses": [],
+                "dataAttributes": {},
+                "layout": {
+                  "x": 0,
+                  "y": 0,
+                  "width": 419.796875,
+                  "height": 36
+                },
+                "absoluteLayout": {
+                  "left": 160,
+                  "top": 134.078125,
+                  "right": 579.796875,
+                  "bottom": 170.078125,
+                  "width": 419.796875,
+                  "height": 36
+                },
+                "children": [],
+                "position": "static",
+                "display": "block",
+                "visibility": "visible",
+                "pointerEvents": "auto",
+                "overflow": {
+                  "horizontal": "visible",
+                  "vertical": "visible"
+                },
+                "isStackingContext": false,
+                "characters": "This domain is for use in documentation examples without needing permission. Avoid use in operations.",
+                "textStyle": {
+                  "fontFamily": "system-ui",
+                  "fontWeight": 400,
+                  "fontSize": 16,
+                  "lineHeight": {
+                    "value": 0,
+                    "unit": "AUTO"
+                  },
+                  "letterSpacing": {
+                    "value": 0,
+                    "unit": "PIXELS"
+                  },
+                  "textAlignHorizontal": "LEFT",
+                  "textAlignVertical": "TOP",
+                  "textCase": "ORIGINAL",
+                  "textDecoration": "NONE",
+                  "whiteSpace": "normal",
+                  "wordWrap": "normal",
+                  "textOverflow": "clip",
+                  "fontStretch": "100%",
+                  "textRendering": "auto",
+                  "fills": [
+                    {
+                      "type": "SOLID",
+                      "color": {
+                        "r": 0,
+                        "g": 0,
+                        "b": 0,
+                        "a": 1
+                      },
+                      "opacity": 1,
+                      "visible": true
+                    }
+                  ]
+                },
+                "fills": [
+                  {
+                    "type": "SOLID",
+                    "color": {
+                      "r": 0,
+                      "g": 0,
+                      "b": 0,
+                      "a": 1
+                    },
+                    "opacity": 1,
+                    "visible": true
+                  }
+                ],
+                "inlineTextSegments": [
+                  {
+                    "id": "node-5-segment-0",
+                    "characters": "This domain is for use in documentation examples without needing permission. Avoid use in operations.",
+                    "textStyle": {
+                      "fontFamily": "system-ui",
+                      "fontWeight": 400,
+                      "fontSize": 16,
+                      "lineHeight": {
+                        "value": 0,
+                        "unit": "AUTO"
+                      },
+                      "letterSpacing": {
+                        "value": 0,
+                        "unit": "PIXELS"
+                      },
+                      "textAlignHorizontal": "LEFT",
+                      "textAlignVertical": "TOP",
+                      "textCase": "ORIGINAL",
+                      "textDecoration": "NONE",
+                      "whiteSpace": "normal",
+                      "wordWrap": "normal",
+                      "textOverflow": "clip",
+                      "fontStretch": "100%",
+                      "textRendering": "auto",
+                      "fills": [
+                        {
+                          "type": "SOLID",
+                          "color": {
+                            "r": 0,
+                            "g": 0,
+                            "b": 0,
+                            "a": 1
+                          },
+                          "opacity": 1,
+                          "visible": true
+                        }
+                      ]
+                    },
+                    "layout": {
+                      "x": 0,
+                      "y": 0,
+                      "width": 419.796875,
+                      "height": 36
+                    }
+                  }
+                ],
+                "contentHash": "asset-42efd97a"
+              }
+            ],
+            "absoluteLayout": {
+              "left": 0,
+              "top": 44.08000000000001,
+              "right": 480,
+              "bottom": 80.08000000000001,
+              "width": 480,
+              "height": 36
+            },
+            "coordinateValidation": {
+              "accuracy": 1,
+              "precision": 1,
+              "transformStability": 1,
+              "issues": []
+            },
+            "viewportLayout": {
+              "left": 160,
+              "top": 134.078125,
+              "right": 640,
+              "bottom": 170.078125,
+              "width": 480,
+              "height": 36
+            },
+            "stackingContext": {
+              "zIndex": 0,
+              "isStackingContext": false,
+              "stackingParent": "div"
+            },
+            "hasOverlappingElements": false,
+            "position": "static",
+            "display": "block",
+            "visibility": "visible",
+            "pointerEvents": "auto",
+            "overflow": {
+              "horizontal": "visible",
+              "vertical": "visible"
+            },
+            "isStackingContext": false,
+            "autoLayout": {
+              "layoutMode": "NONE",
+              "primaryAxisAlignItems": "MIN",
+              "counterAxisAlignItems": "MIN",
+              "paddingTop": 0,
+              "paddingRight": 0,
+              "paddingBottom": 0,
+              "paddingLeft": 0,
+              "itemSpacing": 0
+            },
+            "layoutContext": {
+              "display": "block",
+              "position": "static",
+              "float": "none",
+              "clear": "none",
+              "overflow": "visible",
+              "overflowX": "visible",
+              "overflowY": "visible",
+              "transform": "none",
+              "transformOrigin": "240px 18px",
+              "zIndex": "auto",
+              "flexDirection": "row",
+              "flexWrap": "nowrap",
+              "justifyContent": "normal",
+              "alignItems": "normal",
+              "alignContent": "normal",
+              "gap": "normal",
+              "rowGap": "normal",
+              "columnGap": "normal",
+              "gridTemplateColumns": "none",
+              "gridTemplateRows": "none",
+              "gridAutoFlow": "row",
+              "gridAutoColumns": "auto",
+              "gridAutoRows": "auto",
+              "flex": "0 1 auto",
+              "flexGrow": "0",
+              "flexShrink": "1",
+              "flexBasis": "auto",
+              "alignSelf": "auto",
+              "justifySelf": "auto",
+              "gridColumn": "auto",
+              "gridRow": "auto",
+              "gridArea": "auto",
+              "width": "480px",
+              "height": "36px",
+              "minWidth": "0px",
+              "minHeight": "0px",
+              "maxWidth": "none",
+              "maxHeight": "none",
+              "margin": "16px 0px",
+              "padding": "0px"
+            },
+            "fills": [
+              {
+                "type": "SOLID",
+                "color": {
+                  "r": 0,
+                  "g": 0,
+                  "b": 0,
+                  "a": 0
+                },
+                "visible": false,
+                "opacity": 0
+              }
+            ],
+            "opacity": 1,
+            "blendMode": "NORMAL",
+            "mixBlendMode": "NORMAL",
+            "backgrounds": [
+              {
+                "type": "color",
+                "fill": {
+                  "type": "SOLID",
+                  "color": {
+                    "r": 0,
+                    "g": 0,
+                    "b": 0,
+                    "a": 0
+                  },
+                  "visible": false,
+                  "opacity": 0
+                },
+                "position": {
+                  "x": "0%",
+                  "y": "0%"
+                },
+                "size": {
+                  "width": "auto",
+                  "height": "auto"
+                },
+                "repeat": "repeat",
+                "clip": "border-box",
+                "origin": "padding-box",
+                "attachment": "scroll"
+              }
+            ],
+            "transformOrigin": {
+              "x": 240,
+              "y": 18
+            },
+            "mask": {
+              "type": "none",
+              "value": "border-box"
+            },
+            "characters": "This domain is for use in documentation examples without needing permission. Avoid use in operations.",
+            "textStyle": {
+              "fontFamily": "system-ui",
+              "fontWeight": 400,
+              "fontSize": 16,
+              "lineHeight": {
+                "value": 0,
+                "unit": "AUTO"
+              },
+              "letterSpacing": {
+                "value": 0,
+                "unit": "PIXELS"
+              },
+              "textAlignHorizontal": "LEFT",
+              "textAlignVertical": "TOP",
+              "textCase": "ORIGINAL",
+              "textDecoration": "NONE",
+              "whiteSpace": "normal",
+              "wordWrap": "normal",
+              "textOverflow": "clip",
+              "fontStretch": "100%",
+              "textRendering": "auto",
+              "fills": [
+                {
+                  "type": "SOLID",
+                  "color": {
+                    "r": 0,
+                    "g": 0,
+                    "b": 0,
+                    "a": 1
+                  },
+                  "opacity": 1,
+                  "visible": true
+                }
+              ]
+            },
+            "inlineTextSegments": [
+              {
+                "id": "node-4-segment-0",
+                "characters": "This domain is for use in documentation examples without needing permission. Avoid use in operations.",
+                "textStyle": {
+                  "fontFamily": "system-ui",
+                  "fontWeight": 400,
+                  "fontSize": 16,
+                  "lineHeight": {
+                    "value": 0,
+                    "unit": "AUTO"
+                  },
+                  "letterSpacing": {
+                    "value": 0,
+                    "unit": "PIXELS"
+                  },
+                  "textAlignHorizontal": "LEFT",
+                  "textAlignVertical": "TOP",
+                  "textCase": "ORIGINAL",
+                  "textDecoration": "NONE",
+                  "whiteSpace": "normal",
+                  "wordWrap": "normal",
+                  "textOverflow": "clip",
+                  "fontStretch": "100%",
+                  "textRendering": "auto",
+                  "fills": [
+                    {
+                      "type": "SOLID",
+                      "color": {
+                        "r": 0,
+                        "g": 0,
+                        "b": 0,
+                        "a": 1
+                      },
+                      "opacity": 1,
+                      "visible": true
+                    }
+                  ]
+                },
+                "layout": {
+                  "x": 0,
+                  "y": 0,
+                  "width": 480,
+                  "height": 36
+                }
+              }
+            ],
+            "componentSignature": "asset-3ba9f2c0",
+            "contentHash": "asset-2b98d6f4"
+          },
+          {
+            "id": "node-6",
+            "type": "TEXT",
+            "name": "p",
+            "htmlTag": "p",
+            "cssClasses": [],
+            "layout": {
+              "x": 0,
+              "y": 96.08000000000001,
+              "width": 480,
+              "height": 18,
+              "boxSizing": "content-box"
+            },
+            "children": [
+              {
+                "id": "node-7",
+                "type": "TEXT",
+                "name": "a",
+                "htmlTag": "a",
+                "cssClasses": [],
+                "layout": {
+                  "x": 0,
+                  "y": 0.0018750000000125056,
+                  "width": 82,
+                  "height": 18,
+                  "boxSizing": "content-box"
+                },
+                "children": [
+                  {
+                    "id": "node-8",
+                    "type": "TEXT",
+                    "name": "text",
+                    "htmlTag": "#text",
+                    "cssClasses": [],
+                    "dataAttributes": {},
+                    "layout": {
+                      "x": 0,
+                      "y": 0,
+                      "width": 82,
+                      "height": 18
+                    },
+                    "absoluteLayout": {
+                      "left": 160,
+                      "top": 186.078125,
+                      "right": 242,
+                      "bottom": 204.078125,
+                      "width": 82,
+                      "height": 18
+                    },
+                    "children": [],
+                    "position": "static",
+                    "display": "inline",
+                    "visibility": "visible",
+                    "pointerEvents": "auto",
+                    "overflow": {
+                      "horizontal": "visible",
+                      "vertical": "visible"
+                    },
+                    "isStackingContext": false,
+                    "characters": "Learn more",
+                    "textStyle": {
+                      "fontFamily": "system-ui",
+                      "fontWeight": 400,
+                      "fontSize": 16,
+                      "lineHeight": {
+                        "value": 0,
+                        "unit": "AUTO"
+                      },
+                      "letterSpacing": {
+                        "value": 0,
+                        "unit": "PIXELS"
+                      },
+                      "textAlignHorizontal": "LEFT",
+                      "textAlignVertical": "TOP",
+                      "textCase": "ORIGINAL",
+                      "textDecoration": "UNDERLINE",
+                      "whiteSpace": "normal",
+                      "wordWrap": "normal",
+                      "textOverflow": "clip",
+                      "fontStretch": "100%",
+                      "textRendering": "auto",
+                      "fills": [
+                        {
+                          "type": "SOLID",
+                          "color": {
+                            "r": 0.2,
+                            "g": 0.26666666666666666,
+                            "b": 0.5333333333333333,
+                            "a": 1
+                          },
+                          "opacity": 1,
+                          "visible": true
+                        }
+                      ]
+                    },
+                    "fills": [
+                      {
+                        "type": "SOLID",
+                        "color": {
+                          "r": 0.2,
+                          "g": 0.26666666666666666,
+                          "b": 0.5333333333333333,
+                          "a": 1
+                        },
+                        "opacity": 1,
+                        "visible": true
+                      }
+                    ],
+                    "inlineTextSegments": [
+                      {
+                        "id": "node-8-segment-0",
+                        "characters": "Learn more",
+                        "textStyle": {
+                          "fontFamily": "system-ui",
+                          "fontWeight": 400,
+                          "fontSize": 16,
+                          "lineHeight": {
+                            "value": 0,
+                            "unit": "AUTO"
+                          },
+                          "letterSpacing": {
+                            "value": 0,
+                            "unit": "PIXELS"
+                          },
+                          "textAlignHorizontal": "LEFT",
+                          "textAlignVertical": "TOP",
+                          "textCase": "ORIGINAL",
+                          "textDecoration": "UNDERLINE",
+                          "whiteSpace": "normal",
+                          "wordWrap": "normal",
+                          "textOverflow": "clip",
+                          "fontStretch": "100%",
+                          "textRendering": "auto",
+                          "fills": [
+                            {
+                              "type": "SOLID",
+                              "color": {
+                                "r": 0.2,
+                                "g": 0.26666666666666666,
+                                "b": 0.5333333333333333,
+                                "a": 1
+                              },
+                              "opacity": 1,
+                              "visible": true
+                            }
+                          ]
+                        },
+                        "layout": {
+                          "x": 0,
+                          "y": 0,
+                          "width": 82,
+                          "height": 18
+                        }
+                      }
+                    ],
+                    "contentHash": "asset-1d739a85"
+                  }
+                ],
+                "absoluteLayout": {
+                  "left": 0,
+                  "top": 0.0018750000000125056,
+                  "right": 82,
+                  "bottom": 18.001875000000013,
+                  "width": 82,
+                  "height": 18
+                },
+                "coordinateValidation": {
+                  "accuracy": 1,
+                  "precision": 1,
+                  "transformStability": 1,
+                  "issues": []
+                },
+                "viewportLayout": {
+                  "left": 160,
+                  "top": 186.078125,
+                  "right": 242,
+                  "bottom": 204.078125,
+                  "width": 82,
+                  "height": 18
+                },
+                "stackingContext": {
+                  "zIndex": 0,
+                  "isStackingContext": false,
+                  "stackingParent": "div"
+                },
+                "hasOverlappingElements": false,
+                "position": "static",
+                "display": "inline",
+                "visibility": "visible",
+                "pointerEvents": "auto",
+                "overflow": {
+                  "horizontal": "visible",
+                  "vertical": "visible"
+                },
+                "isStackingContext": false,
+                "autoLayout": {
+                  "layoutMode": "NONE",
+                  "primaryAxisAlignItems": "MIN",
+                  "counterAxisAlignItems": "MIN",
+                  "paddingTop": 0,
+                  "paddingRight": 0,
+                  "paddingBottom": 0,
+                  "paddingLeft": 0,
+                  "itemSpacing": 0
+                },
+                "layoutContext": {
+                  "display": "inline",
+                  "position": "static",
+                  "float": "none",
+                  "clear": "none",
+                  "overflow": "visible",
+                  "overflowX": "visible",
+                  "overflowY": "visible",
+                  "transform": "none",
+                  "transformOrigin": "0px 0px",
+                  "zIndex": "auto",
+                  "flexDirection": "row",
+                  "flexWrap": "nowrap",
+                  "justifyContent": "normal",
+                  "alignItems": "normal",
+                  "alignContent": "normal",
+                  "gap": "normal",
+                  "rowGap": "normal",
+                  "columnGap": "normal",
+                  "gridTemplateColumns": "none",
+                  "gridTemplateRows": "none",
+                  "gridAutoFlow": "row",
+                  "gridAutoColumns": "auto",
+                  "gridAutoRows": "auto",
+                  "flex": "0 1 auto",
+                  "flexGrow": "0",
+                  "flexShrink": "1",
+                  "flexBasis": "auto",
+                  "alignSelf": "auto",
+                  "justifySelf": "auto",
+                  "gridColumn": "auto",
+                  "gridRow": "auto",
+                  "gridArea": "auto",
+                  "width": "auto",
+                  "height": "auto",
+                  "minWidth": "0px",
+                  "minHeight": "0px",
+                  "maxWidth": "none",
+                  "maxHeight": "none",
+                  "margin": "0px",
+                  "padding": "0px"
+                },
+                "fills": [
+                  {
+                    "type": "SOLID",
+                    "color": {
+                      "r": 0,
+                      "g": 0,
+                      "b": 0,
+                      "a": 0
+                    },
+                    "visible": false,
+                    "opacity": 0
+                  }
+                ],
+                "opacity": 1,
+                "blendMode": "NORMAL",
+                "mixBlendMode": "NORMAL",
+                "backgrounds": [
+                  {
+                    "type": "color",
+                    "fill": {
+                      "type": "SOLID",
+                      "color": {
+                        "r": 0,
+                        "g": 0,
+                        "b": 0,
+                        "a": 0
+                      },
+                      "visible": false,
+                      "opacity": 0
+                    },
+                    "position": {
+                      "x": "0%",
+                      "y": "0%"
+                    },
+                    "size": {
+                      "width": "auto",
+                      "height": "auto"
+                    },
+                    "repeat": "repeat",
+                    "clip": "border-box",
+                    "origin": "padding-box",
+                    "attachment": "scroll"
+                  }
+                ],
+                "transformOrigin": {
+                  "x": 0,
+                  "y": 0
+                },
+                "mask": {
+                  "type": "none",
+                  "value": "border-box"
+                },
+                "characters": "Learn more",
+                "textStyle": {
+                  "fontFamily": "system-ui",
+                  "fontWeight": 400,
+                  "fontSize": 16,
+                  "lineHeight": {
+                    "value": 0,
+                    "unit": "AUTO"
+                  },
+                  "letterSpacing": {
+                    "value": 0,
+                    "unit": "PIXELS"
+                  },
+                  "textAlignHorizontal": "LEFT",
+                  "textAlignVertical": "TOP",
+                  "textCase": "ORIGINAL",
+                  "textDecoration": "UNDERLINE",
+                  "whiteSpace": "normal",
+                  "wordWrap": "normal",
+                  "textOverflow": "clip",
+                  "fontStretch": "100%",
+                  "textRendering": "auto",
+                  "fills": [
+                    {
+                      "type": "SOLID",
+                      "color": {
+                        "r": 0.2,
+                        "g": 0.26666666666666666,
+                        "b": 0.5333333333333333,
+                        "a": 1
+                      },
+                      "opacity": 1,
+                      "visible": true
+                    }
+                  ]
+                },
+                "inlineTextSegments": [
+                  {
+                    "id": "node-7-segment-0",
+                    "characters": "Learn more",
+                    "textStyle": {
+                      "fontFamily": "system-ui",
+                      "fontWeight": 400,
+                      "fontSize": 16,
+                      "lineHeight": {
+                        "value": 0,
+                        "unit": "AUTO"
+                      },
+                      "letterSpacing": {
+                        "value": 0,
+                        "unit": "PIXELS"
+                      },
+                      "textAlignHorizontal": "LEFT",
+                      "textAlignVertical": "TOP",
+                      "textCase": "ORIGINAL",
+                      "textDecoration": "UNDERLINE",
+                      "whiteSpace": "normal",
+                      "wordWrap": "normal",
+                      "textOverflow": "clip",
+                      "fontStretch": "100%",
+                      "textRendering": "auto",
+                      "fills": [
+                        {
+                          "type": "SOLID",
+                          "color": {
+                            "r": 0.2,
+                            "g": 0.26666666666666666,
+                            "b": 0.5333333333333333,
+                            "a": 1
+                          },
+                          "opacity": 1,
+                          "visible": true
+                        }
+                      ]
+                    },
+                    "layout": {
+                      "x": 0,
+                      "y": 0,
+                      "width": 82,
+                      "height": 18
+                    }
+                  }
+                ],
+                "componentSignature": "asset-ab4b983",
+                "contentHash": "asset-48bbe4a0"
+              }
+            ],
+            "absoluteLayout": {
+              "left": 0,
+              "top": 96.08000000000001,
+              "right": 480,
+              "bottom": 114.08000000000001,
+              "width": 480,
+              "height": 18
+            },
+            "coordinateValidation": {
+              "accuracy": 1,
+              "precision": 1,
+              "transformStability": 1,
+              "issues": []
+            },
+            "viewportLayout": {
+              "left": 160,
+              "top": 186.078125,
+              "right": 640,
+              "bottom": 204.078125,
+              "width": 480,
+              "height": 18
+            },
+            "stackingContext": {
+              "zIndex": 0,
+              "isStackingContext": false,
+              "stackingParent": "div"
+            },
+            "hasOverlappingElements": false,
+            "position": "static",
+            "display": "block",
+            "visibility": "visible",
+            "pointerEvents": "auto",
+            "overflow": {
+              "horizontal": "visible",
+              "vertical": "visible"
+            },
+            "isStackingContext": false,
+            "autoLayout": {
+              "layoutMode": "NONE",
+              "primaryAxisAlignItems": "MIN",
+              "counterAxisAlignItems": "MIN",
+              "paddingTop": 0,
+              "paddingRight": 0,
+              "paddingBottom": 0,
+              "paddingLeft": 0,
+              "itemSpacing": 0
+            },
+            "layoutContext": {
+              "display": "block",
+              "position": "static",
+              "float": "none",
+              "clear": "none",
+              "overflow": "visible",
+              "overflowX": "visible",
+              "overflowY": "visible",
+              "transform": "none",
+              "transformOrigin": "240px 9px",
+              "zIndex": "auto",
+              "flexDirection": "row",
+              "flexWrap": "nowrap",
+              "justifyContent": "normal",
+              "alignItems": "normal",
+              "alignContent": "normal",
+              "gap": "normal",
+              "rowGap": "normal",
+              "columnGap": "normal",
+              "gridTemplateColumns": "none",
+              "gridTemplateRows": "none",
+              "gridAutoFlow": "row",
+              "gridAutoColumns": "auto",
+              "gridAutoRows": "auto",
+              "flex": "0 1 auto",
+              "flexGrow": "0",
+              "flexShrink": "1",
+              "flexBasis": "auto",
+              "alignSelf": "auto",
+              "justifySelf": "auto",
+              "gridColumn": "auto",
+              "gridRow": "auto",
+              "gridArea": "auto",
+              "width": "480px",
+              "height": "18px",
+              "minWidth": "0px",
+              "minHeight": "0px",
+              "maxWidth": "none",
+              "maxHeight": "none",
+              "margin": "16px 0px",
+              "padding": "0px"
+            },
+            "fills": [
+              {
+                "type": "SOLID",
+                "color": {
+                  "r": 0,
+                  "g": 0,
+                  "b": 0,
+                  "a": 0
+                },
+                "visible": false,
+                "opacity": 0
+              }
+            ],
+            "opacity": 1,
+            "blendMode": "NORMAL",
+            "mixBlendMode": "NORMAL",
+            "backgrounds": [
+              {
+                "type": "color",
+                "fill": {
+                  "type": "SOLID",
+                  "color": {
+                    "r": 0,
+                    "g": 0,
+                    "b": 0,
+                    "a": 0
+                  },
+                  "visible": false,
+                  "opacity": 0
+                },
+                "position": {
+                  "x": "0%",
+                  "y": "0%"
+                },
+                "size": {
+                  "width": "auto",
+                  "height": "auto"
+                },
+                "repeat": "repeat",
+                "clip": "border-box",
+                "origin": "padding-box",
+                "attachment": "scroll"
+              }
+            ],
+            "transformOrigin": {
+              "x": 240,
+              "y": 9
+            },
+            "mask": {
+              "type": "none",
+              "value": "border-box"
+            },
+            "characters": "Learn more",
+            "textStyle": {
+              "fontFamily": "system-ui",
+              "fontWeight": 400,
+              "fontSize": 16,
+              "lineHeight": {
+                "value": 0,
+                "unit": "AUTO"
+              },
+              "letterSpacing": {
+                "value": 0,
+                "unit": "PIXELS"
+              },
+              "textAlignHorizontal": "LEFT",
+              "textAlignVertical": "TOP",
+              "textCase": "ORIGINAL",
+              "textDecoration": "NONE",
+              "whiteSpace": "normal",
+              "wordWrap": "normal",
+              "textOverflow": "clip",
+              "fontStretch": "100%",
+              "textRendering": "auto",
+              "fills": [
+                {
+                  "type": "SOLID",
+                  "color": {
+                    "r": 0,
+                    "g": 0,
+                    "b": 0,
+                    "a": 1
+                  },
+                  "opacity": 1,
+                  "visible": true
+                }
+              ]
+            },
+            "inlineTextSegments": [
+              {
+                "id": "node-6-segment-0",
+                "characters": "Learn more",
+                "textStyle": {
+                  "fontFamily": "system-ui",
+                  "fontWeight": 400,
+                  "fontSize": 16,
+                  "lineHeight": {
+                    "value": 0,
+                    "unit": "AUTO"
+                  },
+                  "letterSpacing": {
+                    "value": 0,
+                    "unit": "PIXELS"
+                  },
+                  "textAlignHorizontal": "LEFT",
+                  "textAlignVertical": "TOP",
+                  "textCase": "ORIGINAL",
+                  "textDecoration": "UNDERLINE",
+                  "whiteSpace": "normal",
+                  "wordWrap": "normal",
+                  "textOverflow": "clip",
+                  "fontStretch": "100%",
+                  "textRendering": "auto",
+                  "fills": [
+                    {
+                      "type": "SOLID",
+                      "color": {
+                        "r": 0.2,
+                        "g": 0.26666666666666666,
+                        "b": 0.5333333333333333,
+                        "a": 1
+                      },
+                      "opacity": 1,
+                      "visible": true
+                    }
+                  ]
+                },
+                "layout": {
+                  "x": 0,
+                  "y": 0,
+                  "width": 96,
+                  "height": 16
+                }
+              }
+            ],
+            "componentSignature": "asset-17b863c2",
+            "contentHash": "asset-51f5ad86"
+          }
+        ],
+        "absoluteLayout": {
+          "left": 0,
+          "top": 0,
+          "right": 480,
+          "bottom": 114.08,
+          "width": 480,
+          "height": 114.08
+        },
+        "coordinateValidation": {
+          "accuracy": 1,
+          "precision": 1,
+          "transformStability": 1,
+          "issues": []
+        },
+        "viewportLayout": {
+          "left": 160,
+          "top": 90,
+          "right": 640,
+          "bottom": 204.078125,
+          "width": 480,
+          "height": 114.078125
+        },
+        "stackingContext": {
+          "zIndex": 0,
+          "isStackingContext": true
+        },
+        "hasOverlappingElements": false,
+        "position": "static",
+        "display": "block",
+        "visibility": "visible",
+        "pointerEvents": "auto",
+        "overflow": {
+          "horizontal": "visible",
+          "vertical": "visible"
+        },
+        "isStackingContext": true,
+        "autoLayout": {
+          "layoutMode": "NONE",
+          "primaryAxisAlignItems": "MIN",
+          "counterAxisAlignItems": "MIN",
+          "paddingTop": 0,
+          "paddingRight": 0,
+          "paddingBottom": 0,
+          "paddingLeft": 0,
+          "itemSpacing": 0
+        },
+        "layoutContext": {
+          "display": "block",
+          "position": "static",
+          "float": "none",
+          "clear": "none",
+          "overflow": "visible",
+          "overflowX": "visible",
+          "overflowY": "visible",
+          "transform": "none",
+          "transformOrigin": "240px 57.0391px",
+          "zIndex": "auto",
+          "flexDirection": "row",
+          "flexWrap": "nowrap",
+          "justifyContent": "normal",
+          "alignItems": "normal",
+          "alignContent": "normal",
+          "gap": "normal",
+          "rowGap": "normal",
+          "columnGap": "normal",
+          "gridTemplateColumns": "none",
+          "gridTemplateRows": "none",
+          "gridAutoFlow": "row",
+          "gridAutoColumns": "auto",
+          "gridAutoRows": "auto",
+          "flex": "0 1 auto",
+          "flexGrow": "0",
+          "flexShrink": "1",
+          "flexBasis": "auto",
+          "alignSelf": "auto",
+          "justifySelf": "auto",
+          "gridColumn": "auto",
+          "gridRow": "auto",
+          "gridArea": "auto",
+          "width": "480px",
+          "height": "114.078px",
+          "minWidth": "0px",
+          "minHeight": "0px",
+          "maxWidth": "none",
+          "maxHeight": "none",
+          "margin": "0px",
+          "padding": "0px"
+        },
+        "fills": [
+          {
+            "type": "SOLID",
+            "color": {
+              "r": 0,
+              "g": 0,
+              "b": 0,
+              "a": 0
+            },
+            "visible": false,
+            "opacity": 0
+          }
+        ],
+        "opacity": 0.8,
+        "blendMode": "NORMAL",
+        "mixBlendMode": "NORMAL",
+        "backgrounds": [
+          {
+            "type": "color",
+            "fill": {
+              "type": "SOLID",
+              "color": {
+                "r": 0,
+                "g": 0,
+                "b": 0,
+                "a": 0
+              },
+              "visible": false,
+              "opacity": 0
+            },
+            "position": {
+              "x": "0%",
+              "y": "0%"
+            },
+            "size": {
+              "width": "auto",
+              "height": "auto"
+            },
+            "repeat": "repeat",
+            "clip": "border-box",
+            "origin": "padding-box",
+            "attachment": "scroll"
+          }
+        ],
+        "transformOrigin": {
+          "x": 240,
+          "y": 57.0391
+        },
+        "mask": {
+          "type": "none",
+          "value": "border-box"
+        },
+        "componentSignature": "asset-64dee2cb",
+        "contentHash": "asset-34725093"
+      }
+    ],
+    "absoluteLayout": {
+      "left": 160,
+      "top": 90,
+      "right": 640,
+      "bottom": 204.07999999999998,
+      "width": 480,
+      "height": 114.08
+    },
+    "coordinateValidation": {
+      "accuracy": 1,
+      "precision": 1,
+      "transformStability": 1,
+      "issues": []
+    },
+    "viewportLayout": {
+      "left": 160,
+      "top": 90,
+      "right": 640,
+      "bottom": 204.078125,
+      "width": 480,
+      "height": 114.078125
+    },
+    "stackingContext": {
+      "zIndex": 0,
+      "isStackingContext": false
+    },
+    "hasOverlappingElements": false,
+    "position": "static",
+    "display": "block",
+    "visibility": "visible",
+    "pointerEvents": "auto",
+    "overflow": {
+      "horizontal": "visible",
+      "vertical": "visible"
+    },
+    "isStackingContext": false,
+    "autoLayout": {
+      "layoutMode": "NONE",
+      "primaryAxisAlignItems": "MIN",
+      "counterAxisAlignItems": "MIN",
+      "paddingTop": 0,
+      "paddingRight": 0,
+      "paddingBottom": 0,
+      "paddingLeft": 0,
+      "itemSpacing": 0
+    },
+    "layoutContext": {
+      "display": "block",
+      "position": "static",
+      "float": "none",
+      "clear": "none",
+      "overflow": "visible",
+      "overflowX": "visible",
+      "overflowY": "visible",
+      "transform": "none",
+      "transformOrigin": "240px 57.0391px",
+      "zIndex": "auto",
+      "flexDirection": "row",
+      "flexWrap": "nowrap",
+      "justifyContent": "normal",
+      "alignItems": "normal",
+      "alignContent": "normal",
+      "gap": "normal",
+      "rowGap": "normal",
+      "columnGap": "normal",
+      "gridTemplateColumns": "none",
+      "gridTemplateRows": "none",
+      "gridAutoFlow": "row",
+      "gridAutoColumns": "auto",
+      "gridAutoRows": "auto",
+      "flex": "0 1 auto",
+      "flexGrow": "0",
+      "flexShrink": "1",
+      "flexBasis": "auto",
+      "alignSelf": "auto",
+      "justifySelf": "auto",
+      "gridColumn": "auto",
+      "gridRow": "auto",
+      "gridArea": "auto",
+      "width": "480px",
+      "height": "114.078px",
+      "minWidth": "0px",
+      "minHeight": "0px",
+      "maxWidth": "none",
+      "maxHeight": "none",
+      "margin": "90px 160px",
+      "padding": "0px"
+    },
+    "fills": [
+      {
+        "type": "SOLID",
+        "color": {
+          "r": 0.9333333333333333,
+          "g": 0.9333333333333333,
+          "b": 0.9333333333333333,
+          "a": 1
+        },
+        "visible": true,
+        "opacity": 1
+      }
+    ],
+    "opacity": 1,
+    "blendMode": "NORMAL",
+    "mixBlendMode": "NORMAL",
+    "backgrounds": [
+      {
+        "type": "color",
+        "fill": {
+          "type": "SOLID",
+          "color": {
+            "r": 0.9333333333333333,
+            "g": 0.9333333333333333,
+            "b": 0.9333333333333333,
+            "a": 1
+          },
+          "visible": true,
+          "opacity": 1
+        },
+        "position": {
+          "x": "0%",
+          "y": "0%"
+        },
+        "size": {
+          "width": "auto",
+          "height": "auto"
+        },
+        "repeat": "repeat",
+        "clip": "border-box",
+        "origin": "padding-box",
+        "attachment": "scroll"
+      }
+    ],
+    "transformOrigin": {
+      "x": 240,
+      "y": 57.0391
+    },
+    "mask": {
+      "type": "none",
+      "value": "border-box"
+    },
+    "componentSignature": "asset-6b040d4e",
+    "contentHash": "asset-651111c2"
+  },
+  "assets": {
+    "images": {},
+    "svgs": {},
+    "gradients": {}
+  },
+  "styles": {
+    "colors": {
+      "0-0-0-0": {
+        "id": "0-0-0-0",
+        "name": "Color/0,0,0",
+        "color": {
+          "r": 0,
+          "g": 0,
+          "b": 0,
+          "a": 0
+        },
+        "usageCount": 5
+      },
+      "0.9333333333333333-0.9333333333333333-0.9333333333333333-1": {
+        "id": "0.9333333333333333-0.9333333333333333-0.9333333333333333-1",
+        "name": "Color/238,238,238",
+        "color": {
+          "r": 0.9333333333333333,
+          "g": 0.9333333333333333,
+          "b": 0.9333333333333333,
+          "a": 1
+        },
+        "usageCount": 1
+      }
+    },
+    "textStyles": {
+      "system-ui-700-24": {
+        "fontFamily": "system-ui",
+        "fontWeight": 700,
+        "fontSize": 24,
+        "lineHeight": {
+          "value": 0,
+          "unit": "AUTO"
+        },
+        "letterSpacing": {
+          "value": 0,
+          "unit": "PIXELS"
+        },
+        "textAlignHorizontal": "LEFT",
+        "textAlignVertical": "TOP",
+        "textCase": "ORIGINAL",
+        "textDecoration": "NONE",
+        "whiteSpace": "normal",
+        "wordWrap": "normal",
+        "textOverflow": "clip",
+        "fontStretch": "100%",
+        "textRendering": "auto",
+        "fills": [
+          {
+            "type": "SOLID",
+            "color": {
+              "r": 0,
+              "g": 0,
+              "b": 0,
+              "a": 1
+            },
+            "opacity": 1,
+            "visible": true
+          }
+        ]
+      },
+      "system-ui-400-16": {
+        "fontFamily": "system-ui",
+        "fontWeight": 400,
+        "fontSize": 16,
+        "lineHeight": {
+          "value": 0,
+          "unit": "AUTO"
+        },
+        "letterSpacing": {
+          "value": 0,
+          "unit": "PIXELS"
+        },
+        "textAlignHorizontal": "LEFT",
+        "textAlignVertical": "TOP",
+        "textCase": "ORIGINAL",
+        "textDecoration": "NONE",
+        "whiteSpace": "normal",
+        "wordWrap": "normal",
+        "textOverflow": "clip",
+        "fontStretch": "100%",
+        "textRendering": "auto",
+        "fills": [
+          {
+            "type": "SOLID",
+            "color": {
+              "r": 0,
+              "g": 0,
+              "b": 0,
+              "a": 1
+            },
+            "opacity": 1,
+            "visible": true
+          }
+        ]
+      }
+    },
+    "effects": {}
+  },
+  "coordinateMetrics": {
+    "enhancedCoordinateSystem": true,
+    "pixelPerfectAccuracy": 1,
+    "coordinateAccuracy": 1,
+    "transformStability": 1,
+    "totalElements": 6,
+    "coordinateIssues": 0,
+    "precision": "0.01px"
+  }
+}

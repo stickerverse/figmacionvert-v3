@@ -3,7 +3,7 @@
   "version": "1.0.0",
   "description": "Import web pages as editable Figma designs",
   "scripts": {
-    "build": "esbuild src/code.ts --bundle --format=cjs --platform=node --target=es6 --loader:.html=text --outfile=dist/code.js",
+    "build": "esbuild src/code.ts --bundle --format=cjs --platform=node --target=es6 --loader:.html=text --outfile=dist/code.js --tree-shaking=true --external:worker_threads --external:child_process --external:fs --external:path",
     "watch": "esbuild src/code.ts --bundle --format=cjs --platform=node --target=es6 --loader:.html=text --outfile=dist/code.js --watch"
   },
   "devDependencies": {
@@ -12,5 +12,6 @@
     "concurrently": "^8.2.0",
     "esbuild": "^0.25.11",
     "typescript": "^5.3.0"
-  }
+  },
+  "dependencies": {}
 }

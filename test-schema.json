@@ -1,0 +1,92 @@
+{
+  "version": "2.0.0",
+  "metadata": {
+    "url": "https://example.com",
+    "title": "Test Page",
+    "capturedAt": "2024-11-09T08:00:00.000Z",
+    "captureMethod": "Test",
+    "viewport": {
+      "width": 1440,
+      "height": 900
+    }
+  },
+  "tree": {
+    "id": "root",
+    "name": "Test Page",
+    "type": "FRAME",
+    "x": 0,
+    "y": 0,
+    "width": 1440,
+    "height": 900,
+    "fills": [{"type": "SOLID", "color": {"r": 1, "g": 1, "b": 1}}],
+    "children": [
+      {
+        "id": "header",
+        "name": "Header",
+        "type": "FRAME",
+        "x": 0,
+        "y": 0,
+        "width": 1440,
+        "height": 80,
+        "fills": [{"type": "SOLID", "color": {"r": 0.2, "g": 0.4, "b": 0.8}}],
+        "children": [
+          {
+            "id": "title",
+            "name": "Page Title",
+            "type": "TEXT",
+            "x": 24,
+            "y": 24,
+            "width": 200,
+            "height": 32,
+            "characters": "Enhanced Web Import Test",
+            "textStyleId": "title-style"
+          }
+        ]
+      },
+      {
+        "id": "content",
+        "name": "Content",
+        "type": "FRAME",
+        "x": 24,
+        "y": 104,
+        "width": 1392,
+        "height": 400,
+        "fills": [{"type": "SOLID", "color": {"r": 0.95, "g": 0.95, "b": 0.95}}],
+        "children": [
+          {
+            "id": "text1",
+            "name": "Description",
+            "type": "TEXT",
+            "x": 24,
+            "y": 24,
+            "width": 600,
+            "height": 24,
+            "characters": "This is a test of the enhanced Figma import interface."
+          }
+        ]
+      }
+    ]
+  },
+  "assets": {
+    "images": {},
+    "svgs": {}
+  },
+  "styles": {
+    "colors": {
+      "primary": {"r": 0.2, "g": 0.4, "b": 0.8}
+    },
+    "textStyles": {
+      "title-style": {
+        "fontFamily": "Inter",
+        "fontSize": 24,
+        "fontWeight": 700
+      }
+    }
+  },
+  "components": {
+    "definitions": {}
+  },
+  "variants": {
+    "variants": {}
+  }
+}

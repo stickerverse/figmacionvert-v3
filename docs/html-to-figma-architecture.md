@@ -20,9 +20,20 @@ System flow:
 
 ---
 
-## 2. Figma Plugin (Frontend) Checklist
+## 2. Schema Validation
 
-The plugin complies with the outline’s requirements:
+**⚠️ IMPORTANT**: The WebToFigmaSchema JSON format has been validated for pixel-perfect accuracy. See [SCHEMA_VALIDATION_REPORT.md](../SCHEMA_VALIDATION_REPORT.md) for complete verification of:
+- Positioning accuracy (absoluteLayout system)
+- Image asset pipeline (hash-based deduplication)
+- Visual styles (fills, strokes, effects, transforms)
+- Text rendering (fonts, styles, fallbacks)
+- Layout systems (Auto Layout, CSS Grid metadata)
+
+**Coverage**: 20/20 critical features = 100% ✅
+
+## 3. Figma Plugin (Frontend) Checklist
+
+The plugin complies with the outline's requirements:
 
 | Figma concept | Implementation reference |
 | --- | --- |
@@ -38,15 +49,15 @@ If new HTML/CSS capabilities are added (e.g. gradients, shadows, nested Auto Lay
 
 ---
 
-## 3. Backend Capture / Conversion Checklist
+## 4. Backend Capture / Conversion Checklist
 
-### 3.1 Headless capture (Puppeteer)
+### 4.1 Headless capture (Puppeteer)
 
 - **Scripts**: `puppeteer-auto-import.js`, `complete-automated-workflow.js`, `send-to-figma.js`, etc.
 - **Functionality**: launch Chromium, open target URL, run the same `injected-script.js` DOM extractor inside the page, gather computed styles, and post the result to the handoff server.
 - **Rendering fidelity**: includes `PageScroller` and design token extraction to force lazy-loaded content and build a usable style inventory.
 
-### 3.2 Live capture (Chrome extension)
+### 4.2 Live capture (Chrome extension)
 
 - **Content script** (`chrome-extension/src/content-script.ts`):
   - Injects `injected-script.js` and coordinates extraction.
@@ -54,18 +65,19 @@ If new HTML/CSS capabilities are added (e.g. gradients, shadows, nested Auto Lay
   - Shows progress overlay within the webpage.
 - **Popup UI** (`src/popup/`):
   - Provides capture controls, status updates, preview card with screenshot, and shortcuts to send/preview the capture.
+  - **Canvas Preview Renderer** (`figma-preview-renderer.ts`): Renders pixel-accurate Figma preview before sending, allowing visual verification of the conversion.
 - **Background service worker** (`src/background.ts`):
   - Reassembles large payloads, posts JSON to `http://127.0.0.1:4411/jobs`, and handles screenshot requests.
 
-### 3.3 Conversion algorithm
+### 4.3 Conversion algorithm
 
 - **DOM Extraction**: `chrome-extension/src/utils/dom-extractor.ts` and `injected-script.ts` map DOM nodes, computed styles, and layout metadata into the Web-to-Figma schema.
 - **Design tokens**: captured for colors, typography, spacing, shadows, border radii.
-- **Yoga layout**: `server/yoga-processor.js` computes Auto Layout positions to mirror flex layouts accurately inside Figma.
+- **Yoga layout**: Planned integration via `server/yoga-processor.js` to compute Auto Layout positions. Currently, flex layouts are processed directly within DOMExtractor.
 
 ---
 
-## 4. Validation Steps
+## 5. Validation Steps
 
 1. **Start the handoff server**  
    ```bash
@@ -78,7 +90,7 @@ If new HTML/CSS capabilities are added (e.g. gradients, shadows, nested Auto Lay
    - Open the plugin (`figma-plugin/dist/code.js` bundled version).  
    - Confirm the UI lights change to green, and the plugin begins importing automatically.
 4. **Inspect the Figma canvas**  
-   - Newly created page should contain Frames with Auto Layout, text nodes using real fonts, color styles applied, and components instantiated for repeating elements.
+   - Newly created page should contain Frames with Auto Layout, text nodes using real fonts, color styles applied, and basic component grouping for similar elements.
 5. **Logs & troubleshooting**  
    - Handoff server logs queue events (`[handoff] received job …`).  
    - Chrome DevTools → Extensions background service worker for chunked transfer errors.  
@@ -86,7 +98,7 @@ If new HTML/CSS capabilities are added (e.g. gradients, shadows, nested Auto Lay
 
 ---
 
-## 5. Next Steps & Maintenance
+## 6. Next Steps & Maintenance
 
 - **Extend schema coverage**: add support for CSS Grid, SVGs, or complex filters by enhancing the extractor and updating the importer.
 - **Asset handling**: pipeline images to remote storage and download them from the plugin if needed.

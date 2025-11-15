@@ -5,9 +5,40 @@ export interface WebToFigmaSchema {
   assets: AssetRegistry;
   styles: StyleRegistry;
   components?: ComponentRegistry;
-  designTokens?: DesignTokenRegistry;
+  variants?: VariantsRegistry;
+  designTokens?: DesignTokenRegistry; // Legacy design tokens for backward compatibility
+  designTokensRegistry?: DesignTokensRegistry; // Enhanced design tokens with variables
   cssVariables?: Record<string, string>;
   screenshot?: string;
+  validation?: ValidationReport;
+  assetOptimization?: AssetOptimizationReport;
+  coordinateMetrics?: CoordinateMetrics;
+  comprehensiveStates?: ComprehensiveStatesRegistry; // New: Comprehensive interactive state capture
+}
+
+export interface AssetOptimizationReport {
+  applied: boolean;
+  originalPayloadSizeMB?: number;
+  optimizedPayloadSizeMB?: number;
+  compressionRatio?: number;
+  assetsProcessed?: number;
+  assetsRemoved?: number;
+  optimizationRounds?: number;
+  preservedAssets?: string[];
+  aggressivelyOptimized?: string[];
+  removedAssets?: string[];
+  error?: string;
+  fallbackToEmergencyCompression?: boolean;
+}
+
+export interface CoordinateMetrics {
+  enhancedCoordinateSystem: boolean;
+  pixelPerfectAccuracy: number;
+  coordinateAccuracy: number;
+  transformStability: number;
+  totalElements: number;
+  coordinateIssues: number;
+  precision: string;
 }
 
 export interface PageMetadata {
@@ -27,6 +58,8 @@ export interface PageMetadata {
     tokensExtracted: boolean;
     totalElements: number;
     visibleElements: number;
+    enhancedComponentDetection?: boolean;
+    componentDetectionMethod?: string;
   };
 }
 
@@ -104,29 +137,56 @@ export interface ElementNode {
     layoutAlign?: 'STRETCH' | 'INHERIT';
   };
 
-  gridLayout?: {
-    isGrid: boolean;
-    templateColumns: string;
-    templateRows: string;
-    columnGap: number;
-    rowGap: number;
-    autoFlow?: string;
-    justifyItems?: string;
-    alignItems?: string;
+  layoutContext?: {
+    display?: string;
+    position?: string;
+    float?: string;
+    clear?: string;
+    overflow?: string;
+    overflowX?: string;
+    overflowY?: string;
+    transform?: string;
+    transformOrigin?: string;
+    zIndex?: string;
+    // Flexbox properties
+    flexDirection?: string;
+    flexWrap?: string;
     justifyContent?: string;
+    alignItems?: string;
     alignContent?: string;
+    gap?: string;
+    rowGap?: string;
+    columnGap?: string;
+    // Grid properties
+    gridTemplateColumns?: string;
+    gridTemplateRows?: string;
+    gridAutoFlow?: string;
+    gridAutoColumns?: string;
+    gridAutoRows?: string;
+    // Child properties
+    flex?: string;
+    flexGrow?: string;
+    flexShrink?: string;
+    flexBasis?: string;
+    alignSelf?: string;
+    justifySelf?: string;
+    gridColumn?: string;
+    gridRow?: string;
+    gridArea?: string;
+    // Box model
+    width?: string;
+    height?: string;
+    minWidth?: string;
+    minHeight?: string;
+    maxWidth?: string;
+    maxHeight?: string;
+    margin?: string;
+    padding?: string;
   };
 
-  gridChild?: {
-    columnStart?: string | number;
-    columnEnd?: string | number;
-    rowStart?: string | number;
-    rowEnd?: string | number;
-    columnSpan?: number;
-    rowSpan?: number;
-    justifySelf?: string;
-    alignSelf?: string;
-  };
+  gridLayout?: GridLayoutData;
+
+  gridChild?: GridChildData;
 
   fills?: Fill[];
   strokes?: Stroke[];
@@ -152,6 +212,7 @@ export interface ElementNode {
   isComponent?: boolean;
   componentId?: string;
   componentKey?: string;
+  componentSimilarity?: number;
   variants?: VariantData[];
 
   pseudoElements?: {
@@ -367,6 +428,26 @@ export interface ComponentDefinition {
   properties?: Record<string, any>;
 }
 
+export interface VariantsRegistry {
+  variants: Record<string, VariantSet>;
+  statistics: {
+    totalVariants: number;
+    elementsWithVariants: number;
+    statesPerElement: { [state: string]: number };
+  };
+}
+
+export interface VariantSet {
+  elementId: string;
+  componentId?: string;
+  variants: VariantData[];
+  metadata: {
+    tagName: string;
+    selector: string;
+    interactionTypes: string[];
+  };
+}
+
 export interface VariantData {
   state: 'default' | 'hover' | 'focus' | 'active' | 'disabled';
   properties: Partial<ElementNode>;
@@ -407,12 +488,92 @@ export interface DesignTokenRegistry {
   borderRadius: Record<string, any>;
 }
 
+// Enhanced design token interfaces for CSS Variables integration
+export interface DesignTokensRegistry {
+  variables: Record<string, DesignToken>;
+  collections: Record<string, TokenCollection>;
+  aliases: Record<string, TokenAlias>;
+  usage: Record<string, TokenUsage>;
+}
+
+export interface DesignToken {
+  id: string;
+  name: string;
+  originalName: string; // Original CSS variable name (--color-primary)
+  type: TokenType;
+  value: TokenValue;
+  scopes: TokenScope[];
+  collection: string;
+  description?: string;
+  resolvedValue?: any; // Computed/resolved value
+  references?: string[]; // Other tokens this references
+  referencedBy?: string[]; // Tokens that reference this one
+}
+
+export interface TokenCollection {
+  id: string;
+  name: string;
+  type: TokenType;
+  description?: string;
+  variables: string[];
+}
+
+export interface TokenAlias {
+  from: string; // Token that aliases another
+  to: string; // Target token being aliased
+  context?: string; // Context where alias applies
+}
+
+export interface TokenUsage {
+  count: number;
+  elements: string[]; // Element IDs that use this token
+  properties: string[]; // CSS properties using this token
+  computed: boolean; // Whether this was computed or explicitly declared
+}
+
+export type TokenType = 
+  | 'COLOR' 
+  | 'FLOAT' 
+  | 'STRING'
+  | 'BOOLEAN';
+
+export type TokenScope = 
+  | 'ALL_SCOPES'
+  | 'TEXT_CONTENT'
+  | 'CORNER_RADIUS'
+  | 'WIDTH_HEIGHT'
+  | 'GAP'
+  | 'STROKE_COLOR'
+  | 'EFFECT_COLOR'
+  | 'ALL_FILLS'
+  | 'FRAME_FILL'
+  | 'SHAPE_FILL'
+  | 'TEXT_FILL';
+
+export interface TokenValue {
+  type: 'SOLID' | 'ALIAS' | 'VARIABLE_ALIAS' | 'EXPRESSION';
+  value: any;
+  resolvedType?: 'COLOR' | 'NUMBER' | 'STRING' | 'BOOLEAN';
+  originalValue?: string; // Original CSS value before parsing
+}
+
 export interface TransformData {
   matrix: number[];
   translate?: { x: number; y: number; z?: number };
   scale?: { x: number; y: number; z?: number };
   rotate?: { x: number; y: number; z: number; angle: number };
   skew?: { x: number; y: number };
+  originalFunctions?: TransformFunction[]; // Store original transform functions
+}
+
+export interface TransformFunction {
+  type: 'translate' | 'translateX' | 'translateY' | 'translate3d' | 'translateZ' |
+        'scale' | 'scaleX' | 'scaleY' | 'scale3d' | 'scaleZ' |
+        'rotate' | 'rotateX' | 'rotateY' | 'rotateZ' | 'rotate3d' |
+        'skew' | 'skewX' | 'skewY' |
+        'matrix' | 'matrix3d' |
+        'perspective';
+  values: number[];
 }
 
 export interface FilterData {
@@ -476,4 +637,161 @@ export interface ScrollData {
   scrollLeft: number;
   overscrollBehaviorX?: string;
   overscrollBehaviorY?: string;
+}
+
+// Validation interfaces
+export interface ValidationIssue {
+  severity: 'error' | 'warning' | 'info';
+  type: 'positioning' | 'sizing' | 'layout' | 'structure' | 'transform' | 'coordinate-accuracy';
+  nodeId: string;
+  nodeName: string;
+  message: string;
+  suggestion?: string;
+  accuracy?: PositionAccuracy;
+  delta?: { x: number; y: number };
+  confidence?: number;
+}
+
+export interface PositionAccuracy {
+  isAccurate: boolean;
+  deltaX: number;
+  deltaY: number;
+  confidence: number;
+  coordinateSystem: 'viewport' | 'absolute' | 'relative' | 'dual-coordinate';
+  validationMethod: 'dual-coordinate' | 'transform-matrix' | 'scroll-adjusted';
+}
+
+export interface TransformValidation {
+  isValid: boolean;
+  isDegenerate: boolean;
+  hasUnsupported3D: boolean;
+  determinant: number;
+  warnings: string[];
+}
+
+export interface ValidationThresholds {
+  positionTolerance: number; // pixels
+  sizeTolerance: number; // pixels
+  confidenceThreshold: number; // 0-1
+  transformDeterminantThreshold: number;
+}
+
+export interface ValidationReport {
+  valid: boolean;
+  totalNodes: number;
+  issuesCount: number;
+  issues: ValidationIssue[];
+  stats: {
+    zeroSizeNodes: number;
+    offScreenNodes: number;
+    overlappingNodes: number;
+    missingLayoutNodes: number;
+    negativePositions: number;
+    inaccuratePositions: number;
+    degenerateTransforms: number;
+    unsupported3DTransforms: number;
+    layoutStructureIssues: number;
+  };
+  accuracyMetrics: {
+    averagePositionAccuracy: number;
+    worstPositionDelta: number;
+    averageConfidence: number;
+    coordinateSystemsUsed: string[];
+  };
+  thresholds: ValidationThresholds;
+}
+
+// Grid Layout interfaces
+export interface GridLayoutData {
+  isGrid: boolean;
+  templateColumns: string;
+  templateRows: string;
+  templateAreas?: string[][];
+  columnGap: number;
+  rowGap: number;
+  autoFlow?: string;
+  autoColumns?: string;
+  autoRows?: string;
+  justifyItems?: string;
+  alignItems?: string;
+  justifyContent?: string;
+  alignContent?: string;
+  // Track size calculations
+  computedColumnSizes: number[];
+  computedRowSizes: number[];
+  // Conversion metadata
+  conversionStrategy: 'nested-auto-layout' | 'absolute-positioning' | 'hybrid';
+  figmaAnnotations?: string[];
+}
+
+export interface GridChildData {
+  columnStart?: string | number;
+  columnEnd?: string | number;
+  rowStart?: string | number;
+  rowEnd?: string | number;
+  columnSpan?: number;
+  rowSpan?: number;
+  gridArea?: string;
+  justifySelf?: string;
+  alignSelf?: string;
+  // Computed positioning
+  computedColumn: number;
+  computedRow: number;
+  computedColumnSpan: number;
+  computedRowSpan: number;
+}
+
+// Comprehensive Interactive States Registry
+export interface ComprehensiveStatesRegistry {
+  totalElements: number;
+  capturedStates: CapturedElementStates[];
+  metadata?: {
+    captureTimestamp: number;
+    captureTimeElapsed: number;
+    discoveryMethod: string[];
+    totalStatesFound: number;
+  };
+}
+
+export interface CapturedElementStates {
+  elementId: string;
+  baseStateId: string;
+  discoveredStatesCount: number;
+  variantStatesCount: number;
+  hiddenContentCount: number;
+  interactionFlowsCount: number;
+  states: ElementNode[]; // All states as separate nodes
+  hiddenContent: HiddenContentReference[];
+  interactionFlows?: InteractionFlowReference[];
+}
+
+export interface HiddenContentReference {
+  triggerElementId: string;
+  revealedContent: ElementNode[];
+  visibilityMethod: 'display' | 'visibility' | 'opacity' | 'transform' | 'position';
+  containerElementId?: string;
+  zIndex?: number;
+}
+
+export interface InteractionFlowReference {
+  name: string;
+  steps: InteractionStepReference[];
+  finalStateId: string;
+  reversible: boolean;
+}
+
+export interface InteractionStepReference {
+  actionType: 'click' | 'hover' | 'focus' | 'scroll' | 'touch' | 'keyboard' | 'form-input';
+  targetElementId: string;
+  expectedChanges: string[];
+  actualChanges: ChangeReference[];
+  timestamp: number;
+}
+
+export interface ChangeReference {
+  elementId: string;
+  property: string;
+  beforeValue: any;
+  afterValue: any;
+  changeType: 'style' | 'attribute' | 'content' | 'structure';
 }

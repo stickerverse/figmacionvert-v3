@@ -1,0 +1,475 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>Web to Figma</title>
+  <style>
+    * { 
+      margin: 0; 
+      padding: 0; 
+      box-sizing: border-box; 
+    }
+    
+    body {
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      font-size: 14px;
+      background: #ffffff;
+      color: #000000;
+      padding: 20px;
+      width: 400px;
+      min-height: 300px;
+    }
+
+    .container {
+      display: flex;
+      flex-direction: column;
+      gap: 20px;
+    }
+
+    h1 {
+      font-size: 18px;
+      font-weight: 600;
+      color: #1f2937;
+      text-align: center;
+      margin-bottom: 10px;
+    }
+
+    .status {
+      padding: 12px 16px;
+      border-radius: 8px;
+      text-align: center;
+      font-weight: 500;
+      margin-bottom: 20px;
+    }
+
+    .status.info {
+      background: #f3f4f6;
+      color: #374151;
+    }
+
+    .status.success {
+      background: #d1fae5;
+      color: #065f46;
+    }
+
+    .status.error {
+      background: #fee2e2;
+      color: #991b1b;
+    }
+
+    .progress-section {
+      margin-bottom: 20px;
+    }
+
+    .progress-section.hidden {
+      display: none;
+    }
+
+    .progress-bar {
+      width: 100%;
+      height: 6px;
+      background: #e5e7eb;
+      border-radius: 3px;
+      overflow: hidden;
+      margin-bottom: 8px;
+    }
+
+    .progress-fill {
+      height: 100%;
+      background: #6366f1;
+      width: 0%;
+    }
+
+    .progress-text {
+      font-size: 12px;
+      color: #6b7280;
+      text-align: center;
+    }
+
+    .upload-section {
+      padding: 20px;
+      border: 2px dashed #d1d5db;
+      border-radius: 8px;
+      text-align: center;
+      cursor: pointer;
+      margin-bottom: 16px;
+    }
+
+    .upload-section:hover {
+      border-color: #6366f1;
+      background: #fafafa;
+    }
+
+    .upload-section.has-file {
+      border-color: #10b981;
+      background: #f0fdf4;
+      border-style: solid;
+    }
+
+    .upload-text {
+      font-size: 14px;
+      color: #6b7280;
+      margin-bottom: 4px;
+    }
+
+    .upload-hint {
+      font-size: 12px;
+      color: #9ca3af;
+    }
+
+    .file-input {
+      display: none;
+    }
+
+    .file-name {
+      margin-top: 12px;
+      font-size: 12px;
+      color: #059669;
+      font-weight: 500;
+    }
+
+    .import-actions {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+
+    .btn {
+      width: 100%;
+      padding: 12px 16px;
+      border: none;
+      border-radius: 8px;
+      font-size: 14px;
+      font-weight: 500;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+    }
+
+    .btn:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+
+    .btn-primary {
+      background: #6366f1;
+      color: white;
+    }
+
+    .btn-primary:hover:not(:disabled) {
+      background: #4f46e5;
+    }
+
+    .btn-secondary {
+      background: #f3f4f6;
+      color: #374151;
+      border: 1px solid #d1d5db;
+    }
+
+    .btn-secondary:hover:not(:disabled) {
+      background: #e5e7eb;
+    }
+
+    .connection-panel {
+      border: 1px solid #e5e7eb;
+      border-radius: 10px;
+      padding: 12px 16px;
+      background: #f9fafb;
+    }
+
+    .connection-panel-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 10px;
+      font-weight: 500;
+      color: #374151;
+    }
+
+    .connection-state-label {
+      font-size: 12px;
+      color: #6b7280;
+    }
+
+    .connection-lights {
+      display: flex;
+      gap: 12px;
+    }
+
+    .connection-light {
+      flex: 1;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 8px 10px;
+      border-radius: 8px;
+      border: 1px dashed #d1d5db;
+      font-size: 12px;
+      color: #6b7280;
+    }
+
+    .connection-light .light-dot {
+      width: 12px;
+      height: 12px;
+      border-radius: 50%;
+      background: #d1d5db;
+      box-shadow: inset 0 0 0 2px #fff;
+    }
+
+    .connection-light.active {
+      background: #ffffff;
+      border-style: solid;
+      color: #111827;
+    }
+
+    .connection-light.positive.active .light-dot {
+      background: #10b981;
+    }
+
+    .connection-light.negative.active .light-dot {
+      background: #ef4444;
+    }
+  
+    .hidden {
+      display: none !important;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>🎨 Web to Figma</h1>
+    
+    <div id="status" class="status info">Ready to import</div>
+
+    <div class="connection-panel">
+      <div class="connection-panel-header">
+        <span>Connection</span>
+        <span id="connection-state-label" class="connection-state-label">Negative</span>
+      </div>
+      <div class="connection-lights">
+        <div class="connection-light negative active" data-connection="negative">
+          <span class="light-dot"></span>
+          <span>Negative</span>
+        </div>
+        <div class="connection-light positive" data-connection="positive">
+          <span class="light-dot"></span>
+          <span>Positive</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Progress Indicator (no animations) -->
+    <div id="progress-section" class="progress-section hidden">
+      <div class="progress-bar">
+        <div id="progress-fill" class="progress-fill"></div>
+      </div>
+      <div id="progress-text" class="progress-text">Processing...</div>
+    </div>
+
+    <!-- File Upload (no animations) -->
+    <div id="upload-section" class="upload-section">
+      <input type="file" id="file-input" class="file-input" accept=".json,.wtf">
+      <div class="upload-text">📁 Click to choose file</div>
+      <div class="upload-hint">JSON or .wtf format</div>
+      <div id="file-name" class="file-name hidden"></div>
+    </div>
+
+    <!-- Import Actions (no animations) -->
+    <div class="import-actions">
+      <button id="import-btn" class="btn btn-primary" disabled>
+        📸 Import to Figma
+      </button>
+    </div>
+  </div>
+
+  <script>
+    let currentData = null;
+    let currentWTFFile = null;
+
+    // DOM elements
+    const statusEl = document.getElementById('status');
+    const progressSection = document.getElementById('progress-section');
+    const progressFill = document.getElementById('progress-fill');
+    const progressText = document.getElementById('progress-text');
+    const uploadSection = document.getElementById('upload-section');
+    const fileInput = document.getElementById('file-input');
+    const fileNameEl = document.getElementById('file-name');
+    const importBtn = document.getElementById('import-btn');
+    const positiveLight = document.querySelector('[data-connection="positive"]');
+    const negativeLight = document.querySelector('[data-connection="negative"]');
+    const connectionStateLabel = document.getElementById('connection-state-label');
+
+    function setConnectionState(state) {
+      if (state === 'positive') {
+        positiveLight.classList.add('active');
+        negativeLight.classList.remove('active');
+        connectionStateLabel.textContent = 'Positive';
+      } else {
+        negativeLight.classList.add('active');
+        positiveLight.classList.remove('active');
+        connectionStateLabel.textContent = 'Negative';
+      }
+    }
+    
+    // Update status display (no animations)
+    function updateStatus(message, type = 'info') {
+      statusEl.textContent = message;
+      statusEl.className = `status ${type}`;
+    }
+
+    // Update progress (no animations)
+    function updateProgress(percent, message = '') {
+      if (percent > 0) {
+        progressSection.classList.remove('hidden');
+        progressFill.style.width = `${percent}%`;
+        if (message) {
+          progressText.textContent = message;
+        }
+      } else {
+        progressSection.classList.add('hidden');
+      }
+    }
+
+    // File input handling
+    uploadSection.addEventListener('click', () => {
+      fileInput.click();
+    });
+
+    fileInput.addEventListener('change', (e) => {
+      const file = e.target.files[0];
+      if (!file) return;
+
+      const isWTFFile = file.name.toLowerCase().endsWith('.wtf');
+      uploadSection.classList.add('has-file');
+      fileNameEl.textContent = `✓ ${file.name}`;
+      fileNameEl.classList.remove('hidden');
+
+      if (isWTFFile) {
+        const reader = new FileReader();
+        reader.onload = (event) => {
+          try {
+            currentWTFFile = event.target.result;
+            currentData = null;
+            importBtn.disabled = false;
+            updateStatus('✅ Ready to import .wtf file', 'success');
+          } catch (error) {
+            updateStatus('❌ Invalid .wtf file', 'error');
+          }
+        };
+        reader.readAsArrayBuffer(file);
+      } else {
+        const reader = new FileReader();
+        reader.onload = (event) => {
+          try {
+            currentData = JSON.parse(event.target.result);
+            currentWTFFile = null;
+            importBtn.disabled = false;
+            updateStatus('✅ Ready to import JSON', 'success');
+          } catch (error) {
+            updateStatus('❌ Invalid JSON file', 'error');
+          }
+        };
+        reader.readAsText(file);
+      }
+    });
+
+    // Import button handling
+    importBtn.addEventListener('click', () => {
+      if (!currentData && !currentWTFFile) return;
+
+      updateStatus('Starting import...', 'info');
+      updateProgress(10, 'Initializing...');
+      importBtn.disabled = true;
+
+      if (currentWTFFile) {
+        parent.postMessage({
+          pluginMessage: {
+            type: 'import-wtf',
+            fileData: currentWTFFile,
+            options: {}
+          }
+        }, '*');
+      } else {
+        parent.postMessage({
+          pluginMessage: {
+            type: 'import-enhanced',
+            data: currentData,
+            options: {}
+          }
+        }, '*');
+      }
+    });
+
+    // Handle messages from plugin backend (no animations)
+    onmessage = (event) => {
+      const msg = event.data.pluginMessage;
+      
+      switch (msg.type) {
+        case 'auto-import-ready':
+          updateStatus('🔄 Checking for captures...', 'info');
+          setConnectionState('negative');
+          break;
+
+        case 'auto-import-data':
+          currentData = msg.data;
+          currentWTFFile = null;
+          uploadSection.classList.add('has-file');
+          fileNameEl.textContent = '⚡ Auto-imported';
+          fileNameEl.classList.remove('hidden');
+          importBtn.disabled = false;
+          updateStatus('✅ Auto-import ready', 'success');
+          setConnectionState('positive');
+          
+          // Auto-trigger import
+          setTimeout(() => {
+            importBtn.click();
+          }, 100);
+          break;
+
+        case 'handoff-status':
+          if (msg.status === 'waiting') {
+            setConnectionState('negative');
+          } else if (msg.status === 'job-ready') {
+            setConnectionState('positive');
+          } else {
+            setConnectionState('negative');
+          }
+          break;
+
+        case 'progress':
+          updateProgress(msg.percent, msg.message);
+          break;
+
+        case 'complete':
+          const elementCount = msg.stats?.elements || msg.stats?.nodes || 0;
+          updateStatus(`✅ Imported ${elementCount} elements!`, 'success');
+          updateProgress(100, 'Complete!');
+          importBtn.disabled = false;
+          
+          setTimeout(() => {
+            updateProgress(0);
+          }, 2000);
+          break;
+
+        case 'error':
+          updateStatus(`❌ ${msg.message}`, 'error');
+          updateProgress(0);
+          importBtn.disabled = false;
+          setConnectionState('negative');
+          break;
+
+        case 'import-busy':
+          updateStatus('Import in progress...', 'info');
+          break;
+      }
+    };
+
+    // Initialize
+    updateStatus('Ready to import');
+    setConnectionState('negative');
+    console.log('Static Web to Figma plugin loaded');
+  </script>
+</body>
+</html>
