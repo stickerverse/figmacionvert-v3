@@ -4,7 +4,12 @@
   "description": "",
   "main": "test-extension.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1",
+    "test": "node test-runner.js --quick",
+    "test:quick": "node quick-workflow-test.js",
+    "test:comprehensive": "node test-runner.js --comprehensive",
+    "test:headless": "node test-runner.js --quick --headless",
+    "test:performance": "node test-runner.js --performance",
+    "test:e2e": "node comprehensive-e2e-test.js",
     "handoff-server": "node handoff-server.js",
     "validate:pixels": "node tools/validation/pixel-diff.js",
     "capture": "node puppeteer-auto-import.js"
@@ -27,6 +32,9 @@
     "uuid": "^13.0.0"
   },
   "devDependencies": {
+    "@types/body-parser": "^1.19.6",
+    "@types/express": "^5.0.5",
+    "body-parser": "^2.2.0",
     "pixelmatch": "^7.1.0",
     "pngjs": "^7.0.0"
   }

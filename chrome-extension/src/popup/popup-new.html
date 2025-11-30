@@ -1,27 +1,53 @@
 <!DOCTYPE html>
 <html>
 <head>
-  <meta charset="utf-8">
-  <link rel="stylesheet" href="popup-new.css">
+  <meta charset="UTF-8">
+  <title>Web to Figma</title>
+  <link rel="stylesheet" href="popup.css">
 </head>
 <body>
-  <div class="popup-container">
-    <!-- Header -->
+  <div class="container">
     <header class="header">
-      <div class="logo">
-        <span class="logo-html">HTML</span>
-        <svg class="logo-arrow" width="24" height="24" viewBox="0 0 24 24" fill="none">
-          <path d="M5 12h14m-7-7l7 7-7 7" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-        </svg>
-        <span class="logo-figma">Figma</span>
+      <div class="brand">
+        <span class="brand-html">HTML</span>
+        <span class="brand-figma">Figma</span>
       </div>
-      <button class="btn-upgrade" title="Upgrade to Pro">
-        Upgrade to Pro
-      </button>
-      <button class="btn-help" title="Help & Documentation">?</button>
+      <div class="header-actions">
+        <button class="btn-upgrade" type="button">Upgrade to Pro</button>
+        <button class="btn-help" type="button" title="Help & Documentation">?</button>
+      </div>
     </header>
 
-    <!-- Capture Options -->
+    <div class="capture-preview" id="capture-preview">
+      <div class="preview-header">
+        <span class="preview-title">🎯 Capturing...</span>
+        <span class="preview-status" id="preview-status">Initializing</span>
+      </div>
+      <div class="preview-viewport">
+        <canvas class="preview-canvas" id="preview-canvas"></canvas>
+        <div class="laser-scan" id="laser-scan"></div>
+        <!-- Circular Progress Ring Overlay -->
+        <div class="progress-ring-overlay" id="progress-ring-overlay">
+          <div class="progress-ring-container">
+            <svg class="progress-ring" width="120" height="120">
+             <defs>
+                <linearGradient id="progress-gradient" x1="0%" y1="0%" x2="100%" y2="100%">
+                  <stop offset="0%" stop-color="#667eea"/>
+                  <stop offset="100%" stop-color="#764ba2"/>
+                </linearGradient>
+              </defs>
+              <circle class="progress-ring-bg" cx="60" cy="60" r="54"></circle>
+              <circle class="progress-ring-fill" cx="60" cy="60" r="54"></circle>
+            </svg>
+            <div class="progress-text">
+              <div class="progress-percent">0%</div>
+              <div class="progress-label">Ready</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
     <div class="capture-grid">
       <!-- Full Page Capture -->
       <button class="capture-card" id="capture-full-page">
@@ -43,8 +69,8 @@
           </svg>
         </div>
         <div class="card-content">
-          <h3 class="card-title">Capture</h3>
-          <p class="card-subtitle">the full page</p>
+          <h3 class="card-title">Capture Current Page</h3>
+          <p class="card-subtitle">Process entire document</p>
         </div>
       </button>
 
@@ -63,8 +89,28 @@
           </svg>
         </div>
         <div class="card-content">
-          <h3 class="card-title">Select&Capture</h3>
+          <h3 class="card-title">Select & Capture</h3>
           <p class="card-subtitle">a component</p>
+        </div>
+      </button>
+
+      <!-- Download Capture (New) -->
+      <button class="capture-card" id="capture-download">
+        <div class="card-icon">
+          <svg width="64" height="64" viewBox="0 0 64 64" fill="none">
+            <path d="M32 12V44M32 44L20 32M32 44L44 32" stroke="url(#gradient4)" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+            <path d="M12 52H52" stroke="url(#gradient4)" stroke-width="4" stroke-linecap="round"/>
+            <defs>
+              <linearGradient id="gradient4" x1="0" y1="0" x2="64" y2="64">
+                <stop offset="0%" stop-color="#667eea"/>
+                <stop offset="100%" stop-color="#764ba2"/>
+              </linearGradient>
+            </defs>
+          </svg>
+        </div>
+        <div class="card-content">
+          <h3 class="card-title">Download Capture</h3>
+          <p class="card-subtitle">Save as .json file</p>
         </div>
       </button>
 
@@ -92,18 +138,6 @@
       </button>
     </div>
 
-    <!-- Capture Preview -->
-    <div class="capture-preview hidden" id="capture-preview">
-      <div class="preview-header">
-        <span class="preview-title">🎯 Capturing...</span>
-        <span class="preview-status" id="preview-status">Initializing</span>
-      </div>
-      <div class="preview-viewport">
-        <canvas class="preview-canvas" id="preview-canvas"></canvas>
-        <div class="laser-scan" id="laser-scan"></div>
-      </div>
-    </div>
-
     <!-- Terminal / Progress Log -->
     <div class="terminal hidden" id="terminal">
       <div class="terminal-header">
@@ -124,19 +158,68 @@
       </div>
     </div>
 
-    <!-- Connection Status -->
-    <div class="connection-status" id="connection-status">
-      <div class="connection-item">
-        <span class="connection-dot" id="cloud-dot"></span>
-        <span class="connection-label">Cloud</span>
+    <!-- Debug Controls Removed -->
+    
+    <!-- Connection Status Panel Removed -->
+
+    <!-- Capture complete dialog -->
+    <div class="capture-dialog hidden" id="capture-dialog" role="alert">
+      <div class="dialog-content">
+        <div class="dialog-icon">✅</div>
+        <div class="dialog-text">
+          <div class="dialog-title">Capture complete!</div>
+          <div class="dialog-subtitle">Sent to Figma</div>
+        </div>
       </div>
-      <div class="connection-item">
-        <span class="connection-dot" id="figma-dot"></span>
-        <span class="connection-label">Figma</span>
+      <button class="dialog-close" id="capture-dialog-close" type="button">Close</button>
+    </div>
+
+    <!-- Toast Notification Container -->
+    <div class="toast-container" id="toast-container"></div>
+
+    <!-- Success Modal Dialog -->
+    <div class="modal hidden" id="success-modal">
+      <div class="modal-overlay" id="success-modal-overlay"></div>
+      <div class="modal-content">
+        <div class="modal-header">
+          <div class="modal-icon success">
+            <span class="progress-icon success">✓</span>
+          </div>
+          <div class="modal-title">Capture Complete!</div>
+          <div class="modal-description">
+            Your page has been successfully captured and sent to Figma
+          </div>
+        </div>
+        
+        <div class="modal-details">
+          <div class="modal-details-title">CAPTURE DETAILS</div>
+          <div class="modal-detail-item">
+            <span class="modal-detail-label">Viewport</span>
+            <span class="modal-detail-value" id="detail-viewport">-</span>
+          </div>
+          <div class="modal-detail-item">
+            <span class="modal-detail-label">Payload Size</span>
+            <span class="modal-detail-value" id="detail-size">-</span>
+          </div>
+          <div class="modal-detail-item">
+            <span class="modal-detail-label">Elements</span>
+            <span class="modal-detail-value" id="detail-elements">-</span>
+          </div>
+          <div class="modal-detail-item">
+            <span class="modal-detail-label">Duration</span>
+            <span class="modal-detail-value" id="detail-duration">-</span>
+          </div>
+        </div>
+
+        <div class="modal-actions">
+          <button class="btn btn-ghost w-full" id="close-modal">
+            Close
+          </button>
+        </div>
       </div>
     </div>
   </div>
 
-  <script src="popup-new.js"></script>
+  <script src="popup.js"></script>
 </body>
 </html>

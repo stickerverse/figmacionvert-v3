@@ -81,6 +81,7 @@ export class ProgressiveAssetOptimizer {
     console.log(`📊 Initial payload: ${originalPayloadSizeMB.toFixed(2)}MB`);
 
     // Analyze asset context and importance
+    await new Promise(resolve => setTimeout(resolve, 0));
     const assetContexts = this.contextAnalyzer.analyzeAssets(tree, assets);
 
     // Initialize result tracking
@@ -92,7 +93,12 @@ export class ProgressiveAssetOptimizer {
       assetsRemoved: 0,
       optimizationRounds: 0,
       assetResults: new Map(),
-      optimizedAssets: JSON.parse(JSON.stringify(assets)), // Deep clone
+      // Efficient shallow clone instead of blocking JSON.parse/stringify
+      optimizedAssets: {
+        images: { ...assets.images },
+        svgs: { ...assets.svgs },
+        gradients: assets.gradients ? { ...assets.gradients } : {}
+      },
       metadata: {
         preservedAssets: [],
         aggressivelyOptimized: [],
@@ -243,6 +249,9 @@ export class ProgressiveAssetOptimizer {
     const currentPayloadSize = this.calculatePayloadSize(result.optimizedAssets);
 
     for (const assetHash of round.targets) {
+      // Yield to main thread every few assets to prevent UI freeze
+      await new Promise(resolve => setTimeout(resolve, 0));
+
       // Find asset in either images or SVGs
       const imageAsset = result.optimizedAssets.images[assetHash];
       const svgAsset = result.optimizedAssets.svgs[assetHash];
@@ -342,7 +351,7 @@ export class ProgressiveAssetOptimizer {
     }
 
     // Asset was optimized
-    if (optimizationResult.optimizedAsset && 'base64' in optimizationResult.optimizedAsset) {
+    if (optimizationResult.optimizedAsset && 'data' in optimizationResult.optimizedAsset) {
       // It's an image asset
       result.optimizedAssets.images[assetHash] = optimizationResult.optimizedAsset as ImageAsset;
       
@@ -391,7 +400,7 @@ export class ProgressiveAssetOptimizer {
       optimizationStrategy: OptimizationStrategy.BALANCED,
       preserveQuality: false,
       originalSize: this.isImageAsset(asset) ? 
-        (asset.base64 ? (asset.base64.length * 0.75) / 1024 : 0) :
+        (asset.data ? (asset.data.length * 0.75) / 1024 : 0) :
         (asset.svgCode ? asset.svgCode.length / 1024 : 0)
     };
   }
@@ -404,8 +413,8 @@ export class ProgressiveAssetOptimizer {
 
     // Calculate image sizes
     Object.values(assets.images).forEach(asset => {
-      if (asset.base64) {
-        totalBytes += asset.base64.length * 0.75; // Account for base64 overhead
+      if (asset.data) {
+        totalBytes += asset.data.length * 0.75; // Account for base64 overhead
       }
     });
 
@@ -440,7 +449,7 @@ export class ProgressiveAssetOptimizer {
   }
 
   private isImageAsset(asset: ImageAsset | SVGAsset): asset is ImageAsset {
-    return 'base64' in asset;
+    return 'data' in asset;
   }
 }
 

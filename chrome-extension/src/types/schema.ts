@@ -45,13 +45,20 @@ export interface PageMetadata {
   url: string;
   title: string;
   timestamp: string;
+  captureCoordinateSystem?: "css-pixels" | "device-pixels";
   viewport: {
     width: number;
     height: number;
     devicePixelRatio: number;
+    layoutViewportWidth?: number;
+    layoutViewportHeight?: number;
+    scrollHeight?: number;
+    screenshotScale?: number;
+    scrollX?: number;
+    scrollY?: number;
   };
   fonts: FontDefinition[];
-  breakpoint?: 'mobile' | 'tablet' | 'desktop';
+  breakpoint?: "mobile" | "tablet" | "desktop";
   captureOptions?: CaptureOptions;
   extractionSummary?: {
     scrollComplete: boolean;
@@ -61,6 +68,32 @@ export interface PageMetadata {
     enhancedComponentDetection?: boolean;
     componentDetectionMethod?: string;
   };
+  readiness?: any; // readiness telemetry (waiting for stable page)
+  alignmentDiagnostics?: {
+    totalNodes: number;
+    correctedNodes: number;
+    zeroSizeNodes: number;
+    offscreenNodes: number;
+    oversizedNodes: number;
+    clampedNodes: number;
+    notes: string[];
+    corrections?: {
+      nodeId: string;
+      type: string;
+      before: { x: number; y: number; width: number; height: number };
+      after: { x: number; y: number; width: number; height: number };
+    }[];
+  };
+  screenshotFallback?: {
+    index: number;
+    scale: number;
+    canCrop: boolean;
+  };
+  csp?: {
+    evalBlocked: boolean;
+    mode: string;
+  };
+  captureMode?: "worker" | "main-thread" | "worker-fallback-main-thread";
 }
 
 export interface CaptureOptions {
@@ -68,7 +101,7 @@ export interface CaptureOptions {
   captureFocusStates: boolean;
   detectComponents: boolean;
   extractSVGs: boolean;
-  captureDepth: 'shallow' | 'medium' | 'deep';
+  captureDepth: "shallow" | "medium" | "deep";
   viewports: ViewportConfig[];
 }
 
@@ -80,8 +113,16 @@ export interface ViewportConfig {
 
 export interface ElementNode {
   id: string;
-  type: 'FRAME' | 'TEXT' | 'RECTANGLE' | 'VECTOR' | 'IMAGE' | 'COMPONENT' | 'INSTANCE';
+  type:
+    | "FRAME"
+    | "TEXT"
+    | "RECTANGLE"
+    | "VECTOR"
+    | "IMAGE"
+    | "COMPONENT"
+    | "INSTANCE";
   name: string;
+  zIndex?: number; // Added for correct stacking context
 
   layout: {
     x: number;
@@ -93,7 +134,7 @@ export interface ElementNode {
     maxWidth?: number;
     minHeight?: number;
     maxHeight?: number;
-    boxSizing?: 'border-box' | 'content-box';
+    boxSizing?: "border-box" | "content-box";
   };
 
   absoluteLayout?: {
@@ -103,6 +144,17 @@ export interface ElementNode {
     bottom: number;
     width: number;
     height: number;
+    zIndex?: number; // Added for correct stacking context
+  };
+
+  renderedMetrics?: {
+    width: number;
+    height: number;
+    actualBoundingBoxAscent?: number;
+    actualBoundingBoxDescent?: number;
+    fontBoundingBoxAscent?: number;
+    fontBoundingBoxDescent?: number;
+    lineHeightPx?: number;
   };
 
   viewportLayout?: {
@@ -123,18 +175,20 @@ export interface ElementNode {
   hasOverlappingElements?: boolean;
 
   autoLayout?: {
-    layoutMode: 'HORIZONTAL' | 'VERTICAL' | 'NONE';
-    primaryAxisAlignItems: 'MIN' | 'CENTER' | 'MAX' | 'SPACE_BETWEEN';
-    counterAxisAlignItems: 'MIN' | 'CENTER' | 'MAX' | 'STRETCH';
-    primaryAxisSizingMode?: 'FIXED' | 'AUTO';
-    counterAxisSizingMode?: 'FIXED' | 'AUTO';
+    layoutMode: "HORIZONTAL" | "VERTICAL" | "NONE";
+    primaryAxisAlignItems: "MIN" | "CENTER" | "MAX" | "SPACE_BETWEEN";
+    counterAxisAlignItems: "MIN" | "CENTER" | "MAX" | "STRETCH";
+    primaryAxisSizingMode?: "FIXED" | "AUTO";
+    counterAxisSizingMode?: "FIXED" | "AUTO";
+    layoutWrap?: "NO_WRAP" | "WRAP";
+    counterAxisSpacing?: number;
     paddingTop: number;
     paddingRight: number;
     paddingBottom: number;
     paddingLeft: number;
     itemSpacing: number;
     layoutGrow?: number;
-    layoutAlign?: 'STRETCH' | 'INHERIT';
+    layoutAlign?: "STRETCH" | "INHERIT";
   };
 
   layoutContext?: {
@@ -191,7 +245,7 @@ export interface ElementNode {
   fills?: Fill[];
   strokes?: Stroke[];
   strokeWeight?: number;
-  strokeAlign?: 'INSIDE' | 'OUTSIDE' | 'CENTER';
+  strokeAlign?: "INSIDE" | "OUTSIDE" | "CENTER";
   effects?: Effect[];
   cornerRadius?: CornerRadius | number;
   opacity?: number;
@@ -208,7 +262,35 @@ export interface ElementNode {
   };
 
   imageHash?: string;
+  imageAssetId?: string; // REQUIRED when type === "IMAGE"
+  backgroundImageAssetId?: string; // Explicit reference for background image
+  screenshotAssetId?: string; // Optional per-node screenshot overlay
 
+  designTokens?: {
+    fillTokenId?: string;
+    strokeTokenId?: string;
+    textStyleTokenId?: string;
+    fontFamilyTokenId?: string;
+    fontSizeTokenId?: string;
+    spacingTokenId?: string;
+    radiusTokenId?: string;
+    // Legacy support (optional, can be removed if fully migrated)
+    fill?: string;
+    stroke?: string;
+    textStyle?: string;
+    fontFamily?: string;
+    fontSize?: string;
+    fontWeight?: string;
+    lineHeight?: string;
+    letterSpacing?: string;
+    borderRadius?: string;
+    gap?: string;
+    padding?: string;
+    width?: string;
+    height?: string;
+  };
+
+  isShadowHost?: boolean;
   isComponent?: boolean;
   componentId?: string;
   componentKey?: string;
@@ -220,6 +302,9 @@ export interface ElementNode {
     after?: ElementNode;
   };
 
+  // Custom plugin data
+  pluginData?: Record<string, any>;
+
   htmlTag: string;
   cssClasses: string[];
   cssId?: string;
@@ -230,13 +315,13 @@ export interface ElementNode {
   children: ElementNode[];
 
   constraints?: {
-    horizontal: 'MIN' | 'CENTER' | 'MAX' | 'STRETCH' | 'SCALE';
-    vertical: 'MIN' | 'CENTER' | 'MAX' | 'STRETCH' | 'SCALE';
+    horizontal: "MIN" | "CENTER" | "MAX" | "STRETCH" | "SCALE";
+    vertical: "MIN" | "CENTER" | "MAX" | "STRETCH" | "SCALE";
   };
 
   interactions?: InteractionData[];
 
-  position?: 'static' | 'relative' | 'absolute' | 'fixed' | 'sticky';
+  position?: "static" | "relative" | "absolute" | "fixed" | "sticky";
   positionValues?: {
     top?: string;
     right?: string;
@@ -244,13 +329,12 @@ export interface ElementNode {
     left?: string;
   };
   display?: string;
-  visibility?: 'visible' | 'hidden' | 'collapse';
+  visibility?: "visible" | "hidden" | "collapse";
   pointerEvents?: string;
   overflow?: {
-    horizontal: 'visible' | 'hidden' | 'scroll' | 'auto' | 'clip';
-    vertical: 'visible' | 'hidden' | 'scroll' | 'auto' | 'clip';
+    horizontal: "visible" | "hidden" | "scroll" | "auto" | "clip";
+    vertical: "visible" | "hidden" | "scroll" | "auto" | "clip";
   };
-  zIndex?: number;
   order?: number;
   isStackingContext?: boolean;
 
@@ -270,39 +354,43 @@ export interface ElementNode {
   contentHash?: string;
   componentSignature?: string;
 
-  inlineTextSegments?: InlineTextSegment[];
+  // Text Content
+  inlineTextSegments?: InlineTextSegment[]; // REQUIRED for complex text
+  domTextNodeIds?: string[]; // underlying DOM node IDs that were merged into this block
 }
 
 export interface InteractionData {
-  type: 'HOVER' | 'FOCUS' | 'ACTIVE' | 'CLICK';
+  type: "HOVER" | "FOCUS" | "ACTIVE" | "CLICK";
   targetId?: string;
   description?: string;
 }
 
 export interface InlineTextSegment {
   id: string;
-  characters: string;
-  textStyle: TextStyle;
+  characters: string; // text for this segment
+  textStyle: TextStyle; // overrides / inline style
   layout: {
-    x: number;
+    x: number; // position **relative to the block**
     y: number;
     width: number;
     height: number;
+    lineIndex?: number; // optional: which line
+    segmentIndex?: number; // optional: order in line
   };
 }
 
 export interface Fill {
-  type: 'SOLID' | 'GRADIENT_LINEAR' | 'GRADIENT_RADIAL' | 'IMAGE';
+  type: "SOLID" | "GRADIENT_LINEAR" | "GRADIENT_RADIAL" | "IMAGE";
   visible?: boolean;
   opacity?: number;
   color?: RGBA;
   gradientStops?: GradientStop[];
   gradientTransform?: Transform2D;
   imageHash?: string;
-  scaleMode?: 'FILL' | 'FIT' | 'CROP' | 'TILE';
+  scaleMode?: "FILL" | "FIT" | "CROP" | "TILE";
   imageTransform?: Transform2D;
   rotation?: number;
-  objectFit?: 'fill' | 'contain' | 'cover' | 'none' | 'scale-down';
+  objectFit?: "fill" | "contain" | "cover" | "none" | "scale-down";
   objectPosition?: string;
 }
 
@@ -312,16 +400,16 @@ export interface GradientStop {
 }
 
 export interface Stroke {
-  type: 'SOLID' | 'GRADIENT_LINEAR';
+  type: "SOLID" | "GRADIENT_LINEAR";
   color?: RGBA;
   opacity?: number;
   thickness: number;
-  strokeAlign: 'INSIDE' | 'OUTSIDE' | 'CENTER';
+  strokeAlign: "INSIDE" | "OUTSIDE" | "CENTER";
   dashPattern?: number[];
 }
 
 export interface Effect {
-  type: 'DROP_SHADOW' | 'INNER_SHADOW' | 'LAYER_BLUR' | 'BACKGROUND_BLUR';
+  type: "DROP_SHADOW" | "INNER_SHADOW" | "LAYER_BLUR" | "BACKGROUND_BLUR";
   visible: boolean;
   radius: number;
   color?: RGBA;
@@ -334,16 +422,16 @@ export interface TextStyle {
   fontFamily: string;
   fontWeight: number;
   fontSize: number;
-  lineHeight: { value: number; unit: 'PIXELS' | 'PERCENT' | 'AUTO' };
-  letterSpacing: { value: number; unit: 'PIXELS' | 'PERCENT' };
-  textAlignHorizontal: 'LEFT' | 'CENTER' | 'RIGHT' | 'JUSTIFIED';
-  textAlignVertical: 'TOP' | 'CENTER' | 'BOTTOM';
-  textCase?: 'ORIGINAL' | 'UPPER' | 'LOWER' | 'TITLE';
-  textDecoration?: 'NONE' | 'UNDERLINE' | 'STRIKETHROUGH';
+  lineHeight: { value: number; unit: "PIXELS" | "PERCENT" | "AUTO" };
+  letterSpacing: { value: number; unit: "PIXELS" | "PERCENT" };
+  textAlignHorizontal: "LEFT" | "CENTER" | "RIGHT" | "JUSTIFIED";
+  textAlignVertical: "TOP" | "CENTER" | "BOTTOM";
+  textCase?: "ORIGINAL" | "UPPER" | "LOWER" | "TITLE";
+  textDecoration?: "NONE" | "UNDERLINE" | "STRIKETHROUGH";
   lineHeightPx?: number;
   paragraphSpacing?: number;
   paragraphIndent?: number;
-  fontStyle?: 'normal' | 'italic' | 'oblique';
+  fontStyle?: "normal" | "italic" | "oblique";
   textTransform?: string;
   whiteSpace?: string;
   wordWrap?: string;
@@ -381,12 +469,35 @@ export interface AssetRegistry {
 }
 
 export interface ImageAsset {
-  hash: string;
+  id: string; // Canonical ID, matches ElementNode.imageAssetId
   url: string;
-  base64?: string;
   width: number;
   height: number;
-  mimeType: string;
+  contentType?: string;
+  data: string; // REQUIRED: base64-encoded bytes
+  placeholderColor?: RGBA;
+
+  // Legacy/Optional metadata
+  hash?: string; // Kept for backward compatibility if needed, but id is preferred
+  mimeType?: string;
+  figmaOptimized?: boolean;
+  originalDimensions?: {
+    width: number;
+    height: number;
+  };
+  optimizations?: string[];
+  compressionRatio?: number;
+}
+
+export interface ImageAssetPartial {
+  hash: string;
+  url: string;
+  width: number;
+  height: number;
+  mimeType?: string;
+  base64?: string;
+  data?: string;
+  placeholderColor?: RGBA;
 }
 
 export interface SVGAsset {
@@ -398,7 +509,7 @@ export interface SVGAsset {
 
 export interface GradientAsset {
   hash: string;
-  type: 'linear' | 'radial';
+  type: "linear" | "radial";
   stops: GradientStop[];
   transform: Transform2D;
 }
@@ -424,6 +535,10 @@ export interface ComponentDefinition {
   id: string;
   name: string;
   description?: string;
+
+  masterElementId: string; // the ElementNode.id used as the base component
+  domSelector?: string; // optional CSS-like selector that identifies instances
+
   variantId?: string;
   properties?: Record<string, any>;
 }
@@ -439,44 +554,46 @@ export interface VariantsRegistry {
 
 export interface VariantSet {
   elementId: string;
-  componentId?: string;
+  componentId: string; // REQUIRED: matches ComponentDefinition.id
   variants: VariantData[];
   metadata: {
     tagName: string;
     selector: string;
     interactionTypes: string[];
+    variantAxes?: string[]; // e.g. ['state', 'size']
   };
 }
 
 export interface VariantData {
-  state: 'default' | 'hover' | 'focus' | 'active' | 'disabled';
+  state: "default" | "hover" | "focus" | "active" | "disabled";
   properties: Partial<ElementNode>;
+  axes?: Record<string, string>; // e.g. { state: 'hover', size: 'lg' }
 }
 
 export type BlendMode =
-  | 'NORMAL'
-  | 'MULTIPLY'
-  | 'SCREEN'
-  | 'OVERLAY'
-  | 'DARKEN'
-  | 'LIGHTEN'
-  | 'COLOR_DODGE'
-  | 'COLOR_BURN'
-  | 'HARD_LIGHT'
-  | 'SOFT_LIGHT'
-  | 'DIFFERENCE'
-  | 'EXCLUSION'
-  | 'HUE'
-  | 'SATURATION'
-  | 'COLOR'
-  | 'LUMINOSITY';
+  | "NORMAL"
+  | "MULTIPLY"
+  | "SCREEN"
+  | "OVERLAY"
+  | "DARKEN"
+  | "LIGHTEN"
+  | "COLOR_DODGE"
+  | "COLOR_BURN"
+  | "HARD_LIGHT"
+  | "SOFT_LIGHT"
+  | "DIFFERENCE"
+  | "EXCLUSION"
+  | "HUE"
+  | "SATURATION"
+  | "COLOR"
+  | "LUMINOSITY";
 
 export type Transform2D = [[number, number, number], [number, number, number]];
 
 export interface FontDefinition {
   family: string;
   weights: number[];
-  source: 'google' | 'system' | 'custom';
+  source: "google" | "system" | "custom";
   url?: string;
 }
 
@@ -508,6 +625,11 @@ export interface DesignToken {
   resolvedValue?: any; // Computed/resolved value
   references?: string[]; // Other tokens this references
   referencedBy?: string[]; // Tokens that reference this one
+
+  // Figma Integration
+  figmaVariableId?: string;
+  figmaCollectionId?: string;
+  figmaStyleId?: string; // for text/paint style bindings
 }
 
 export interface TokenCollection {
@@ -531,29 +653,25 @@ export interface TokenUsage {
   computed: boolean; // Whether this was computed or explicitly declared
 }
 
-export type TokenType = 
-  | 'COLOR' 
-  | 'FLOAT' 
-  | 'STRING'
-  | 'BOOLEAN';
+export type TokenType = "COLOR" | "FLOAT" | "STRING" | "BOOLEAN";
 
-export type TokenScope = 
-  | 'ALL_SCOPES'
-  | 'TEXT_CONTENT'
-  | 'CORNER_RADIUS'
-  | 'WIDTH_HEIGHT'
-  | 'GAP'
-  | 'STROKE_COLOR'
-  | 'EFFECT_COLOR'
-  | 'ALL_FILLS'
-  | 'FRAME_FILL'
-  | 'SHAPE_FILL'
-  | 'TEXT_FILL';
+export type TokenScope =
+  | "ALL_SCOPES"
+  | "TEXT_CONTENT"
+  | "CORNER_RADIUS"
+  | "WIDTH_HEIGHT"
+  | "GAP"
+  | "STROKE_COLOR"
+  | "EFFECT_COLOR"
+  | "ALL_FILLS"
+  | "FRAME_FILL"
+  | "SHAPE_FILL"
+  | "TEXT_FILL";
 
 export interface TokenValue {
-  type: 'SOLID' | 'ALIAS' | 'VARIABLE_ALIAS' | 'EXPRESSION';
+  type: "SOLID" | "ALIAS" | "VARIABLE_ALIAS" | "EXPRESSION";
   value: any;
-  resolvedType?: 'COLOR' | 'NUMBER' | 'STRING' | 'BOOLEAN';
+  resolvedType?: "COLOR" | "NUMBER" | "STRING" | "BOOLEAN";
   originalValue?: string; // Original CSS value before parsing
 }
 
@@ -567,45 +685,61 @@ export interface TransformData {
 }
 
 export interface TransformFunction {
-  type: 'translate' | 'translateX' | 'translateY' | 'translate3d' | 'translateZ' |
-        'scale' | 'scaleX' | 'scaleY' | 'scale3d' | 'scaleZ' |
-        'rotate' | 'rotateX' | 'rotateY' | 'rotateZ' | 'rotate3d' |
-        'skew' | 'skewX' | 'skewY' |
-        'matrix' | 'matrix3d' |
-        'perspective';
+  type:
+    | "translate"
+    | "translateX"
+    | "translateY"
+    | "translate3d"
+    | "translateZ"
+    | "scale"
+    | "scaleX"
+    | "scaleY"
+    | "scale3d"
+    | "scaleZ"
+    | "rotate"
+    | "rotateX"
+    | "rotateY"
+    | "rotateZ"
+    | "rotate3d"
+    | "skew"
+    | "skewX"
+    | "skewY"
+    | "matrix"
+    | "matrix3d"
+    | "perspective";
   values: number[];
 }
 
 export interface FilterData {
   type:
-    | 'blur'
-    | 'brightness'
-    | 'contrast'
-    | 'dropShadow'
-    | 'grayscale'
-    | 'hueRotate'
-    | 'invert'
-    | 'opacity'
-    | 'saturate'
-    | 'sepia';
+    | "blur"
+    | "brightness"
+    | "contrast"
+    | "dropShadow"
+    | "grayscale"
+    | "hueRotate"
+    | "invert"
+    | "opacity"
+    | "saturate"
+    | "sepia";
   value: number;
-  unit?: 'px' | '%' | 'deg';
+  unit?: "px" | "%" | "deg";
   color?: RGBA;
   offset?: { x: number; y: number };
 }
 
 export interface ClipPathData {
-  type: 'circle' | 'ellipse' | 'inset' | 'polygon' | 'path' | 'url' | 'none';
+  type: "circle" | "ellipse" | "inset" | "polygon" | "path" | "url" | "none";
   value: string;
 }
 
 export interface MaskData {
-  type: 'alpha' | 'luminance' | 'url' | 'none';
+  type: "alpha" | "luminance" | "url" | "none";
   value: string;
 }
 
 export interface BackgroundLayer {
-  type: 'color' | 'gradient' | 'image';
+  type: "color" | "gradient" | "image";
   fill: Fill;
   position?: { x: string; y: string };
   size?: { width: string; height: string };
@@ -619,15 +753,15 @@ export interface OutlineData {
   color: RGBA;
   width: number;
   style:
-    | 'solid'
-    | 'dashed'
-    | 'dotted'
-    | 'double'
-    | 'groove'
-    | 'ridge'
-    | 'inset'
-    | 'outset'
-    | 'none';
+    | "solid"
+    | "dashed"
+    | "dotted"
+    | "double"
+    | "groove"
+    | "ridge"
+    | "inset"
+    | "outset"
+    | "none";
 }
 
 export interface ScrollData {
@@ -641,8 +775,14 @@ export interface ScrollData {
 
 // Validation interfaces
 export interface ValidationIssue {
-  severity: 'error' | 'warning' | 'info';
-  type: 'positioning' | 'sizing' | 'layout' | 'structure' | 'transform' | 'coordinate-accuracy';
+  severity: "error" | "warning" | "info";
+  type:
+    | "positioning"
+    | "sizing"
+    | "layout"
+    | "structure"
+    | "transform"
+    | "coordinate-accuracy";
   nodeId: string;
   nodeName: string;
   message: string;
@@ -657,8 +797,8 @@ export interface PositionAccuracy {
   deltaX: number;
   deltaY: number;
   confidence: number;
-  coordinateSystem: 'viewport' | 'absolute' | 'relative' | 'dual-coordinate';
-  validationMethod: 'dual-coordinate' | 'transform-matrix' | 'scroll-adjusted';
+  coordinateSystem: "viewport" | "absolute" | "relative" | "dual-coordinate";
+  validationMethod: "dual-coordinate" | "transform-matrix" | "scroll-adjusted";
 }
 
 export interface TransformValidation {
@@ -720,7 +860,7 @@ export interface GridLayoutData {
   computedColumnSizes: number[];
   computedRowSizes: number[];
   // Conversion metadata
-  conversionStrategy: 'nested-auto-layout' | 'absolute-positioning' | 'hybrid';
+  conversionStrategy: "nested-auto-layout" | "absolute-positioning" | "hybrid";
   figmaAnnotations?: string[];
 }
 
@@ -768,7 +908,12 @@ export interface CapturedElementStates {
 export interface HiddenContentReference {
   triggerElementId: string;
   revealedContent: ElementNode[];
-  visibilityMethod: 'display' | 'visibility' | 'opacity' | 'transform' | 'position';
+  visibilityMethod:
+    | "display"
+    | "visibility"
+    | "opacity"
+    | "transform"
+    | "position";
   containerElementId?: string;
   zIndex?: number;
 }
@@ -781,7 +926,14 @@ export interface InteractionFlowReference {
 }
 
 export interface InteractionStepReference {
-  actionType: 'click' | 'hover' | 'focus' | 'scroll' | 'touch' | 'keyboard' | 'form-input';
+  actionType:
+    | "click"
+    | "hover"
+    | "focus"
+    | "scroll"
+    | "touch"
+    | "keyboard"
+    | "form-input";
   targetElementId: string;
   expectedChanges: string[];
   actualChanges: ChangeReference[];
@@ -793,5 +945,5 @@ export interface ChangeReference {
   property: string;
   beforeValue: any;
   afterValue: any;
-  changeType: 'style' | 'attribute' | 'content' | 'structure';
+  changeType: "style" | "attribute" | "content" | "structure";
 }

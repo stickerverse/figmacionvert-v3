@@ -1,4 +1,4 @@
-import { ElementNode, ImageAsset, SVGAsset } from '../types/schema';
+import { ElementNode, ImageAsset, SVGAsset } from "../types/schema";
 
 export interface AssetContextData {
   hash: string;
@@ -13,49 +13,49 @@ export interface AssetContextData {
 }
 
 export enum AssetClassification {
-  HERO = 'hero',
-  ICON = 'icon', 
-  DECORATIVE = 'decorative',
-  BACKGROUND = 'background',
-  CONTENT = 'content',
-  COMPONENT = 'component',
-  LOGO = 'logo'
+  HERO = "hero",
+  ICON = "icon",
+  DECORATIVE = "decorative",
+  BACKGROUND = "background",
+  CONTENT = "content",
+  COMPONENT = "component",
+  LOGO = "logo",
 }
 
 export enum AssetImportance {
-  CRITICAL = 'critical',    // Must preserve quality
-  HIGH = 'high',            // Moderate optimization only
-  MEDIUM = 'medium',        // Balanced optimization
-  LOW = 'low',              // Aggressive optimization
-  MINIMAL = 'minimal'       // Ultra-aggressive, can remove
+  CRITICAL = "critical", // Must preserve quality
+  HIGH = "high", // Moderate optimization only
+  MEDIUM = "medium", // Balanced optimization
+  LOW = "low", // Aggressive optimization
+  MINIMAL = "minimal", // Ultra-aggressive, can remove
 }
 
 export interface VisualImpact {
-  viewportCoverage: number;     // 0-1: portion of viewport covered
-  aboveFold: boolean;           // Is asset visible without scrolling
-  zIndex: number;              // Stacking context priority
-  opacity: number;             // Final opacity after transforms
-  isVisible: boolean;          // Actually visible to user
-  pixelDensity: number;        // Pixels per viewport unit
+  viewportCoverage: number; // 0-1: portion of viewport covered
+  aboveFold: boolean; // Is asset visible without scrolling
+  zIndex: number; // Stacking context priority
+  opacity: number; // Final opacity after transforms
+  isVisible: boolean; // Actually visible to user
+  pixelDensity: number; // Pixels per viewport unit
 }
 
 export interface UsageContext {
-  isRepeated: boolean;         // Asset used multiple times
-  repetitionCount: number;     // How many times it appears
-  isBackground: boolean;       // Used as background image
-  isInteractive: boolean;      // Part of interactive element
-  semanticRole: string;        // img, icon, decoration, content
+  isRepeated: boolean; // Asset used multiple times
+  repetitionCount: number; // How many times it appears
+  isBackground: boolean; // Used as background image
+  isInteractive: boolean; // Part of interactive element
+  semanticRole: string; // img, icon, decoration, content
   contextualRelevance: number; // 0-1: relevance to page content
 }
 
 export enum OptimizationStrategy {
-  PRESERVE = 'preserve',           // No optimization
-  MINIMAL = 'minimal',             // Light compression only
-  BALANCED = 'balanced',           // Standard compression
-  AGGRESSIVE = 'aggressive',       // Strong compression
-  ULTRA_AGGRESSIVE = 'ultra',      // Maximum compression
-  CONVERT_SVG = 'convert-svg',     // Convert to SVG if beneficial
-  REMOVE = 'remove'                // Remove entirely
+  PRESERVE = "preserve", // No optimization
+  MINIMAL = "minimal", // Light compression only
+  BALANCED = "balanced", // Standard compression
+  AGGRESSIVE = "aggressive", // Strong compression
+  ULTRA_AGGRESSIVE = "ultra", // Maximum compression
+  CONVERT_SVG = "convert-svg", // Convert to SVG if beneficial
+  REMOVE = "remove", // Remove entirely
 }
 
 export class AssetContextAnalyzer {
@@ -71,7 +71,10 @@ export class AssetContextAnalyzer {
    */
   public analyzeAssets(
     tree: ElementNode,
-    assets: { images: Record<string, ImageAsset>; svgs: Record<string, SVGAsset> }
+    assets: {
+      images: Record<string, ImageAsset>;
+      svgs: Record<string, SVGAsset>;
+    }
   ): Map<string, AssetContextData> {
     // First pass: Build usage map
     this.buildAssetUsageMap(tree);
@@ -90,13 +93,23 @@ export class AssetContextAnalyzer {
       analysisResults.set(hash, context);
     });
 
-    console.log('📊 Asset analysis complete:', {
+    console.log("📊 Asset analysis complete:", {
       totalAssets: analysisResults.size,
-      critical: Array.from(analysisResults.values()).filter(a => a.importance === AssetImportance.CRITICAL).length,
-      high: Array.from(analysisResults.values()).filter(a => a.importance === AssetImportance.HIGH).length,
-      medium: Array.from(analysisResults.values()).filter(a => a.importance === AssetImportance.MEDIUM).length,
-      low: Array.from(analysisResults.values()).filter(a => a.importance === AssetImportance.LOW).length,
-      minimal: Array.from(analysisResults.values()).filter(a => a.importance === AssetImportance.MINIMAL).length
+      critical: Array.from(analysisResults.values()).filter(
+        (a) => a.importance === AssetImportance.CRITICAL
+      ).length,
+      high: Array.from(analysisResults.values()).filter(
+        (a) => a.importance === AssetImportance.HIGH
+      ).length,
+      medium: Array.from(analysisResults.values()).filter(
+        (a) => a.importance === AssetImportance.MEDIUM
+      ).length,
+      low: Array.from(analysisResults.values()).filter(
+        (a) => a.importance === AssetImportance.LOW
+      ).length,
+      minimal: Array.from(analysisResults.values()).filter(
+        (a) => a.importance === AssetImportance.MINIMAL
+      ).length,
     });
 
     return analysisResults;
@@ -125,8 +138,8 @@ export class AssetContextAnalyzer {
     }
 
     // Check for background images in fills
-    element.fills?.forEach(fill => {
-      if (fill.type === 'IMAGE' && fill.imageHash) {
+    element.fills?.forEach((fill) => {
+      if (fill.type === "IMAGE" && fill.imageHash) {
         if (!this.assetUsageMap.has(fill.imageHash)) {
           this.assetUsageMap.set(fill.imageHash, []);
         }
@@ -135,7 +148,7 @@ export class AssetContextAnalyzer {
     });
 
     // Recurse through children
-    element.children?.forEach(child => this.buildAssetUsageMap(child));
+    element.children?.forEach((child) => this.buildAssetUsageMap(child));
   }
 
   /**
@@ -147,9 +160,21 @@ export class AssetContextAnalyzer {
 
     const visualImpact = this.calculateVisualImpact(elements, asset);
     const usageContext = this.calculateUsageContext(elements, asset);
-    const classification = this.classifyImageAsset(asset, visualImpact, usageContext);
-    const importance = this.calculateImportance(classification, visualImpact, usageContext);
-    const strategy = this.determineOptimizationStrategy(classification, importance, asset);
+    const classification = this.classifyImageAsset(
+      asset,
+      visualImpact,
+      usageContext
+    );
+    const importance = this.calculateImportance(
+      classification,
+      visualImpact,
+      usageContext
+    );
+    const strategy = this.determineOptimizationStrategy(
+      classification,
+      importance,
+      asset
+    );
 
     return {
       hash,
@@ -159,7 +184,7 @@ export class AssetContextAnalyzer {
       usageContext,
       optimizationStrategy: strategy,
       preserveQuality: importance === AssetImportance.CRITICAL,
-      originalSize: asset.base64 ? (asset.base64.length * 0.75) / 1024 : undefined
+      originalSize: asset.data ? (asset.data.length * 0.75) / 1024 : undefined,
     };
   }
 
@@ -168,12 +193,24 @@ export class AssetContextAnalyzer {
    */
   private analyzeSVGAsset(hash: string, asset: SVGAsset): AssetContextData {
     const elements = this.assetUsageMap.get(hash) || [];
-    
+
     const visualImpact = this.calculateSVGVisualImpact(elements, asset);
     const usageContext = this.calculateSVGUsageContext(elements, asset);
-    const classification = this.classifySVGAsset(asset, visualImpact, usageContext);
-    const importance = this.calculateImportance(classification, visualImpact, usageContext);
-    const strategy = this.determineSVGOptimizationStrategy(classification, importance, asset);
+    const classification = this.classifySVGAsset(
+      asset,
+      visualImpact,
+      usageContext
+    );
+    const importance = this.calculateImportance(
+      classification,
+      visualImpact,
+      usageContext
+    );
+    const strategy = this.determineSVGOptimizationStrategy(
+      classification,
+      importance,
+      asset
+    );
 
     return {
       hash,
@@ -183,14 +220,17 @@ export class AssetContextAnalyzer {
       usageContext,
       optimizationStrategy: strategy,
       preserveQuality: importance === AssetImportance.CRITICAL,
-      originalSize: asset.svgCode ? asset.svgCode.length / 1024 : undefined
+      originalSize: asset.svgCode ? asset.svgCode.length / 1024 : undefined,
     };
   }
 
   /**
    * Calculate the visual impact of an asset based on its usage in elements
    */
-  private calculateVisualImpact(elements: ElementNode[], asset: ImageAsset): VisualImpact {
+  private calculateVisualImpact(
+    elements: ElementNode[],
+    asset: ImageAsset
+  ): VisualImpact {
     if (elements.length === 0) {
       return {
         viewportCoverage: 0,
@@ -198,7 +238,7 @@ export class AssetContextAnalyzer {
         zIndex: 0,
         opacity: 0,
         isVisible: false,
-        pixelDensity: 0
+        pixelDensity: 0,
       };
     }
 
@@ -215,9 +255,10 @@ export class AssetContextAnalyzer {
     const aboveFold = y < this.viewport.height;
 
     // Calculate pixel density (how many asset pixels per viewport pixel)
-    const pixelDensity = asset.width && asset.height 
-      ? (asset.width * asset.height) / (width * height)
-      : 1;
+    const pixelDensity =
+      asset.width && asset.height
+        ? (asset.width * asset.height) / (width * height)
+        : 1;
 
     return {
       viewportCoverage,
@@ -225,14 +266,17 @@ export class AssetContextAnalyzer {
       zIndex: primaryElement.zIndex || 0,
       opacity: primaryElement.opacity || 1,
       isVisible: (primaryElement.opacity || 1) > 0 && width > 0 && height > 0,
-      pixelDensity: Math.max(pixelDensity, 0.1) // Avoid division by zero
+      pixelDensity: Math.max(pixelDensity, 0.1), // Avoid division by zero
     };
   }
 
   /**
    * Calculate visual impact for SVG assets
    */
-  private calculateSVGVisualImpact(elements: ElementNode[], asset: SVGAsset): VisualImpact {
+  private calculateSVGVisualImpact(
+    elements: ElementNode[],
+    asset: SVGAsset
+  ): VisualImpact {
     if (elements.length === 0) {
       return {
         viewportCoverage: 0,
@@ -240,7 +284,7 @@ export class AssetContextAnalyzer {
         zIndex: 0,
         opacity: 0,
         isVisible: false,
-        pixelDensity: 1 // SVGs scale well
+        pixelDensity: 1, // SVGs scale well
       };
     }
 
@@ -260,32 +304,40 @@ export class AssetContextAnalyzer {
       zIndex: primaryElement.zIndex || 0,
       opacity: primaryElement.opacity || 1,
       isVisible: (primaryElement.opacity || 1) > 0 && width > 0 && height > 0,
-      pixelDensity: 1 // SVGs are vector-based
+      pixelDensity: 1, // SVGs are vector-based
     };
   }
 
   /**
    * Calculate usage context for assets
    */
-  private calculateUsageContext(elements: ElementNode[], asset: ImageAsset): UsageContext {
+  private calculateUsageContext(
+    elements: ElementNode[],
+    asset: ImageAsset
+  ): UsageContext {
     const repetitionCount = elements.length;
     const isRepeated = repetitionCount > 1;
 
     // Check if used as background
-    const isBackground = elements.some(el => 
-      el.fills?.some(fill => fill.type === 'IMAGE' && fill.imageHash === asset.hash)
+    const isBackground = elements.some((el) =>
+      el.fills?.some(
+        (fill) => fill.type === "IMAGE" && fill.imageHash === asset.hash
+      )
     );
 
     // Check if part of interactive element
-    const isInteractive = elements.some(el => 
-      el.interactions && el.interactions.length > 0
+    const isInteractive = elements.some(
+      (el) => el.interactions && el.interactions.length > 0
     );
 
     // Determine semantic role based on element properties
     const semanticRole = this.determinSemanticRole(elements[0]);
 
     // Calculate contextual relevance based on position and size
-    const contextualRelevance = this.calculateContextualRelevance(elements, asset);
+    const contextualRelevance = this.calculateContextualRelevance(
+      elements,
+      asset
+    );
 
     return {
       isRepeated,
@@ -293,14 +345,17 @@ export class AssetContextAnalyzer {
       isBackground,
       isInteractive,
       semanticRole,
-      contextualRelevance
+      contextualRelevance,
     };
   }
 
   /**
    * Calculate usage context for SVG assets
    */
-  private calculateSVGUsageContext(elements: ElementNode[], asset: SVGAsset): UsageContext {
+  private calculateSVGUsageContext(
+    elements: ElementNode[],
+    asset: SVGAsset
+  ): UsageContext {
     const repetitionCount = elements.length;
     const isRepeated = repetitionCount > 1;
 
@@ -308,12 +363,15 @@ export class AssetContextAnalyzer {
     const isBackground = false;
 
     // Check for interactive usage
-    const isInteractive = elements.some(el => 
-      el.interactions && el.interactions.length > 0
+    const isInteractive = elements.some(
+      (el) => el.interactions && el.interactions.length > 0
     );
 
     const semanticRole = this.determinSemanticRole(elements[0]);
-    const contextualRelevance = this.calculateSVGContextualRelevance(elements, asset);
+    const contextualRelevance = this.calculateSVGContextualRelevance(
+      elements,
+      asset
+    );
 
     return {
       isRepeated,
@@ -321,7 +379,7 @@ export class AssetContextAnalyzer {
       isBackground,
       isInteractive,
       semanticRole,
-      contextualRelevance
+      contextualRelevance,
     };
   }
 
@@ -334,7 +392,11 @@ export class AssetContextAnalyzer {
     usage: UsageContext
   ): AssetClassification {
     // Hero image: Large, above fold, high viewport coverage
-    if (visual.viewportCoverage > 0.2 && visual.aboveFold && asset.width > 600) {
+    if (
+      visual.viewportCoverage > 0.2 &&
+      visual.aboveFold &&
+      asset.width > 600
+    ) {
       return AssetClassification.HERO;
     }
 
@@ -402,8 +464,10 @@ export class AssetContextAnalyzer {
     usage: UsageContext
   ): AssetImportance {
     // Critical assets that must preserve quality
-    if (classification === AssetClassification.HERO || 
-        classification === AssetClassification.LOGO) {
+    if (
+      classification === AssetClassification.HERO ||
+      classification === AssetClassification.LOGO
+    ) {
       return AssetImportance.CRITICAL;
     }
 
@@ -418,13 +482,18 @@ export class AssetContextAnalyzer {
     }
 
     // Icons and components get medium priority
-    if (classification === AssetClassification.ICON || 
-        classification === AssetClassification.COMPONENT) {
+    if (
+      classification === AssetClassification.ICON ||
+      classification === AssetClassification.COMPONENT
+    ) {
       return AssetImportance.MEDIUM;
     }
 
     // Content images get medium priority if reasonably sized
-    if (classification === AssetClassification.CONTENT && visual.viewportCoverage > 0.05) {
+    if (
+      classification === AssetClassification.CONTENT &&
+      visual.viewportCoverage > 0.05
+    ) {
       return AssetImportance.MEDIUM;
     }
 
@@ -460,8 +529,11 @@ export class AssetContextAnalyzer {
     }
 
     // Icons might benefit from SVG conversion if they're small enough
-    if (classification === AssetClassification.ICON && 
-        asset.width <= 32 && asset.height <= 32) {
+    if (
+      classification === AssetClassification.ICON &&
+      asset.width <= 32 &&
+      asset.height <= 32
+    ) {
       return OptimizationStrategy.CONVERT_SVG;
     }
 
@@ -510,43 +582,49 @@ export class AssetContextAnalyzer {
   // Helper methods
 
   private determinSemanticRole(element: ElementNode): string {
-    if (element.type === 'IMAGE') return 'img';
-    if (element.type === 'VECTOR') return 'icon';
-    if (element.htmlTag === 'img') return 'img';
-    if (element.htmlTag === 'svg') return 'icon';
-    if (element.cssClasses.some(cls => cls.includes('icon'))) return 'icon';
-    if (element.cssClasses.some(cls => cls.includes('logo'))) return 'logo';
-    return 'decoration';
+    if (element.type === "IMAGE") return "img";
+    if (element.type === "VECTOR") return "icon";
+    if (element.htmlTag === "img") return "img";
+    if (element.htmlTag === "svg") return "icon";
+    if (element.cssClasses.some((cls) => cls.includes("icon"))) return "icon";
+    if (element.cssClasses.some((cls) => cls.includes("logo"))) return "logo";
+    return "decoration";
   }
 
-  private calculateContextualRelevance(elements: ElementNode[], asset: ImageAsset): number {
+  private calculateContextualRelevance(
+    elements: ElementNode[],
+    asset: ImageAsset
+  ): number {
     // Simple heuristic based on size and position
     const element = elements[0];
     if (!element) return 0;
 
     const { width, height, x, y } = element.layout;
-    
+
     // Larger elements are more relevant
     const sizeScore = Math.min(1, (width * height) / (200 * 200));
-    
+
     // Above-fold elements are more relevant
     const positionScore = y < this.viewport.height ? 1 : 0.3;
-    
+
     // Interactive elements are more relevant
     const interactionScore = element.interactions ? 0.3 : 0;
-    
+
     return Math.min(1, sizeScore + positionScore + interactionScore);
   }
 
-  private calculateSVGContextualRelevance(elements: ElementNode[], asset: SVGAsset): number {
+  private calculateSVGContextualRelevance(
+    elements: ElementNode[],
+    asset: SVGAsset
+  ): number {
     const element = elements[0];
     if (!element) return 0;
 
     // SVGs are often functional, so base relevance is higher
     const baseScore = 0.6;
-    
+
     const interactionScore = element.interactions ? 0.4 : 0;
-    
+
     return Math.min(1, baseScore + interactionScore);
   }
 
@@ -555,7 +633,7 @@ export class AssetContextAnalyzer {
     const aspectRatio = asset.width / asset.height;
     const isReasonableAspectRatio = aspectRatio >= 0.5 && aspectRatio <= 4;
     const isHeaderFooterArea = visual.viewportCoverage < 0.1; // Not too large
-    
+
     return isReasonableAspectRatio && isHeaderFooterArea;
   }
 
@@ -563,7 +641,7 @@ export class AssetContextAnalyzer {
     // Similar heuristics for SVG logos
     const aspectRatio = asset.width / asset.height;
     const isReasonableAspectRatio = aspectRatio >= 0.5 && aspectRatio <= 4;
-    
+
     return isReasonableAspectRatio && visual.viewportCoverage < 0.1;
   }
 
@@ -572,7 +650,7 @@ export class AssetContextAnalyzer {
     if (content.length === 0) return hash.toString();
     for (let i = 0; i < content.length; i++) {
       const char = content.charCodeAt(i);
-      hash = ((hash << 5) - hash) + char;
+      hash = (hash << 5) - hash + char;
       hash = hash & hash; // Convert to 32bit integer
     }
     return hash.toString();

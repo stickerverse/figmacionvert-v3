@@ -38,10 +38,27 @@ export class PreviewGenerator {
     }
   ): Promise<string> {
     return new Promise((resolve, reject) => {
+      const timeoutId = setTimeout(() => {
+        reject(new Error('Preview generation timed out (5s)'));
+      }, 5000);
+
       const img = new Image();
 
-      img.onload = () => {
+      img.onload = async () => {
+        clearTimeout(timeoutId);
         try {
+          console.log(`🖼️ Preview image loaded: ${img.width}x${img.height} (${(img.width * img.height / 1000000).toFixed(1)}MP)`);
+
+          // Safety check: Abort if image is too large (prevents canvas.toDataURL hang)
+          // 5MP limit (e.g. ~2500x2000 or ~1920x2600)
+          const MAX_PREVIEW_PIXELS = 5_000_000;
+          if (img.width * img.height > MAX_PREVIEW_PIXELS) {
+            console.warn(`⚠️ Skipping preview overlay: Image too large (${img.width}x${img.height})`);
+            // Resolve with original screenshot data URL (no overlay) to avoid failure
+            resolve(screenshotDataUrl);
+            return;
+          }
+
           // Create canvas matching screenshot size
           const canvas = document.createElement('canvas');
           canvas.width = img.width;
@@ -58,7 +75,7 @@ export class PreviewGenerator {
 
           // Draw overlays
           if (options.showBoundingBoxes) {
-            this.drawBoundingBoxes(ctx, tree, options);
+            await this.drawBoundingBoxes(ctx, tree, options);
           }
 
           // Convert to data URL
@@ -69,6 +86,7 @@ export class PreviewGenerator {
       };
 
       img.onerror = () => {
+        clearTimeout(timeoutId);
         reject(new Error('Failed to load screenshot image'));
       };
 
@@ -79,13 +97,23 @@ export class PreviewGenerator {
   /**
    * Draw bounding boxes for all nodes
    */
-  private static drawBoundingBoxes(
+  /**
+   * Draw bounding boxes for all nodes
+   */
+  private static async drawBoundingBoxes(
     ctx: CanvasRenderingContext2D,
     node: ElementNode,
     options: PreviewOptions,
-    depth: number = 0
+    depth: number = 0,
+    counter = { count: 0 }
   ) {
     if (!node.layout) return;
+
+    // Yield every 500 nodes to prevent blocking
+    counter.count++;
+    if (counter.count % 500 === 0) {
+      await new Promise(resolve => setTimeout(resolve, 0));
+    }
 
     const { x, y, width, height } = node.layout;
 
@@ -126,7 +154,7 @@ export class PreviewGenerator {
     // Recursively draw children
     if (node.children) {
       for (const child of node.children) {
-        this.drawBoundingBoxes(ctx, child, options, depth + 1);
+        await this.drawBoundingBoxes(ctx, child, options, depth + 1, counter);
       }
     }
   }

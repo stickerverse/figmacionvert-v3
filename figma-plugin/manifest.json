@@ -8,12 +8,8 @@
   "networkAccess": {
     "allowedDomains": ["*"],
     "devAllowedDomains": [
-      "http://localhost:4411",
-      "http://localhost:3000",
-      "https://*.amazonaws.com",
-      "https://*.herokuapp.com",
-      "https://*.vercel.app",
-      "https://*.netlify.app"
+      "http://localhost:5511",
+      "http://localhost:3000"
     ],
     "reasoning": "Plugin needs to connect to cloud capture service, fetch images, and access cloud storage"
   }

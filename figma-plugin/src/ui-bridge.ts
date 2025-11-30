@@ -1,0 +1,74 @@
+type WebpResolve = (value: Uint8Array) => void;
+type WebpReject = (reason?: any) => void;
+
+const webpResolvers = new Map<
+  string,
+  {
+    resolve: WebpResolve;
+    reject: WebpReject;
+    timeout: ReturnType<typeof setTimeout>;
+  }
+>();
+
+/**
+ * Request a WebP → PNG transcode from the plugin UI (which can use a canvas).
+ * Falls back to rejecting if the UI is not available.
+ */
+export function requestWebpTranscode(base64: string): Promise<Uint8Array> {
+  if (!figma.ui) {
+    return Promise.reject(new Error('Figma UI not available for WebP transcode'));
+  }
+
+  const id = `webp-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+
+  return new Promise<Uint8Array>((resolve, reject) => {
+    const timeout = setTimeout(() => {
+      webpResolvers.delete(id);
+      reject(new Error('WebP transcode timed out'));
+    }, 15000);
+
+    webpResolvers.set(id, { resolve, reject, timeout });
+
+    figma.ui.postMessage({
+      type: 'transcode-webp',
+      id,
+      base64,
+    });
+  });
+}
+
+/**
+ * Handle the response from the UI with the PNG data.
+ */
+export function handleWebpTranscodeResult(msg: any): void {
+  const { id, pngBase64, error } = msg;
+  const entry = webpResolvers.get(id);
+  if (!entry) return;
+
+  clearTimeout(entry.timeout);
+  webpResolvers.delete(id);
+
+  if (error) {
+    entry.reject(new Error(error));
+    return;
+  }
+
+  try {
+    const normalized = pngBase64.includes(',') ? pngBase64.split(',')[1] : pngBase64;
+    let bytes: Uint8Array;
+    if (typeof figma !== 'undefined' && typeof figma.base64Decode === 'function') {
+      bytes = figma.base64Decode(normalized);
+    } else if (typeof atob === 'function') {
+      const bin = atob(normalized);
+      bytes = new Uint8Array(bin.length);
+      for (let i = 0; i < bin.length; i++) {
+        bytes[i] = bin.charCodeAt(i);
+      }
+    } else {
+      throw new Error('No base64 decoder available');
+    }
+    entry.resolve(bytes);
+  } catch (decodeError) {
+    entry.reject(decodeError);
+  }
+}

@@ -10,8 +10,18 @@ import { authenticate } from './middleware/auth';
 import { CaptureRequestSchema, JobData, ApiError } from './types';
 import { addCaptureJob, getJobResult, getNextCompletedJob, getQueueMetrics } from './queue';
 import { checkStorageHealth, embedCaptureResult } from './storage';
+import { statusManager } from './status-manager';
 
 dotenv.config();
+
+// Process error handlers
+process.on("unhandledRejection", (reason) => {
+  console.error("[UNHANDLED_REJECTION]", reason);
+});
+
+process.on("uncaughtException", (err) => {
+  console.error("[UNCAUGHT_EXCEPTION]", err);
+});
 
 const app = express();
 const PORT = parseInt(process.env.PORT || '3000', 10);
@@ -27,8 +37,13 @@ app.use(helmet({
     },
   },
 }));
-app.use(cors());
-app.use(express.json({ limit: '10mb' }));
+app.use(cors({
+  origin: true, // Allow any origin
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'x-api-key', 'x-authenticated-key', 'cache-control', 'pragma', 'expires']
+}));
+app.use(express.json({ limit: '50mb' }));
 
 // Serve static files from public directory
 app.use(express.static(path.join(__dirname, '../public')));
@@ -92,6 +107,56 @@ app.get('/health', async (req: Request, res: Response) => {
       uptime: process.uptime(),
       error: error instanceof Error ? error.message : 'Unknown error',
     });
+  }
+});
+
+/**
+ * POST /api/extension/heartbeat - Register extension heartbeat
+ */
+app.post('/api/extension/heartbeat', async (req: Request, res: Response) => {
+  try {
+    const { extensionId, version } = req.body;
+    
+    if (!extensionId || !version) {
+      return res.status(400).json({
+        error: {
+          message: 'Missing extensionId or version',
+          code: 'VALIDATION_ERROR'
+        }
+      });
+    }
+
+    statusManager.registerHeartbeat({ extensionId, version });
+    res.json({ status: 'ok' });
+  } catch (error) {
+    logger.error({ error }, 'Failed to register heartbeat');
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+/**
+ * GET /api/status - Check overall system status (for Figma plugin)
+ */
+app.get('/api/status', async (req: Request, res: Response) => {
+  try {
+    const status = statusManager.getStatus();
+    const metrics = await getQueueMetrics();
+    
+    // Construct response that satisfies both new status check and legacy plugin telemetry
+    res.json({
+      ...status,
+      queueLength: metrics.waiting,
+      ok: true,
+      telemetry: {
+        lastExtensionPingAt: status.lastExtensionHeartbeatMsAgo !== null 
+          ? Date.now() - status.lastExtensionHeartbeatMsAgo 
+          : null,
+        queueLength: metrics.waiting
+      }
+    });
+  } catch (error) {
+    logger.error({ error }, 'Failed to get status');
+    res.status(500).json({ error: 'Internal server error' });
   }
 });
 
@@ -198,37 +263,6 @@ app.post('/api/capture/direct', authenticate, async (req: Request, res: Response
 });
 
 /**
- * GET /api/jobs/:id - Get job status and result
- */
-app.get('/api/jobs/:id', authenticate, async (req: Request, res: Response) => {
-  try {
-    const { id } = req.params;
-
-    const result = await getJobResult(id);
-
-    if (!result) {
-      return res.status(404).json({
-        error: {
-          message: 'Job not found',
-          code: 'JOB_NOT_FOUND',
-        },
-      } as ApiError);
-    }
-
-    res.json(result);
-  } catch (error) {
-    logger.error({ error, jobId: req.params.id }, 'Failed to get job result');
-    res.status(500).json({
-      error: {
-        message: 'Failed to retrieve job',
-        code: 'INTERNAL_ERROR',
-        details: error instanceof Error ? error.message : 'Unknown error',
-      },
-    } as ApiError);
-  }
-});
-
-/**
  * GET /api/jobs/next - Poll for next completed job (for Figma plugin)
  * Supports long polling with timeout parameter
  */
@@ -265,6 +299,37 @@ app.get('/api/jobs/next', authenticate, async (req: Request, res: Response) => {
     res.status(500).json({
       error: {
         message: 'Failed to poll for jobs',
+        code: 'INTERNAL_ERROR',
+        details: error instanceof Error ? error.message : 'Unknown error',
+      },
+    } as ApiError);
+  }
+});
+
+/**
+ * GET /api/jobs/:id - Get job status and result
+ */
+app.get('/api/jobs/:id', authenticate, async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+
+    const result = await getJobResult(id);
+
+    if (!result) {
+      return res.status(404).json({
+        error: {
+          message: 'Job not found',
+          code: 'JOB_NOT_FOUND',
+        },
+      } as ApiError);
+    }
+
+    res.json(result);
+  } catch (error) {
+    logger.error({ error, jobId: req.params.id }, 'Failed to get job result');
+    res.status(500).json({
+      error: {
+        message: 'Failed to retrieve job',
         code: 'INTERNAL_ERROR',
         details: error instanceof Error ? error.message : 'Unknown error',
       },

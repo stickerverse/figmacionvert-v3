@@ -22,8 +22,9 @@ export class StyleManager {
     const tolerance = 0.01; // Allow small differences in color values
     
     for (const [tokenId, token] of Object.entries((this.designTokensManager as any).tokensRegistry.variables)) {
-      if (token.type === 'COLOR' && token.resolvedValue) {
-        const tokenColor = token.resolvedValue;
+      const typedToken = token as any;
+      if (typedToken.type === 'COLOR' && typedToken.resolvedValue) {
+        const tokenColor = typedToken.resolvedValue;
         if (
           Math.abs(tokenColor.r - color.r) < tolerance &&
           Math.abs(tokenColor.g - color.g) < tolerance &&
@@ -56,7 +57,14 @@ export class StyleManager {
           if (tokenId) {
             const variable = this.designTokensManager.getVariableByTokenId(tokenId);
             if (variable && variable.resolvedType === 'COLOR') {
-              paint.boundVariables = { color: { type: 'VARIABLE_ALIAS', id: variable.id } };
+              // Use spread to work around readonly property
+              const paintWithBinding: SolidPaint = {
+                ...paint,
+                boundVariables: { color: { type: 'VARIABLE_ALIAS', id: variable.id } }
+              };
+              style.paints = [paintWithBinding];
+              this.paintStyles.set(key, style);
+              continue;
             }
           }
         }
@@ -143,7 +151,6 @@ export class StyleManager {
   getTextStyle(key: string): TextStyle | undefined {
     return this.textStyles.get(key);
   }
-
   getEffectStyle(key: string): EffectStyle | undefined {
     return this.effectStyles.get(key);
   }

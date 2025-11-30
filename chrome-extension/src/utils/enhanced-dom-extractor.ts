@@ -36,6 +36,14 @@ export interface EnhancedElementData {
     document: CoordinatePoint;
     figma: CoordinatePoint;
     precision: number;
+    zIndex?: number;
+  };
+
+  svgContent?: string;
+  layout?: {
+    gap?: number;
+    rowGap?: number;
+    columnGap?: number;
   };
   
   // Transform data
@@ -71,115 +79,173 @@ export class EnhancedDOMExtractor {
    * Extract element with enhanced coordinate processing
    */
   extractElement(element: HTMLElement, id: string): EnhancedElementData {
-    // Get basic element bounds
-    const rect = element.getBoundingClientRect();
-    const computedStyle = window.getComputedStyle(element);
+    try {
+      // Get basic element bounds
+      const rect = element.getBoundingClientRect();
+      const computedStyle = window.getComputedStyle(element);
 
-    // Create transformation context
-    const transformContext: TransformationContext = {
-      scrollX: this.context.scroll.x,
-      scrollY: this.context.scroll.y,
-      zoom: this.context.zoom,
-      documentOrigin: this.context.documentOrigin,
-      viewport: this.context.viewport
-    };
+      // Create transformation context
+      const transformContext: TransformationContext = {
+        scrollX: this.context.scroll.x,
+        scrollY: this.context.scroll.y,
+        zoom: this.context.zoom,
+        documentOrigin: this.context.documentOrigin,
+        viewport: this.context.viewport
+      };
 
-    // Extract viewport coordinates
-    const viewportPoint: CoordinatePoint = {
-      x: rect.left,
-      y: rect.top,
-      space: CoordinateSpace.VIEWPORT,
-      precision: 0.1 // getBoundingClientRect precision
-    };
+      // Extract viewport coordinates
+      const viewportPoint: CoordinatePoint = {
+        x: rect.left,
+        y: rect.top,
+        space: CoordinateSpace.VIEWPORT,
+        precision: 0.1 // getBoundingClientRect precision
+      };
 
-    // Transform to document coordinates
-    const documentResult = this.coordinateTransformer.transform(
-      viewportPoint,
-      CoordinateSpace.DOCUMENT,
-      transformContext
-    );
+      // Transform to document coordinates
+      const documentResult = this.coordinateTransformer.transform(
+        viewportPoint,
+        CoordinateSpace.DOCUMENT,
+        transformContext
+      );
 
-    if (!documentResult.success) {
-      console.error(`Failed to transform to document space: ${documentResult.error}`);
-    }
-
-    // Process CSS transforms
-    const cssTransform = computedStyle.transform;
-    const transformMatrix = TransformMatrixProcessor.parseTransform(cssTransform);
-    const transformComponents = TransformMatrixProcessor.decompose(transformMatrix);
-    const figmaTransform = TransformMatrixProcessor.toFigmaTransform(transformMatrix);
-    const transformValidation = TransformMatrixProcessor.validateMatrix(transformMatrix);
-
-    // CRITICAL FIX: Return DOCUMENT space coordinates, not FIGMA space
-    // The main dom-extractor will handle conversion to relative coordinates
-    // Don't multiply by zoom - getBoundingClientRect already returns CSS pixels
-    const bounds: CoordinateBounds = {
-      left: rect.left + this.context.scroll.x,  // Document coordinates = viewport + scroll
-      top: rect.top + this.context.scroll.y,
-      right: rect.right + this.context.scroll.x,
-      bottom: rect.bottom + this.context.scroll.y,
-      width: rect.width,   // Keep original CSS pixel dimensions
-      height: rect.height,
-      space: CoordinateSpace.DOCUMENT  // Document space, not Figma space
-    };
-
-    // Validate coordinates
-    const documentPoint: CoordinatePoint = {
-      x: bounds.left,
-      y: bounds.top,
-      space: CoordinateSpace.DOCUMENT,
-      precision: 0.1
-    };
-    const coordinateValidation = this.validator.validatePoint(documentPoint);
-    const boundsValidation = this.validator.validateBounds(bounds);
-
-    // Calculate overall validation score
-    const transformScore = transformValidation.isValid ?
-      (transformValidation.isDegenerate ? 0.5 : 1.0) : 0.0;
-    const overallScore = (
-      coordinateValidation.score * 0.4 +
-      boundsValidation.score * 0.3 +
-      transformScore * 0.3
-    );
-
-    // Compile validation issues
-    const allIssues = [
-      ...coordinateValidation.issues,
-      ...boundsValidation.issues,
-      ...transformValidation.warnings
-    ];
-
-    // Create enhanced element data
-    const elementData: EnhancedElementData = {
-      id,
-      name: element.tagName.toLowerCase() + (element.id ? `#${element.id}` : ''),
-      type: this.determineElementType(element),
-      bounds: CoordinateUtils.roundBounds(bounds, 0.01),
-
-      coordinates: {
-        viewport: CoordinateUtils.roundPoint(viewportPoint, 0.01),
-        document: CoordinateUtils.roundPoint(documentPoint, 0.01),
-        figma: CoordinateUtils.roundPoint(documentPoint, 0.01), // Document coords used for Figma conversion
-        precision: documentPoint.precision
-      },
-      
-      transforms: {
-        cssTransform,
-        matrix: transformMatrix,
-        components: transformComponents,
-        figmaCompatible: figmaTransform.supported
-      },
-      
-      validation: {
-        coordinateAccuracy: coordinateValidation.score,
-        transformStability: transformScore,
-        overallScore,
-        issues: allIssues
+      if (!documentResult.success) {
+        console.error(`Failed to transform to document space: ${documentResult.error}`);
       }
-    };
 
-    this.extractedElements.set(id, elementData);
-    return elementData;
+      // Process CSS transforms
+      const cssTransform = computedStyle.transform;
+      const transformMatrix = TransformMatrixProcessor.parseTransform(cssTransform);
+      const transformComponents = TransformMatrixProcessor.decompose(transformMatrix);
+      const figmaTransform = TransformMatrixProcessor.toFigmaTransform(transformMatrix);
+      const transformValidation = TransformMatrixProcessor.validateMatrix(transformMatrix);
+
+      // CRITICAL FIX: Return DOCUMENT space coordinates, not FIGMA space
+      // The main dom-extractor will handle conversion to relative coordinates
+      // Don't multiply by zoom - getBoundingClientRect already returns CSS pixels
+      const bounds: CoordinateBounds = {
+        left: rect.left + this.context.scroll.x,  // Document coordinates = viewport + scroll
+        top: rect.top + this.context.scroll.y,
+        right: rect.right + this.context.scroll.x,
+        bottom: rect.bottom + this.context.scroll.y,
+        width: rect.width,   // Keep original CSS pixel dimensions
+        height: rect.height,
+        space: CoordinateSpace.DOCUMENT  // Document space, not Figma space
+      };
+
+      // Validate coordinates
+      const documentPoint: CoordinatePoint = {
+        x: bounds.left,
+        y: bounds.top,
+        space: CoordinateSpace.DOCUMENT,
+        precision: 0.1
+      };
+      const coordinateValidation = this.validator.validatePoint(documentPoint);
+      const boundsValidation = this.validator.validateBounds(bounds);
+
+      // Calculate overall validation score
+      const transformScore = transformValidation.isValid ?
+        (transformValidation.isDegenerate ? 0.5 : 1.0) : 0.0;
+      const overallScore = (
+        coordinateValidation.score * 0.4 +
+        boundsValidation.score * 0.3 +
+        transformScore * 0.3
+      );
+
+      // Compile validation issues
+      const allIssues = [
+        ...coordinateValidation.issues,
+        ...boundsValidation.issues,
+        ...transformValidation.warnings
+      ];
+
+      // Extract layout gaps
+      const gap = computedStyle.gap !== 'normal' ? parseInt(computedStyle.gap, 10) : 0;
+      const rowGap = computedStyle.rowGap !== 'normal' ? parseInt(computedStyle.rowGap, 10) : 0;
+      const columnGap = computedStyle.columnGap !== 'normal' ? parseInt(computedStyle.columnGap, 10) : 0;
+
+      // Serialize SVG content if applicable
+      let svgContent: string | undefined;
+      if (element.tagName.toLowerCase() === 'svg') {
+        try {
+          const serializer = new XMLSerializer();
+          const svgString = serializer.serializeToString(element);
+          // Use base64 to avoid parsing issues in JSON
+          const base64 = window.btoa(unescape(encodeURIComponent(svgString)));
+          svgContent = `data:image/svg+xml;base64,${base64}`;
+        } catch (e) {
+          console.warn(`Failed to serialize SVG: ${id}`, e);
+        }
+      }
+
+      // Create enhanced element data
+      const elementData: EnhancedElementData = {
+        id,
+        name: element.tagName.toLowerCase() + (element.id ? `#${element.id}` : ''),
+        type: this.determineElementType(element),
+        bounds: CoordinateUtils.roundBounds(bounds, 0.01),
+        svgContent, // Include SVG content
+
+        layout: { // Include layout properties
+          gap: isNaN(gap) ? 0 : gap,
+          rowGap: isNaN(rowGap) ? 0 : rowGap,
+          columnGap: isNaN(columnGap) ? 0 : columnGap
+        },
+
+        coordinates: {
+          viewport: CoordinateUtils.roundPoint(viewportPoint, 0.01),
+          document: CoordinateUtils.roundPoint(documentPoint, 0.01),
+          figma: CoordinateUtils.roundPoint(documentPoint, 0.01), // Document coords used for Figma conversion
+          precision: documentPoint.precision,
+          zIndex: computedStyle.zIndex !== 'auto' ? parseInt(computedStyle.zIndex, 10) : 0
+        },
+        
+        transforms: {
+          cssTransform,
+          matrix: transformMatrix,
+          components: transformComponents,
+          figmaCompatible: figmaTransform.supported
+        },
+        
+        validation: {
+          coordinateAccuracy: coordinateValidation.score,
+          transformStability: transformScore,
+          overallScore,
+          issues: allIssues
+        }
+      };
+
+      this.extractedElements.set(id, elementData);
+      return elementData;
+
+    } catch (error) {
+      console.error(`Enhanced extraction failed for ${id}:`, error);
+      // Return fallback data to prevent stall
+      return {
+        id,
+        name: element.tagName.toLowerCase(),
+        type: 'RECTANGLE',
+        bounds: { left: 0, top: 0, right: 0, bottom: 0, width: 0, height: 0, space: CoordinateSpace.DOCUMENT },
+        coordinates: {
+          viewport: { x: 0, y: 0, space: CoordinateSpace.VIEWPORT, precision: 0 },
+          document: { x: 0, y: 0, space: CoordinateSpace.DOCUMENT, precision: 0 },
+          figma: { x: 0, y: 0, space: CoordinateSpace.DOCUMENT, precision: 0 },
+          precision: 0,
+          zIndex: 0
+        },
+        transforms: {
+          cssTransform: 'none',
+          matrix: { a: 1, b: 0, c: 0, d: 1, e: 0, f: 0 },
+          components: { scale: { x: 1, y: 1 }, skew: { x: 0, y: 0 }, rotation: 0, translation: { x: 0, y: 0 } },
+          figmaCompatible: true
+        },
+        validation: {
+          coordinateAccuracy: 0,
+          transformStability: 0,
+          overallScore: 0,
+          issues: ['Extraction failed']
+        }
+      };
+    }
   }
 
   /**
@@ -286,12 +352,17 @@ export class EnhancedDOMExtractor {
       id: elementData.id,
       type: elementData.type as any,
       name: elementData.name,
+      zIndex: elementData.coordinates.zIndex || 0,
+      svgContent: elementData.svgContent, // Pass SVG content
       layout: {
         x: elementData.bounds.left,
         y: elementData.bounds.top,
         width: elementData.bounds.width,
         height: elementData.bounds.height,
-        boxSizing: 'border-box'
+        boxSizing: 'border-box',
+        gap: elementData.layout?.gap, // Pass gap properties
+        rowGap: elementData.layout?.rowGap,
+        columnGap: elementData.layout?.columnGap
       },
       absoluteLayout: {
         left: elementData.bounds.left,
@@ -299,7 +370,8 @@ export class EnhancedDOMExtractor {
         right: elementData.bounds.right,
         bottom: elementData.bounds.bottom,
         width: elementData.bounds.width,
-        height: elementData.bounds.height
+        height: elementData.bounds.height,
+        zIndex: elementData.coordinates.zIndex || 0
       },
       transform: elementData.transforms.figmaCompatible ? {
         matrix: Object.values(elementData.transforms.matrix),
@@ -312,6 +384,7 @@ export class EnhancedDOMExtractor {
       }
     };
   }
+
 
   /**
    * Reset extraction state

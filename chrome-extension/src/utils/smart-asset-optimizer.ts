@@ -1,10 +1,10 @@
-import { ImageAsset, SVGAsset } from '../types/schema';
-import { 
-  AssetContextData, 
-  AssetClassification, 
-  AssetImportance, 
-  OptimizationStrategy 
-} from './asset-context-analyzer';
+import { ImageAsset, SVGAsset } from "../types/schema";
+import {
+  AssetContextData,
+  AssetClassification,
+  AssetImportance,
+  OptimizationStrategy,
+} from "./asset-context-analyzer";
 
 export interface OptimizationResult {
   originalSize: number;
@@ -19,17 +19,17 @@ export interface OptimizationResult {
 export interface OptimizationConfig {
   maxPayloadSizeMB: number;
   progressiveThresholds: {
-    mild: number;      // MB - start mild optimization
-    moderate: number;  // MB - start moderate optimization  
+    mild: number; // MB - start mild optimization
+    moderate: number; // MB - start moderate optimization
     aggressive: number; // MB - start aggressive optimization
-    extreme: number;   // MB - start extreme optimization
+    extreme: number; // MB - start extreme optimization
   };
   qualityTargets: {
-    critical: number;  // 0.9 - preserve 90% quality
-    high: number;      // 0.8 - preserve 80% quality
-    medium: number;    // 0.65 - preserve 65% quality
-    low: number;       // 0.45 - preserve 45% quality
-    minimal: number;   // 0.25 - preserve 25% quality
+    critical: number; // 0.9 - preserve 90% quality
+    high: number; // 0.8 - preserve 80% quality
+    medium: number; // 0.65 - preserve 65% quality
+    low: number; // 0.45 - preserve 45% quality
+    minimal: number; // 0.25 - preserve 25% quality
   };
 }
 
@@ -45,22 +45,22 @@ export class SmartAssetOptimizer {
         mild: 50,
         moderate: 100,
         aggressive: 150,
-        extreme: 180
+        extreme: 180,
       },
       qualityTargets: {
-        critical: 0.9,
-        high: 0.8,
-        medium: 0.65,
-        low: 0.45,
-        minimal: 0.25
+        critical: 0.95,
+        high: 0.9,
+        medium: 0.8,
+        low: 0.65,
+        minimal: 0.45,
       },
-      ...config
+      ...config,
     };
 
-    this.canvas = document.createElement('canvas');
-    this.ctx = this.canvas.getContext('2d')!;
+    this.canvas = document.createElement("canvas");
+    this.ctx = this.canvas.getContext("2d")!;
     if (!this.ctx) {
-      throw new Error('Could not create canvas context for asset optimization');
+      throw new Error("Could not create canvas context for asset optimization");
     }
   }
 
@@ -84,9 +84,17 @@ export class SmartAssetOptimizer {
       let result: OptimizationResult;
 
       if (this.isImageAsset(asset)) {
-        result = await this.optimizeImageAsset(asset, context, optimizationIntensity);
+        result = await this.optimizeImageAsset(
+          asset,
+          context,
+          optimizationIntensity
+        );
       } else {
-        result = await this.optimizeSVGAsset(asset, context, optimizationIntensity);
+        result = await this.optimizeSVGAsset(
+          asset,
+          context,
+          optimizationIntensity
+        );
       }
 
       console.log(`🎯 ${context.classification} asset optimized:`, {
@@ -94,21 +102,20 @@ export class SmartAssetOptimizer {
         strategy: result.strategy,
         originalKB: (originalSize / 1024).toFixed(1),
         optimizedKB: (result.optimizedSize / 1024).toFixed(1),
-        compressionRatio: (result.compressionRatio * 100).toFixed(1) + '%'
+        compressionRatio: (result.compressionRatio * 100).toFixed(1) + "%",
       });
 
       return result;
-
     } catch (error) {
-      console.error('Asset optimization failed:', error);
+      console.error("Asset optimization failed:", error);
       return {
         originalSize,
         optimizedSize: originalSize,
         compressionRatio: 0,
         strategy: OptimizationStrategy.PRESERVE,
         success: false,
-        error: error instanceof Error ? error.message : 'Unknown error',
-        optimizedAsset: asset
+        error: error instanceof Error ? error.message : "Unknown error",
+        optimizedAsset: asset,
       };
     }
   }
@@ -131,7 +138,7 @@ export class SmartAssetOptimizer {
         compressionRatio: 1,
         strategy: OptimizationStrategy.REMOVE,
         success: true,
-        optimizedAsset: null
+        optimizedAsset: null,
       };
     }
 
@@ -143,7 +150,7 @@ export class SmartAssetOptimizer {
         compressionRatio: 0,
         strategy: OptimizationStrategy.PRESERVE,
         success: true,
-        optimizedAsset: asset
+        optimizedAsset: asset,
       };
     }
 
@@ -156,7 +163,11 @@ export class SmartAssetOptimizer {
     const targetQuality = this.calculateTargetQuality(context, intensity);
     const targetSize = this.calculateTargetSize(asset, context, intensity);
 
-    const optimizedAsset = await this.compressImage(asset, targetQuality, targetSize);
+    const optimizedAsset = await this.compressImage(
+      asset,
+      targetQuality,
+      targetSize
+    );
     const optimizedSize = this.getAssetSize(optimizedAsset);
 
     return {
@@ -165,7 +176,7 @@ export class SmartAssetOptimizer {
       compressionRatio: (originalSize - optimizedSize) / originalSize,
       strategy: context.optimizationStrategy,
       success: true,
-      optimizedAsset
+      optimizedAsset,
     };
   }
 
@@ -187,7 +198,7 @@ export class SmartAssetOptimizer {
         compressionRatio: 1,
         strategy: OptimizationStrategy.REMOVE,
         success: true,
-        optimizedAsset: null
+        optimizedAsset: null,
       };
     }
 
@@ -199,7 +210,7 @@ export class SmartAssetOptimizer {
         compressionRatio: 0,
         strategy: OptimizationStrategy.PRESERVE,
         success: true,
-        optimizedAsset: asset
+        optimizedAsset: asset,
       };
     }
 
@@ -213,7 +224,7 @@ export class SmartAssetOptimizer {
       compressionRatio: (originalSize - optimizedSize) / originalSize,
       strategy: context.optimizationStrategy,
       success: true,
-      optimizedAsset
+      optimizedAsset,
     };
   }
 
@@ -226,12 +237,16 @@ export class SmartAssetOptimizer {
   ): number {
     // Base intensity from payload pressure (0-1)
     let intensityFromPayload = 0;
-    
+
     if (currentPayloadSizeMB >= this.config.progressiveThresholds.extreme) {
       intensityFromPayload = 1.0; // Maximum intensity
-    } else if (currentPayloadSizeMB >= this.config.progressiveThresholds.aggressive) {
+    } else if (
+      currentPayloadSizeMB >= this.config.progressiveThresholds.aggressive
+    ) {
       intensityFromPayload = 0.8;
-    } else if (currentPayloadSizeMB >= this.config.progressiveThresholds.moderate) {
+    } else if (
+      currentPayloadSizeMB >= this.config.progressiveThresholds.moderate
+    ) {
       intensityFromPayload = 0.6;
     } else if (currentPayloadSizeMB >= this.config.progressiveThresholds.mild) {
       intensityFromPayload = 0.4;
@@ -245,7 +260,7 @@ export class SmartAssetOptimizer {
       [AssetImportance.HIGH]: 0.5,
       [AssetImportance.MEDIUM]: 0.7,
       [AssetImportance.LOW]: 0.9,
-      [AssetImportance.MINIMAL]: 1.0
+      [AssetImportance.MINIMAL]: 1.0,
     }[importance];
 
     return Math.min(1, intensityFromPayload * importanceModifier);
@@ -254,18 +269,21 @@ export class SmartAssetOptimizer {
   /**
    * Calculate target quality based on asset context and optimization intensity
    */
-  private calculateTargetQuality(context: AssetContextData, intensity: number): number {
+  private calculateTargetQuality(
+    context: AssetContextData,
+    intensity: number
+  ): number {
     const baseQuality = {
       [AssetImportance.CRITICAL]: this.config.qualityTargets.critical,
       [AssetImportance.HIGH]: this.config.qualityTargets.high,
       [AssetImportance.MEDIUM]: this.config.qualityTargets.medium,
       [AssetImportance.LOW]: this.config.qualityTargets.low,
-      [AssetImportance.MINIMAL]: this.config.qualityTargets.minimal
+      [AssetImportance.MINIMAL]: this.config.qualityTargets.minimal,
     }[context.importance];
 
     // Apply intensity modifier - higher intensity reduces quality further
-    const intensityModifier = 1 - (intensity * 0.3); // Max 30% quality reduction
-    
+    const intensityModifier = 1 - intensity * 0.15; // Max 15% quality reduction
+
     return Math.max(0.1, baseQuality * intensityModifier);
   }
 
@@ -278,21 +296,22 @@ export class SmartAssetOptimizer {
     intensity: number
   ): number {
     const originalSize = this.getAssetSize(asset);
-    
+
     // Base size targets based on classification
-    const baseSizeTarget = {
-      [AssetClassification.HERO]: originalSize * 0.7,      // Preserve hero images
-      [AssetClassification.LOGO]: originalSize * 0.6,      // Logos need clarity
-      [AssetClassification.CONTENT]: originalSize * 0.5,   // Content images balanced
-      [AssetClassification.COMPONENT]: originalSize * 0.4, // Components can be smaller
-      [AssetClassification.ICON]: 20 * 1024,              // Icons: 20KB max
-      [AssetClassification.BACKGROUND]: originalSize * 0.3, // Backgrounds can be very compressed
-      [AssetClassification.DECORATIVE]: originalSize * 0.2  // Decorative: minimal size
-    }[context.classification] || originalSize * 0.4;
+    const baseSizeTarget =
+      {
+        [AssetClassification.HERO]: originalSize * 0.7, // Preserve hero images
+        [AssetClassification.LOGO]: originalSize * 0.6, // Logos need clarity
+        [AssetClassification.CONTENT]: originalSize * 0.5, // Content images balanced
+        [AssetClassification.COMPONENT]: originalSize * 0.4, // Components can be smaller
+        [AssetClassification.ICON]: 20 * 1024, // Icons: 20KB max
+        [AssetClassification.BACKGROUND]: originalSize * 0.3, // Backgrounds can be very compressed
+        [AssetClassification.DECORATIVE]: originalSize * 0.2, // Decorative: minimal size
+      }[context.classification] || originalSize * 0.4;
 
     // Apply intensity modifier
-    const intensityModifier = 1 - (intensity * 0.5); // Up to 50% further reduction
-    
+    const intensityModifier = 1 - intensity * 0.25; // Up to 25% further reduction
+
     return Math.max(1024, baseSizeTarget * intensityModifier); // Min 1KB
   }
 
@@ -304,19 +323,22 @@ export class SmartAssetOptimizer {
     targetQuality: number,
     targetSize: number
   ): Promise<ImageAsset> {
-    if (!asset.base64) {
+    if (!asset.data) {
       return asset; // Can't compress without data
     }
 
     // Create image from base64
-    const img = await this.createImageFromBase64(asset.base64, asset.mimeType);
-    
+    const img = await this.createImageFromBase64(
+      asset.data,
+      asset.mimeType || "image/png"
+    );
+
     // Try different compression strategies
     const strategies = [
-      { format: 'image/webp', quality: targetQuality },
-      { format: 'image/jpeg', quality: targetQuality },
-      { format: 'image/jpeg', quality: Math.max(0.1, targetQuality * 0.8) },
-      { format: 'image/webp', quality: Math.max(0.1, targetQuality * 0.6) }
+      { format: "image/webp", quality: targetQuality },
+      { format: "image/jpeg", quality: targetQuality },
+      { format: "image/jpeg", quality: Math.max(0.1, targetQuality * 0.8) },
+      { format: "image/webp", quality: Math.max(0.1, targetQuality * 0.6) },
     ];
 
     let bestResult = asset;
@@ -324,9 +346,13 @@ export class SmartAssetOptimizer {
 
     for (const strategy of strategies) {
       try {
-        const compressed = await this.compressImageWithStrategy(img, asset, strategy);
+        const compressed = await this.compressImageWithStrategy(
+          img,
+          asset,
+          strategy
+        );
         const compressedSize = this.getAssetSize(compressed);
-        
+
         if (compressedSize < bestSize && compressedSize >= targetSize * 0.5) {
           bestResult = compressed;
           bestSize = compressedSize;
@@ -337,7 +363,7 @@ export class SmartAssetOptimizer {
           break;
         }
       } catch (error) {
-        console.warn('Compression strategy failed:', strategy, error);
+        console.warn("Compression strategy failed:", strategy, error);
       }
     }
 
@@ -354,8 +380,11 @@ export class SmartAssetOptimizer {
   ): Promise<ImageAsset> {
     // Set canvas size to match image, but apply smart downscaling if needed
     const maxDimension = this.calculateMaxDimension(originalAsset);
-    const scale = Math.min(1, Math.min(maxDimension / img.width, maxDimension / img.height));
-    
+    const scale = Math.min(
+      1,
+      Math.min(maxDimension / img.width, maxDimension / img.height)
+    );
+
     this.canvas.width = Math.floor(img.width * scale);
     this.canvas.height = Math.floor(img.height * scale);
 
@@ -365,14 +394,14 @@ export class SmartAssetOptimizer {
 
     // Convert to compressed format
     const dataUrl = this.canvas.toDataURL(strategy.format, strategy.quality);
-    const base64 = dataUrl.split(',')[1];
+    const base64 = dataUrl.split(",")[1];
 
     return {
       ...originalAsset,
-      base64,
+      data: base64,
       width: this.canvas.width,
       height: this.canvas.height,
-      mimeType: strategy.format
+      mimeType: strategy.format,
     };
   }
 
@@ -388,7 +417,7 @@ export class SmartAssetOptimizer {
       component: 600,
       icon: 128,
       background: 1000,
-      decorative: 400
+      decorative: 400,
     };
 
     // Default to content if we can't determine classification
@@ -423,7 +452,7 @@ export class SmartAssetOptimizer {
 
     return {
       ...asset,
-      svgCode
+      svgCode,
     };
   }
 
@@ -446,10 +475,10 @@ export class SmartAssetOptimizer {
       </svg>`;
 
       const svgAsset: SVGAsset = {
-        hash: asset.hash,
+        hash: asset.hash || asset.id,
         svgCode,
         width: asset.width,
-        height: asset.height
+        height: asset.height,
       };
 
       const optimizedSize = svgCode.length;
@@ -460,14 +489,18 @@ export class SmartAssetOptimizer {
         compressionRatio: (originalSize - optimizedSize) / originalSize,
         strategy: OptimizationStrategy.CONVERT_SVG,
         success: true,
-        optimizedAsset: svgAsset
+        optimizedAsset: svgAsset,
       };
     } catch (error) {
       // If conversion fails, fall back to aggressive compression
-      return await this.optimizeImageAsset(asset, {
-        ...context,
-        optimizationStrategy: OptimizationStrategy.AGGRESSIVE
-      }, 0.8);
+      return await this.optimizeImageAsset(
+        asset,
+        {
+          ...context,
+          optimizationStrategy: OptimizationStrategy.AGGRESSIVE,
+        },
+        0.8
+      );
     }
   }
 
@@ -475,21 +508,45 @@ export class SmartAssetOptimizer {
 
   private getAssetSize(asset: ImageAsset | SVGAsset): number {
     if (this.isImageAsset(asset)) {
-      return asset.base64 ? (asset.base64.length * 0.75) : 0; // base64 overhead
+      return asset.data ? asset.data.length * 0.75 : 0; // base64 overhead
     } else {
       return asset.svgCode ? asset.svgCode.length : 0;
     }
   }
 
   private isImageAsset(asset: ImageAsset | SVGAsset): asset is ImageAsset {
-    return 'base64' in asset;
+    return "data" in asset;
   }
 
-  private createImageFromBase64(base64: string, mimeType: string): Promise<HTMLImageElement> {
+  private createImageFromBase64(
+    base64: string,
+    mimeType: string
+  ): Promise<HTMLImageElement> {
     return new Promise((resolve, reject) => {
+      // Safety check: if base64 is suspiciously large (> 25MB), skip it to avoid OOM/hangs
+      if (base64.length > 25 * 1024 * 1024) {
+        reject(new Error("Image too large to process safely"));
+        return;
+      }
+
       const img = new Image();
-      img.onload = () => resolve(img);
-      img.onerror = reject;
+
+      // Add timeout
+      const timeoutId = setTimeout(() => {
+        img.src = ""; // Cancel loading
+        reject(new Error("Image load timed out"));
+      }, 5000);
+
+      img.onload = () => {
+        clearTimeout(timeoutId);
+        resolve(img);
+      };
+
+      img.onerror = () => {
+        clearTimeout(timeoutId);
+        reject(new Error("Image load failed"));
+      };
+
       img.src = `data:${mimeType};base64,${base64}`;
     });
   }
@@ -497,24 +554,24 @@ export class SmartAssetOptimizer {
   // SVG optimization methods
 
   private removeSVGComments(svgCode: string): string {
-    return svgCode.replace(/<!--[\s\S]*?-->/g, '');
+    return svgCode.replace(/<!--[\s\S]*?-->/g, "");
   }
 
   private minimizeSVGWhitespace(svgCode: string): string {
-    return svgCode.replace(/>\s+</g, '><').trim();
+    return svgCode.replace(/>\s+</g, "><").trim();
   }
 
   private removeSVGMetadata(svgCode: string): string {
     // Remove metadata, title, desc elements
     return svgCode
-      .replace(/<metadata[\s\S]*?<\/metadata>/gi, '')
-      .replace(/<title[\s\S]*?<\/title>/gi, '')
-      .replace(/<desc[\s\S]*?<\/desc>/gi, '');
+      .replace(/<metadata[\s\S]*?<\/metadata>/gi, "")
+      .replace(/<title[\s\S]*?<\/title>/gi, "")
+      .replace(/<desc[\s\S]*?<\/desc>/gi, "");
   }
 
   private removeUnusedSVGElements(svgCode: string): string {
     // Remove defs that aren't referenced (simplified)
-    return svgCode.replace(/<defs[^>]*>\s*<\/defs>/g, '');
+    return svgCode.replace(/<defs[^>]*>\s*<\/defs>/g, "");
   }
 
   private simplifyPaths(svgCode: string): string {
@@ -527,9 +584,9 @@ export class SmartAssetOptimizer {
   private removeRedundantAttributes(svgCode: string): string {
     // Remove default values and redundant attributes
     return svgCode
-      .replace(/\s+fill="none"/g, '')
-      .replace(/\s+stroke="none"/g, '')
-      .replace(/\s+stroke-width="1"/g, '');
+      .replace(/\s+fill="none"/g, "")
+      .replace(/\s+stroke="none"/g, "")
+      .replace(/\s+stroke-width="1"/g, "");
   }
 }
 

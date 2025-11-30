@@ -1,3 +1,5 @@
+import { handleWebpTranscodeResult } from "./ui-bridge";
+
 // Import the static UI
 const uiHtml = `<!DOCTYPE html>
 <html>
@@ -138,6 +140,35 @@ const uiHtml = `<!DOCTYPE html>
     
     fileInput.addEventListener('change', (e) => {
       const file = e.target.files[0];
+      handleFile(file);
+    });
+
+    // Drag and Drop Support
+    uploadSection.addEventListener('dragover', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      uploadSection.style.borderColor = '#6366f1';
+      uploadSection.style.background = '#f0fdf4';
+    });
+
+    uploadSection.addEventListener('dragleave', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      uploadSection.style.borderColor = '#d1d5db';
+      uploadSection.style.background = '';
+    });
+
+    uploadSection.addEventListener('drop', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      uploadSection.style.borderColor = '#d1d5db';
+      uploadSection.style.background = '';
+      
+      const file = e.dataTransfer.files[0];
+      handleFile(file);
+    });
+
+    function handleFile(file) {
       if (!file) return;
       const isWTFFile = file.name.toLowerCase().endsWith('.wtf');
       uploadSection.classList.add('has-file');
@@ -171,7 +202,7 @@ const uiHtml = `<!DOCTYPE html>
         };
         reader.readAsText(file);
       }
-    });
+    }
     
     importBtn.addEventListener('click', () => {
       if (!currentData && !currentWTFFile) return;
@@ -253,6 +284,35 @@ const uiHtml = `<!DOCTYPE html>
           updateStatus('Import in progress...', 'info');
           setTransferState('working', 'Import already running…');
           break;
+        case 'transcode-webp': {
+          const { id, base64 } = msg;
+          try {
+            const img = new Image();
+            img.crossOrigin = 'anonymous';
+            img.onload = () => {
+              try {
+                const canvas = document.createElement('canvas');
+                canvas.width = img.width;
+                canvas.height = img.height;
+                const ctx = canvas.getContext('2d');
+                if (!ctx) throw new Error('Canvas context unavailable');
+                ctx.drawImage(img, 0, 0);
+                const pngBase64 = canvas.toDataURL('image/png');
+                parent.postMessage({ pluginMessage: { type: 'webp-transcoded', id, pngBase64 } }, '*');
+              } catch (error) {
+                parent.postMessage({ pluginMessage: { type: 'webp-transcoded', id, error: String(error) } }, '*');
+              }
+            };
+            img.onerror = (error) => {
+              parent.postMessage({ pluginMessage: { type: 'webp-transcoded', id, error: 'Image decode failed' } }, '*');
+            };
+            const src = base64.startsWith('data:') ? base64 : \`data:image/webp;base64,\${base64}\`;
+            img.src = src;
+          } catch (error) {
+            parent.postMessage({ pluginMessage: { type: 'webp-transcoded', id, error: String(error) } }, '*');
+          }
+          break;
+        }
       }
     };
     
@@ -317,11 +377,15 @@ const uiHtml = `<!DOCTYPE html>
   </script>
 </body>
 </html>`;
-import { FigmaImporter, ImportOptions } from './importer';
-import { EnhancedFigmaImporter, EnhancedImportOptions } from './enhanced-figma-importer';
-import { prepareLayoutSchema } from './layout-solver';
-import { upgradeSelectionToAutoLayout } from './layout-upgrader';
-import { WTFParser } from './wtf-parser';
+import { FigmaImporter, ImportOptions } from "./importer";
+import {
+  EnhancedFigmaImporter,
+  EnhancedImportOptions,
+} from "./enhanced-figma-importer";
+import { prepareLayoutSchema } from "./layout-solver";
+import { upgradeSelectionToAutoLayout } from "./layout-upgrader";
+import { WTFParser } from "./wtf-parser";
+import pako from "pako";
 
 // Type definitions for API responses
 interface HandoffJobResponse {
@@ -345,17 +409,17 @@ const defaultImportOptions: ImportOptions = {
   createVariantsFrame: false,
   createComponentsFrame: true,
   createDesignSystem: false,
-  applyAutoLayout: false,
+  applyAutoLayout: true, // Enable Auto Layout by default for pixel-perfect fidelity
   createStyles: true,
-  usePixelPerfectPositioning: true,  // Enable pixel-perfect positioning
-  createScreenshotOverlay: true,     // Enable screenshot reference overlay
-  showValidationMarkers: false      // Disable by default to avoid clutter
+  usePixelPerfectPositioning: true, // Enable pixel-perfect positioning
+  createScreenshotOverlay: true, // Enable screenshot reference overlay
+  showValidationMarkers: false, // Disable by default to avoid clutter
 };
 
 let isImporting = false;
 
 // Handoff status tracking
-type HandoffStatus = 'waiting' | 'job-ready' | 'error' | 'disconnected';
+type HandoffStatus = "waiting" | "job-ready" | "error" | "disconnected";
 interface HandoffTelemetry {
   queueLength?: number;
   lastExtensionPingAt?: number | null;
@@ -366,113 +430,149 @@ interface HandoffTelemetry {
   lastDeliveredJobId?: string | null;
 }
 let lastHandoffStatus: HandoffStatus | null = null;
-let chromeConnectionState: 'connected' | 'disconnected' = 'disconnected';
-let serverConnectionState: 'connected' | 'disconnected' = 'disconnected';
+let chromeConnectionState: "connected" | "disconnected" = "disconnected";
+let serverConnectionState: "connected" | "disconnected" = "disconnected";
 // Capture service endpoints - configured for cloud deployment
 // Note: Environment variables not available in Figma plugin sandbox
 // Temporarily disabled cloud for local testing
-const CAPTURE_SERVICE_URL = 'https://capture-service-sandy.vercel.app';
-const CAPTURE_SERVICE_API_KEY = 'f7df13dd6f622998e79f8ec581cc2f4dc908331cadb426b74ac4b8879d186da2';
+const CAPTURE_SERVICE_URL = null; // 'https://capture-service-sandy.vercel.app';
+const CAPTURE_SERVICE_API_KEY =
+  "f7df13dd6f622998e79f8ec581cc2f4dc908331cadb426b74ac4b8879d186da2";
 
 const HANDOFF_BASES = CAPTURE_SERVICE_URL
   ? [CAPTURE_SERVICE_URL]
-  : ['http://127.0.0.1:4411', 'http://localhost:4411'];
+  : ["http://127.0.0.1:5511", "http://localhost:5511"];
 const HANDOFF_POLL_INTERVAL = 2500;
 let handoffBaseIndex = 0;
 let handoffPollTimer: ReturnType<typeof setInterval> | null = null;
 let handoffPollInFlight = false;
 
-figma.on('run', (runEvent) => {
-  if (runEvent.command === 'auto-import') {
-    figma.ui.postMessage({ type: 'auto-import-ready' });
+figma.on("run", (runEvent) => {
+  if (runEvent.command === "auto-import") {
+    figma.ui.postMessage({ type: "auto-import-ready" });
   }
   startHandoffPolling();
 });
 
 figma.ui.onmessage = async (msg) => {
-  if (msg.type === 'handoff-telemetry') {
+  if (msg.type === "handoff-telemetry") {
     handleTelemetryFromUi(msg.telemetry as HandoffTelemetry | null);
     return;
   }
-
-  if (msg.type === 'puppeteer-start-live-mode') {
-    figma.ui.postMessage({ type: 'puppeteer-control-start' });
+  if (msg.type === "webp-transcoded") {
+    handleWebpTranscodeResult(msg);
     return;
   }
 
-  if (msg.type === 'import' || msg.type === 'auto-import' || msg.type === 'live-import') {
+  if (msg.type === "puppeteer-start-live-mode") {
+    figma.ui.postMessage({ type: "puppeteer-control-start" });
+    return;
+  }
+
+  if (
+    msg.type === "import" ||
+    msg.type === "auto-import" ||
+    msg.type === "live-import"
+  ) {
     await handleImportRequest(msg.data, msg.options, msg.type);
     return;
   }
 
-  if (msg.type === 'import-wtf') {
+  if (msg.type === "import-wtf") {
     await handleWTFImport(msg.fileData, msg.options);
     return;
   }
-  if (msg.type === 'import-enhanced') {
+  if (msg.type === "import-enhanced") {
     await handleEnhancedImportV2(msg.data, msg.options);
     return;
   }
-  if (msg.type === 'parse-wtf') {
+  if (msg.type === "parse-wtf") {
     await handleWTFParsing(msg.fileData);
     return;
   }
 
-  if (msg.type === 'upgrade-auto-layout') {
+  if (msg.type === "upgrade-auto-layout") {
     upgradeSelectionToAutoLayout();
     return;
   }
 };
 
 async function handleImportRequest(
-  schema: any,
+  data: any,
   options: Partial<ImportOptions> | undefined,
-  trigger: 'import' | 'auto-import' | 'live-import'
+  trigger: "import" | "auto-import" | "live-import"
 ): Promise<void> {
-  if (!schema) {
-    figma.ui.postMessage({ type: 'error', message: 'No schema payload received.' });
+  if (!data) {
+    figma.ui.postMessage({
+      type: "error",
+      message: "No schema payload received.",
+    });
     return;
   }
 
   if (isImporting) {
     figma.ui.postMessage({
-      type: 'import-busy',
-      message: 'An import is already running. Please wait for it to finish.'
+      type: "import-busy",
+      message: "An import is already running. Please wait for it to finish.",
     });
     return;
   }
 
   isImporting = true;
 
+  // Unwrap rawSchemaJson if present (chunked transfer format from Chrome extension)
+  let schema = data;
+  if (data.rawSchemaJson && typeof data.rawSchemaJson === "string") {
+    console.log("🔓 Unwrapping rawSchemaJson string from chunked transfer...");
+    try {
+      schema = JSON.parse(data.rawSchemaJson);
+      console.log("✅ Successfully parsed rawSchemaJson");
+    } catch (parseError) {
+      const errorMsg =
+        parseError instanceof Error ? parseError.message : "Parse failed";
+      console.error("❌ Failed to parse rawSchemaJson:", errorMsg);
+      figma.ui.postMessage({
+        type: "error",
+        message: `Failed to parse schema data: ${errorMsg}`,
+      });
+      isImporting = false;
+      return;
+    }
+  }
+
   const resolvedOptions: ImportOptions = {
     ...defaultImportOptions,
-    ...(options || {})
+    ...(options || {}),
   };
 
   try {
-    console.log('🚀 Starting import with schema:', {
+    console.log("🚀 Starting import with schema:", {
       version: schema.version,
-      treeNodes: schema.tree ? 'present' : 'missing',
+      treeNodes: schema.tree ? "present" : "missing",
       treeType: schema.tree?.type,
       treeName: schema.tree?.name,
       treeChildren: schema.tree?.children?.length || 0,
-      assets: schema.assets ? Object.keys(schema.assets.images || {}).length : 0,
-      metadata: schema.metadata ? 'present' : 'missing',
-      validation: schema.validation ? `${schema.validation.issuesCount} issues` : 'missing'
-    });
-    
-    figma.ui.postMessage({
-      type: 'progress',
-      message: 'Preparing Figma canvas...',
-      percent: 5
+      assets: schema.assets
+        ? Object.keys(schema.assets.images || {}).length
+        : 0,
+      metadata: schema.metadata ? "present" : "missing",
+      validation: schema.validation
+        ? `${schema.validation.issuesCount} issues`
+        : "missing",
     });
 
-    console.log('✅ Preparing layout schema...');
+    figma.ui.postMessage({
+      type: "progress",
+      message: "Preparing Figma canvas...",
+      percent: 5,
+    });
+
+    console.log("✅ Preparing layout schema...");
     prepareLayoutSchema(schema);
-    console.log('✅ Schema preparation complete');
+    console.log("✅ Schema preparation complete");
 
     // Use enhanced importer for better Figma compatibility
-    console.log('✅ Creating enhanced Figma importer...');
+    console.log("✅ Creating enhanced Figma importer...");
     const enhancedOptions: Partial<EnhancedImportOptions> = {
       createMainFrame: resolvedOptions.createMainFrame,
       enableBatchProcessing: true,
@@ -481,21 +581,21 @@ async function handleImportRequest(
       coordinateTolerance: 2,
       enableDebugMode: false,
       retryFailedImages: true,
-      enableProgressiveLoading: false
+      enableProgressiveLoading: false,
     };
-    
+
     const importer = new EnhancedFigmaImporter(schema, enhancedOptions);
-    console.log('✅ Starting enhanced import process...');
+    console.log("✅ Starting enhanced import process...");
     const verificationReport = await importer.runImport();
-    console.log('✅ Enhanced import process completed successfully');
-    
+    console.log("✅ Enhanced import process completed successfully");
+
     // Log verification results
-    console.log('📐 Import verification:', {
+    console.log("📐 Import verification:", {
       totalElements: verificationReport.totalElements,
       withinTolerance: verificationReport.positionsWithinTolerance,
       outsideTolerance: verificationReport.positionsOutsideTolerance,
-      maxDeviation: verificationReport.maxDeviation.toFixed(2) + 'px',
-      averageDeviation: verificationReport.averageDeviation.toFixed(2) + 'px'
+      maxDeviation: verificationReport.maxDeviation.toFixed(2) + "px",
+      averageDeviation: verificationReport.averageDeviation.toFixed(2) + "px",
     });
 
     const enhancedStats = {
@@ -504,10 +604,12 @@ async function handleImportRequest(
       designTokens: schema.designTokens
         ? {
             colors: Object.keys(schema.designTokens.colors || {}).length,
-            typography: Object.keys(schema.designTokens.typography || {}).length,
+            typography: Object.keys(schema.designTokens.typography || {})
+              .length,
             spacing: Object.keys(schema.designTokens.spacing || {}).length,
             shadows: Object.keys(schema.designTokens.shadows || {}).length,
-            borderRadius: Object.keys(schema.designTokens.borderRadius || {}).length
+            borderRadius: Object.keys(schema.designTokens.borderRadius || {})
+              .length,
           }
         : null,
       extraction: schema.metadata?.extractionSummary,
@@ -518,29 +620,45 @@ async function handleImportRequest(
         positionsOutsideTolerance: verificationReport.positionsOutsideTolerance,
         maxDeviation: verificationReport.maxDeviation,
         averageDeviation: verificationReport.averageDeviation,
-        accuracy: verificationReport.averageDeviation
+        accuracy: verificationReport.averageDeviation,
       },
-      processingTime: verificationReport.totalProcessingTime
+      processingTime: verificationReport.totalProcessingTime,
     };
 
-    figma.ui.postMessage({ type: 'complete', stats: enhancedStats });
-    
+    figma.ui.postMessage({ type: "complete", stats: enhancedStats });
+
     // Show enhanced validation-aware notification
     if (verificationReport.positionsOutsideTolerance > 0) {
-      figma.notify(`⚠️ Import complete with ${verificationReport.positionsOutsideTolerance} position mismatches > 2px (avg: ${verificationReport.averageDeviation.toFixed(1)}px)`, { timeout: 5000 });
+      figma.notify(
+        `⚠️ Import complete with ${
+          verificationReport.positionsOutsideTolerance
+        } position mismatches > 2px (avg: ${verificationReport.averageDeviation.toFixed(
+          1
+        )}px)`,
+        { timeout: 5000 }
+      );
     } else if (verificationReport.averageDeviation > 1) {
-      figma.notify(`✓ Import complete with good positioning accuracy (avg: ${verificationReport.averageDeviation.toFixed(1)}px)`, { timeout: 3000 });
+      figma.notify(
+        `✓ Import complete with good positioning accuracy (avg: ${verificationReport.averageDeviation.toFixed(
+          1
+        )}px)`,
+        { timeout: 3000 }
+      );
     } else {
-      figma.notify('✅ Import complete with pixel-perfect accuracy!', { timeout: 3000 });
+      figma.notify("✅ Import complete with pixel-perfect accuracy!", {
+        timeout: 3000,
+      });
     }
-    
-    postHandoffStatus('waiting');
+
+    postHandoffStatus("waiting");
   } catch (error) {
     const message =
-      error instanceof Error ? error.message : 'Import failed. See console for details.';
-    figma.ui.postMessage({ type: 'error', message });
+      error instanceof Error
+        ? error.message
+        : "Import failed. See console for details.";
+    figma.ui.postMessage({ type: "error", message });
     figma.notify(`✗ Import failed: ${message}`, { error: true });
-    postHandoffStatus('error', message);
+    postHandoffStatus("error", message);
   } finally {
     isImporting = false;
   }
@@ -551,14 +669,17 @@ async function handleWTFImport(
   options: Partial<ImportOptions> | undefined
 ): Promise<void> {
   if (!fileData) {
-    figma.ui.postMessage({ type: 'error', message: 'No .wtf file data received.' });
+    figma.ui.postMessage({
+      type: "error",
+      message: "No .wtf file data received.",
+    });
     return;
   }
 
   if (isImporting) {
     figma.ui.postMessage({
-      type: 'import-busy',
-      message: 'An import is already running. Please wait for it to finish.'
+      type: "import-busy",
+      message: "An import is already running. Please wait for it to finish.",
     });
     return;
   }
@@ -566,26 +687,26 @@ async function handleWTFImport(
   isImporting = true;
 
   try {
-    console.log('📦 Parsing .wtf file...');
+    console.log("📦 Parsing .wtf file...");
     figma.ui.postMessage({
-      type: 'progress',
-      message: 'Parsing .wtf archive...',
-      percent: 5
+      type: "progress",
+      message: "Parsing .wtf archive...",
+      percent: 5,
     });
 
     const parser = new WTFParser();
     const wtfData = await parser.parse(fileData);
 
-    console.log('✅ .wtf file parsed successfully:', {
+    console.log("✅ .wtf file parsed successfully:", {
       url: wtfData.manifest.url,
       capturedAt: wtfData.manifest.capturedAt,
-      elementCount: wtfData.manifest.schema.elementCount
+      elementCount: wtfData.manifest.schema.elementCount,
     });
 
     figma.ui.postMessage({
-      type: 'progress',
-      message: 'Loading schema and screenshot...',
-      percent: 15
+      type: "progress",
+      message: "Loading schema and screenshot...",
+      percent: 15,
     });
 
     // Add screenshot to schema if not already present
@@ -598,69 +719,83 @@ async function handleWTFImport(
       wtfData.schema.metadata = {
         url: wtfData.manifest.url,
         timestamp: wtfData.manifest.capturedAt,
-        viewport: wtfData.manifest.viewport
+        viewport: wtfData.manifest.viewport,
       };
     }
 
     // Now import the schema using the regular import flow
-    await handleImportRequest(wtfData.schema, options, 'import');
+    await handleImportRequest(wtfData.schema, options, "import");
 
-    figma.notify('✓ .wtf file imported successfully', { timeout: 3000 });
+    figma.notify("✓ .wtf file imported successfully", { timeout: 3000 });
   } catch (error) {
     const message =
-      error instanceof Error ? error.message : 'Failed to import .wtf file. See console for details.';
-    figma.ui.postMessage({ type: 'error', message });
+      error instanceof Error
+        ? error.message
+        : "Failed to import .wtf file. See console for details.";
+    figma.ui.postMessage({ type: "error", message });
     figma.notify(`✗ .wtf import failed: ${message}`, { error: true });
-    console.error('❌ .wtf import error:', error);
+    console.error("❌ .wtf import error:", error);
   } finally {
     isImporting = false;
   }
 }
 
-function postHandoffStatus(status: HandoffStatus, detail?: string, meta?: Record<string, any>) {
-  if (status === lastHandoffStatus && status !== 'job-ready') {
+function postHandoffStatus(
+  status: HandoffStatus,
+  detail?: string,
+  meta?: Record<string, any>
+) {
+  if (status === lastHandoffStatus && status !== "job-ready") {
     return;
   }
 
   lastHandoffStatus = status;
-  figma.ui.postMessage({ type: 'handoff-status', status, detail, meta });
+  figma.ui.postMessage({ type: "handoff-status", status, detail, meta });
 }
 
-function updateChromeConnection(state: 'connected' | 'disconnected') {
+function updateChromeConnection(state: "connected" | "disconnected") {
   if (state === chromeConnectionState) return;
   chromeConnectionState = state;
 
   figma.ui.postMessage({
-    type: state === 'connected' ? 'chrome-extension-connected' : 'chrome-extension-disconnected'
+    type:
+      state === "connected"
+        ? "chrome-extension-connected"
+        : "chrome-extension-disconnected",
   });
 }
 
-function updateServerConnection(state: 'connected' | 'disconnected') {
+function updateServerConnection(state: "connected" | "disconnected") {
   if (state === serverConnectionState) return;
   serverConnectionState = state;
 
   figma.ui.postMessage({
-    type: state === 'connected' ? 'server-connected' : 'server-disconnected'
+    type: state === "connected" ? "server-connected" : "server-disconnected",
   });
 }
 
 function handleTelemetryFromUi(telemetry?: HandoffTelemetry | null) {
-  figma.ui.postMessage({ type: 'handoff-telemetry', telemetry: telemetry || null });
+  figma.ui.postMessage({
+    type: "handoff-telemetry",
+    telemetry: telemetry || null,
+  });
 
   if (!telemetry) {
-    updateServerConnection('disconnected');
-    updateChromeConnection('disconnected');
+    updateServerConnection("disconnected");
+    updateChromeConnection("disconnected");
     return;
   }
 
   const now = Date.now();
   const extensionHeartbeat =
-    typeof telemetry.lastExtensionPingAt === 'number' && now - telemetry.lastExtensionPingAt < 8000;
+    typeof telemetry.lastExtensionPingAt === "number" &&
+    now - telemetry.lastExtensionPingAt < 8000;
   const pluginPolling =
-    typeof telemetry.lastPluginPollAt === 'number' && now - telemetry.lastPluginPollAt < 8000;
+    typeof telemetry.lastPluginPollAt === "number" &&
+    now - telemetry.lastPluginPollAt < 8000;
 
-  updateChromeConnection(extensionHeartbeat ? 'connected' : 'disconnected');
-  updateServerConnection(pluginPolling ? 'connected' : 'disconnected');
+  updateChromeConnection(extensionHeartbeat ? "connected" : "disconnected");
+  updateServerConnection(pluginPolling ? "connected" : "disconnected");
 }
 
 function applyTelemetry(telemetry?: HandoffTelemetry | null): boolean {
@@ -668,10 +803,11 @@ function applyTelemetry(telemetry?: HandoffTelemetry | null): boolean {
 
   const now = Date.now();
   const extensionHeartbeat =
-    typeof telemetry.lastExtensionPingAt === 'number' && now - telemetry.lastExtensionPingAt < 8000;
+    typeof telemetry.lastExtensionPingAt === "number" &&
+    now - telemetry.lastExtensionPingAt < 8000;
 
-  updateChromeConnection(extensionHeartbeat ? 'connected' : 'disconnected');
-  figma.ui.postMessage({ type: 'handoff-telemetry', telemetry });
+  updateChromeConnection(extensionHeartbeat ? "connected" : "disconnected");
+  figma.ui.postMessage({ type: "handoff-telemetry", telemetry });
   return true;
 }
 
@@ -685,7 +821,7 @@ function startHandoffPolling() {
 }
 
 function currentHandoffBase(): string {
-  return HANDOFF_BASES[handoffBaseIndex] || 'http://127.0.0.1:4411';
+  return HANDOFF_BASES[handoffBaseIndex] || "http://127.0.0.1:5511";
 }
 
 function rotateHandoffBase() {
@@ -701,38 +837,36 @@ async function pollHandoffJobs(): Promise<void> {
     }
 
     const isCloudService = !!CAPTURE_SERVICE_URL;
-    const endpoint = isCloudService
-      ? `${currentHandoffBase()}/api/jobs/next`
-      : `${currentHandoffBase()}/jobs/next`;
+    const endpoint = `${currentHandoffBase()}/api/jobs/next`;
 
     const headers: Record<string, string> = {
-      'cache-control': 'no-cache'
+      "cache-control": "no-cache",
     };
 
     if (CAPTURE_SERVICE_API_KEY) {
-      headers['x-api-key'] = CAPTURE_SERVICE_API_KEY;
+      headers["x-api-key"] = CAPTURE_SERVICE_API_KEY;
     }
 
     const response = await fetch(endpoint, {
-      method: 'GET',
-      headers
+      method: "GET",
+      headers,
     });
 
     if (!response.ok) {
       if (response.status === 204) {
         // No jobs available (cloud service returns 204)
-        updateServerConnection('connected');
-        postHandoffStatus('waiting');
+        updateServerConnection("connected");
+        postHandoffStatus("waiting");
         return;
       }
       throw new Error(`HTTP ${response.status}`);
     }
 
-    updateServerConnection('connected');
+    updateServerConnection("connected");
 
     if (isCloudService) {
       // Cloud service format: { jobId, state, schemaUrl, screenshotUrl, metadata }
-      const jobResult = await response.json() as {
+      const jobResult = (await response.json()) as {
         jobId: string;
         state: string;
         schemaUrl?: string;
@@ -740,77 +874,124 @@ async function pollHandoffJobs(): Promise<void> {
         metadata?: unknown;
       };
 
-      if (jobResult.state === 'completed' && jobResult.schemaUrl) {
+      if (jobResult.state === "completed" && jobResult.schemaUrl) {
         // Fetch the schema from signed URL
         const schemaResponse = await fetch(jobResult.schemaUrl);
-        const schema = await schemaResponse.json();
+        let schema = await schemaResponse.json();
 
-        postHandoffStatus('job-ready', `Importing job ${jobResult.jobId}`);
-        await handleImportRequest(schema, undefined, 'auto-import');
+        // Decompress if needed
+        schema = decompressPayload(schema);
+
+        postHandoffStatus("job-ready", `Importing job ${jobResult.jobId}`);
+        await handleImportRequest(schema, undefined, "auto-import");
       } else {
-        postHandoffStatus('waiting');
+        postHandoffStatus("waiting");
       }
     } else {
       // Legacy localhost handoff format: { job: { id, payload }, telemetry }
-      const body = await response.json() as HandoffJobResponse;
+      const body = (await response.json()) as HandoffJobResponse;
       applyTelemetry(body?.telemetry || null);
 
       if (body?.job?.payload) {
-        postHandoffStatus('job-ready', `Importing job ${body.job.id}`);
-        await handleImportRequest(body.job.payload, undefined, 'auto-import');
+        const payload = decompressPayload(body.job.payload);
+        postHandoffStatus("job-ready", `Importing job ${body.job.id}`);
+        await handleImportRequest(payload, undefined, "auto-import");
       } else {
-        postHandoffStatus('waiting');
+        postHandoffStatus("waiting");
       }
     }
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
-    postHandoffStatus('error', message);
-    updateServerConnection('disconnected');
+    postHandoffStatus("error", message);
+    updateServerConnection("disconnected");
     rotateHandoffBase();
   } finally {
     handoffPollInFlight = false;
   }
 }
 
+function decompressPayload(payload: any): any {
+  if (payload && payload.compressed && typeof payload.data === "string") {
+    console.log("📦 Decompressing payload...");
+    try {
+      const compressedData = Uint8Array.from(atob(payload.data), (c) =>
+        c.charCodeAt(0)
+      );
+      const jsonString = pako.inflate(compressedData, { to: "string" });
+      return JSON.parse(jsonString);
+    } catch (e) {
+      console.error("Failed to decompress payload:", e);
+      throw new Error("Failed to decompress payload");
+    }
+  }
+  return payload;
+}
+
 async function pingHandoffHealth(): Promise<void> {
   try {
-    const response = await fetch(`${currentHandoffBase()}/health?source=plugin`, {
-      headers: { 'cache-control': 'no-cache' }
-    });
+    const response = await fetch(
+      `${currentHandoffBase()}/api/health?source=plugin`,
+      {
+        headers: { "cache-control": "no-cache" },
+      }
+    );
     if (!response.ok) {
       throw new Error(`HTTP ${response.status}`);
     }
-    const body = await response.json() as HandoffHealthResponse;
+    const body = (await response.json()) as HandoffHealthResponse;
     applyTelemetry(body?.telemetry || null);
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
-    updateServerConnection('disconnected');
-    postHandoffStatus('error', message);
+    updateServerConnection("disconnected");
+    postHandoffStatus("error", message);
     rotateHandoffBase();
   }
+}
+
+// Options from the enhanced UI
+interface EnhancedUIOptions {
+  autoLayout?: boolean;
+  components?: boolean;
+  styles?: boolean;
+  variants?: boolean;
 }
 
 // Enhanced import handler for the new UI
 async function handleEnhancedImport(
   data: any,
-  options: Partial<ImportOptions> | undefined
+  options: EnhancedUIOptions | undefined
 ): Promise<void> {
   if (isImporting) {
-    figma.ui.postMessage({ type: 'import-error', error: 'Another import is already in progress' });
+    figma.ui.postMessage({
+      type: "import-error",
+      error: "Another import is already in progress",
+    });
     return;
   }
 
   if (!data) {
-    figma.ui.postMessage({ type: 'import-error', error: 'No data provided for import' });
+    figma.ui.postMessage({
+      type: "import-error",
+      error: "No data provided for import",
+    });
     return;
   }
 
   isImporting = true;
-  
+
   try {
     // Send initial progress
-    figma.ui.postMessage({ type: 'import-progress', percent: 0, message: 'Preparing import...', phase: 'Initialize' });
-    
+    figma.ui.postMessage({
+      type: "progress",
+      percent: 0,
+      message: "Preparing import...",
+      phase: "Initialize",
+    });
+
+    console.log("✅ Preparing layout schema...");
+    prepareLayoutSchema(data);
+    console.log("✅ Layout schema prepared.");
+
     // Transform options from enhanced UI format
     const importOptions: ImportOptions = {
       ...defaultImportOptions,
@@ -822,37 +1003,48 @@ async function handleEnhancedImport(
 
     // Create importer instance
     const importer = new FigmaImporter(importOptions);
-    
+
     // Set up progress callback for enhanced UI
-    importer.setProgressCallback((percent: number, message: string, phase?: string) => {
-      figma.ui.postMessage({ 
-        type: 'import-progress', 
-        percent: Math.min(percent, 95), // Leave 5% for finalization
-        message, 
-        phase: phase || 'Processing'
-      });
-    });
+    importer.setProgressCallback(
+      (percent: number, message: string, phase?: string) => {
+        figma.ui.postMessage({
+          type: "progress",
+          percent: Math.min(percent, 95), // Leave 5% for finalization
+          message,
+          phase: phase || "Processing",
+        });
+      }
+    );
 
     // Import the data
     const result = await importer.import(data);
-    
+
     // Send statistics
     const stats = {
       nodes: result.elementsCount || 0,
       styles: result.stylesCount || 0,
-      components: result.componentsCount || 0
+      components: result.componentsCount || 0,
     };
-    
-    figma.ui.postMessage({ type: 'import-stats', ...stats });
-    figma.ui.postMessage({ type: 'import-progress', percent: 100, message: 'Import completed!', phase: 'Complete' });
-    figma.ui.postMessage({ type: 'import-complete', ...stats });
-    
+
+    figma.ui.postMessage({ type: "import-stats", ...stats });
+    figma.ui.postMessage({
+      type: "progress",
+      percent: 100,
+      message: "Import completed!",
+      phase: "Complete",
+    });
+    figma.ui.postMessage({ type: "complete", stats });
+
     // Show Figma notification
-    figma.notify(`✓ Successfully imported ${stats.nodes} elements!`, { timeout: 3000 });
-    
+    figma.notify(`✓ Successfully imported ${stats.nodes} elements!`, {
+      timeout: 3000,
+    });
   } catch (error) {
-    const message = error instanceof Error ? error.message : 'Import failed. See console for details.';
-    figma.ui.postMessage({ type: 'import-error', error: message });
+    const message =
+      error instanceof Error
+        ? error.message
+        : "Import failed. See console for details.";
+    figma.ui.postMessage({ type: "error", message });
     figma.notify(`✗ Import failed: ${message}`, { error: true });
   } finally {
     isImporting = false;
@@ -865,25 +1057,60 @@ async function handleEnhancedImportV2(
   options: Partial<EnhancedImportOptions> | undefined
 ): Promise<void> {
   if (isImporting) {
-    figma.ui.postMessage({ type: 'import-error', error: 'Another import is already in progress' });
+    figma.ui.postMessage({
+      type: "import-error",
+      error: "Another import is already in progress",
+    });
     return;
   }
 
   if (!data) {
-    figma.ui.postMessage({ type: 'import-error', error: 'No data provided for import' });
+    figma.ui.postMessage({
+      type: "import-error",
+      error: "No data provided for import",
+    });
     return;
   }
 
   isImporting = true;
-  
+
   try {
-    console.log('🚀 Starting enhanced import V2 with schema:', {
-      version: data.version,
-      treeNodes: data.tree ? 'present' : 'missing',
-      assets: data.assets ? Object.keys(data.assets.images || {}).length : 0,
-      metadata: data.metadata ? 'present' : 'missing'
+    // Unwrap rawSchemaJson if present (chunked transfer format from Chrome extension)
+    let schema = data;
+    if (data.rawSchemaJson && typeof data.rawSchemaJson === "string") {
+      console.log(
+        "🔓 Unwrapping rawSchemaJson string from chunked transfer..."
+      );
+      try {
+        schema = JSON.parse(data.rawSchemaJson);
+        console.log("✅ Successfully parsed rawSchemaJson");
+      } catch (parseError) {
+        const errorMsg =
+          parseError instanceof Error ? parseError.message : "Parse failed";
+        console.error("❌ Failed to parse rawSchemaJson:", errorMsg);
+        figma.ui.postMessage({
+          type: "error",
+          message: `Failed to parse schema data: ${errorMsg}`,
+        });
+        isImporting = false;
+        return;
+      }
+    }
+
+    console.log("🚀 Starting enhanced import V2 with schema:", {
+      version: schema.version,
+      treeNodes: schema.tree ? "present" : "missing",
+      assets: schema.assets
+        ? Object.keys(schema.assets.images || {}).length
+        : 0,
+      metadata: schema.metadata ? "present" : "missing",
     });
-    
+
+    // ✅ IMPORTANT: run the same layout preprocessing as the other path
+    console.log("✅ Preparing layout schema (V2)...");
+    prepareLayoutSchema(schema);
+    console.log("✅ Layout schema prepared (V2).");
+
     // Transform options to enhanced format
     const enhancedOptions: Partial<EnhancedImportOptions> = {
       createMainFrame: true,
@@ -894,15 +1121,26 @@ async function handleEnhancedImportV2(
       enableDebugMode: false,
       retryFailedImages: true,
       enableProgressiveLoading: false,
-      ...options
+      ...options,
     };
 
     // Create enhanced importer instance
-    const enhancedImporter = new EnhancedFigmaImporter(data, enhancedOptions);
-    
+    const enhancedImporter = new EnhancedFigmaImporter(schema, enhancedOptions);
+
+    // Set up progress callback if available (assuming EnhancedFigmaImporter supports it or we add it)
+    // Note: EnhancedFigmaImporter might not have setProgressCallback exposed yet,
+    // but we should try to hook it up if possible or add it.
+    // For now, we'll send a starting progress message.
+    figma.ui.postMessage({
+      type: "progress",
+      percent: 10,
+      message: "Starting enhanced import...",
+      phase: "Initialize",
+    });
+
     // Run the enhanced import with verification
     const verificationReport = await enhancedImporter.runImport();
-    
+
     // Send enhanced statistics including verification report
     const stats = {
       nodes: verificationReport.totalElements,
@@ -916,25 +1154,32 @@ async function handleEnhancedImportV2(
         positionsOutsideTolerance: verificationReport.positionsOutsideTolerance,
         maxDeviation: verificationReport.maxDeviation,
         averageDeviation: verificationReport.averageDeviation,
-        problematicElements: verificationReport.problematicElements.length
-      }
+        problematicElements: verificationReport.problematicElements.length,
+      },
     };
-    
-    figma.ui.postMessage({ type: 'import-stats', ...stats });
-    figma.ui.postMessage({ type: 'import-complete', ...stats });
-    
+
+    figma.ui.postMessage({ type: "import-stats", ...stats });
+    figma.ui.postMessage({ type: "complete", stats });
+
     // Show enhanced notification with verification info
     if (verificationReport.positionsOutsideTolerance > 0) {
-      figma.notify(`✓ Import complete with ${verificationReport.positionsOutsideTolerance} position mismatches`, { timeout: 4000 });
+      figma.notify(
+        `✓ Import complete with ${verificationReport.positionsOutsideTolerance} position mismatches`,
+        { timeout: 4000 }
+      );
     } else {
-      figma.notify('✅ Import complete with pixel-perfect accuracy!', { timeout: 3000 });
+      figma.notify("✅ Import complete with pixel-perfect accuracy!", {
+        timeout: 3000,
+      });
     }
-    
   } catch (error) {
-    const message = error instanceof Error ? error.message : 'Enhanced import failed. See console for details.';
-    figma.ui.postMessage({ type: 'import-error', error: message });
+    const message =
+      error instanceof Error
+        ? error.message
+        : "Enhanced import failed. See console for details.";
+    figma.ui.postMessage({ type: "error", message });
     figma.notify(`✗ Enhanced import failed: ${message}`, { error: true });
-    console.error('❌ Enhanced import V2 error:', error);
+    console.error("❌ Enhanced import V2 error:", error);
   } finally {
     isImporting = false;
   }
@@ -945,16 +1190,17 @@ async function handleWTFParsing(fileData: ArrayBuffer): Promise<void> {
   try {
     const parser = new WTFParser();
     const data = await parser.parse(fileData);
-    
+
     figma.ui.postMessage({
-      type: 'wtf-parsed',
-      data: data
+      type: "wtf-parsed",
+      data: data,
     });
   } catch (error) {
-    const message = error instanceof Error ? error.message : 'Failed to parse .wtf file';
+    const message =
+      error instanceof Error ? error.message : "Failed to parse .wtf file";
     figma.ui.postMessage({
-      type: 'wtf-parse-error',
-      error: message
+      type: "wtf-parse-error",
+      error: message,
     });
   }
 }

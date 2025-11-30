@@ -5,9 +5,10 @@ const puppeteer = require('puppeteer');
 const fs = require('fs');
 const path = require('path');
 
-const PORT = process.env.HANDOFF_PORT ? Number(process.env.HANDOFF_PORT) : 4411;
-const BODY_LIMIT = Number(process.env.HANDOFF_MAX_PAYLOAD_MB || '200') * 1024 * 1024; // bytes  
-const MAX_JOB_SIZE_MB = Number(process.env.HANDOFF_MAX_JOB_MB || '200');
+const HOST = process.env.HANDOFF_HOST || '0.0.0.0';
+const PORT = process.env.HANDOFF_PORT ? Number(process.env.HANDOFF_PORT) : 5511;
+const BODY_LIMIT = Number(process.env.HANDOFF_MAX_PAYLOAD_MB || '5000') * 1024 * 1024; // bytes  
+const MAX_JOB_SIZE_MB = Number(process.env.HANDOFF_MAX_JOB_MB || '5000');
 
 const app = express();
 const queue = [];
@@ -20,7 +21,18 @@ const telemetry = {
   lastDeliveredJobId: null
 };
 
-app.use(cors());
+app.use(cors({
+  origin: '*', // Allow all origins for local development
+  methods: ['GET', 'POST', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'x-api-key', 'cache-control'],
+  credentials: true
+}));
+
+// Add Private Network Access headers manually
+app.use((req, res, next) => {
+  res.setHeader('Access-Control-Allow-Private-Network', 'true');
+  next();
+});
 app.use(express.json({ limit: BODY_LIMIT }));
 
 function getTelemetry() {
@@ -30,7 +42,8 @@ function getTelemetry() {
   };
 }
 
-app.get('/health', (req, res) => {
+// Health check endpoint
+app.get('/api/health', (req, res) => {
   if (req.query.source === 'extension') {
     telemetry.lastExtensionPingAt = Date.now();
   } else if (req.query.source === 'plugin') {
@@ -40,7 +53,36 @@ app.get('/health', (req, res) => {
   res.json({ ok: true, queueLength: queue.length, telemetry: getTelemetry() });
 });
 
-app.post('/jobs', (req, res) => {
+// Extension heartbeat endpoint
+app.post('/api/extension/heartbeat', (req, res) => {
+  const { extensionId, version } = req.body || {};
+  telemetry.lastExtensionPingAt = Date.now();
+  console.log(`[handoff] Heartbeat from extension ${version}`);
+  res.json({ status: 'ok' });
+});
+
+// Remote logging endpoint
+app.post('/api/log', (req, res) => {
+  const { message, data } = req.body || {};
+  console.log(`[EXT_LOG] ${message}`, data || '');
+  res.json({ ok: true });
+});
+
+// Status endpoint for new plugin/extension logic
+app.get('/api/status', (req, res) => {
+  const now = Date.now();
+  const isExtensionOnline = telemetry.lastExtensionPingAt && (now - telemetry.lastExtensionPingAt < 30000);
+  
+  res.json({
+    server: 'ok',
+    extension: isExtensionOnline ? 'online' : 'offline',
+    telemetry: getTelemetry(),
+    queueLength: queue.length
+  });
+});
+
+// Submit a new job (support both /api/jobs and / for backward compatibility)
+app.post(['/api/jobs', '/'], (req, res) => {
   if (!req.body) {
     return res.status(400).json({ ok: false, error: 'Missing request body' });
   }
@@ -69,18 +111,42 @@ app.post('/jobs', (req, res) => {
   res.json({ ok: true, id: job.id, queueLength: queue.length, telemetry: getTelemetry() });
 });
 
-app.get('/jobs/next', (_req, res) => {
+// Get next job in queue (support both /api/jobs/next and /api/jobs for backward compatibility)
+app.get(['/api/jobs/next', '/api/jobs'], (req, res) => {
   const job = queue.shift() || null;
   telemetry.lastPluginPollAt = Date.now();
+  
   if (job) {
     telemetry.lastPluginDeliveryAt = Date.now();
     telemetry.lastDeliveredJobId = job.id;
     console.log(`[handoff] delivering job ${job.id} (queue=${queue.length})`);
+    
+    // Format the response to match what the Figma plugin expects
+    const response = {
+      job: {
+        id: job.id,
+        payload: job.payload.schema || job.payload, // Handle both formats
+        screenshot: job.payload.screenshot
+      },
+      telemetry: getTelemetry()
+    };
+    
+    // Log the formatted response for debugging
+    console.log(`[handoff] Sending formatted job response`, {
+      jobId: response.job.id,
+      hasPayload: !!response.job.payload,
+      hasScreenshot: !!response.job.screenshot
+    });
+    
+    res.json(response);
+  } else {
+    // No jobs available
+    res.status(204).end();
   }
-  res.json({ job, telemetry: getTelemetry() });
 });
 
-app.post('/capture', async (req, res) => {
+// Capture a URL
+app.post('/api/capture', async (req, res) => {
   const { url } = req.body || {};
   if (!url || typeof url !== 'string') {
     return res.status(400).json({ ok: false, error: 'Missing capture URL' });
@@ -107,9 +173,31 @@ app.use((error, _req, res, next) => {
   next(error);
 });
 
-app.listen(PORT, () => {
-  console.log(`[handoff] server listening on http://127.0.0.1:${PORT}`);
+const server = app.listen(PORT, HOST, () => {
+  console.log(`🚀 Handoff server running on ${HOST}:${PORT}`);
+  console.log(`  - Listening on host ${HOST}`);
+  console.log(`  - Max payload: ${BODY_LIMIT / 1024 / 1024}MB`);
+  console.log(`  - Max job size: ${MAX_JOB_SIZE_MB}MB`);
+  console.log('  - Endpoints:');
+  console.log(`    - POST /api/jobs`);
+  console.log(`    - GET  /api/jobs/next`);
+  console.log(`    - POST /api/capture`);
+  console.log(`    - GET  /api/health`);
 });
+
+// Handle any potential errors
+server.on('error', (error) => {
+  if (error.code === 'EADDRINUSE') {
+    console.error(`\n❌ Port ${PORT} is already in use.`);
+    console.error(`   - If another instance is running, you can ignore this.`);
+    console.error(`   - To restart, find and kill the process using port ${PORT}.`);
+    console.error(`   - Or set a different port using HANDOFF_PORT environment variable.\n`);
+    process.exit(1);
+  } else {
+    console.error('Server error:', error);
+  }
+});
+
 
 async function runHeadlessCapture(targetUrl) {
   const browser = await puppeteer.launch({
@@ -118,6 +206,9 @@ async function runHeadlessCapture(targetUrl) {
   });
 
   const page = await browser.newPage();
+  // Some sites (e.g., github.com) block cross-origin fetches via CSP, which breaks image downloads.
+  // Bypass CSP only for this headless capture context so the injected script can fetch assets like ctfassets.
+  await page.setBypassCSP(true);
   await page.setViewport({ width: 1440, height: 900, deviceScaleFactor: 1 });
 
   try {

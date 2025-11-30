@@ -1,0 +1,16 @@
+{
+  "timestamp": "2025-11-29T10:22:03.245Z",
+  "serverStartup": null,
+  "extensionLoading": null,
+  "websiteTests": [],
+  "schemaValidations": [],
+  "overallSuccess": false,
+  "performance": {},
+  "errors": [
+    {
+      "phase": "overall",
+      "message": "Handoff server exited with code 1",
+      "stack": "Error: Handoff server exited with code 1\n    at ChildProcess.<anonymous> (/Users/skirk92/figmacionvert-2/comprehensive-e2e-test.js:200:18)\n    at ChildProcess.emit (node:events:519:28)\n    at ChildProcess._handle.onexit (node:internal/child_process:293:12)"
+    }
+  ]
+}

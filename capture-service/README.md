@@ -100,6 +100,20 @@ npm start
 node dist/worker.js
 ```
 
+### Start the API server only (quick local run)
+
+If you just need the REST API running against a local Redis (no workers):
+
+```bash
+cd capture-service
+cp .env.example .env   # update values as needed
+npm install
+# ensure Redis is running: docker run -p 6379:6379 redis:7-alpine
+npm run dev            # starts the API on PORT in .env
+```
+
+You can then hit `http://localhost:3000/api/health` (or the `PORT` you set) to verify the server is up. Add workers (`npm run worker`) when you need jobs to actually process.
+
 ## API Endpoints
 
 ### POST /api/capture

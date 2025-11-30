@@ -9,14 +9,36 @@
     "storage",
     "tabs",
     "downloads",
-    "debugger"
+    "webNavigation",
+    "webRequest",
+    "alarms",
+    "sidePanel"
   ],
   "host_permissions": [
     "<all_urls>"
   ],
+  "side_panel": {
+    "default_path": "dist/popup/popup.html"
+  },
+  "commands": {
+    "capture-full-page": {
+      "suggested_key": {
+        "default": "Shift+Alt+E",
+        "mac": "Shift+Alt+E"
+      },
+      "description": "Capture full page"
+    },
+    "capture-selection": {
+      "suggested_key": {
+        "default": "Shift+Alt+D",
+        "mac": "Shift+Alt+D"
+      },
+      "description": "Capture selection"
+    }
+  },
   "action": {
-    "default_title": "HTML to Figma",
-    "default_popup": "popup/popup-new.html",
+    "default_title": "Web to Figma",
+    "default_popup": "dist/popup/popup.html",
     "default_icon": {
       "16": "icons/icon16.png",
       "48": "icons/icon48.png",
@@ -24,12 +46,18 @@
     }
   },
   "background": {
-    "service_worker": "background.js"
+    "service_worker": "dist/background.js"
   },
-  "content_scripts": [],
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "js": ["dist/content-script.js"],
+      "run_at": "document_idle"
+    }
+  ],
   "web_accessible_resources": [
     {
-      "resources": ["injected-script.js"],
+      "resources": ["dist/injected-script.js"],
       "matches": ["<all_urls>"]
     }
   ],

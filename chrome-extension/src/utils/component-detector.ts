@@ -117,7 +117,7 @@ export interface ComponentGroup {
  * even when HTML structure differs
  */
 export class ComponentDetector {
-  private readonly SIMILARITY_THRESHOLD = 0.7;
+  private readonly SIMILARITY_THRESHOLD = 0.6; // Relaxed from 0.7
   private readonly MIN_INSTANCES = 2;
   
   // Weight factors for different similarity aspects
@@ -137,14 +137,14 @@ export class ComponentDetector {
   /**
    * Detect component patterns from a tree of ElementNodes
    */
-  public detectComponents(tree: ElementNode): { definitions: Record<string, any> } {
+  public async detectComponents(tree: ElementNode): Promise<{ definitions: Record<string, any> }> {
     console.log('🔍 Starting enhanced component detection with visual similarity...');
     
     const allElements = this.collectAllElements(tree);
     console.log(`📊 Analyzing ${allElements.length} elements for component patterns`);
     
     // Step 1: Detect specific UI patterns first
-    const patternGroups = this.detectUIPatterns(allElements);
+    const patternGroups = await this.detectUIPatterns(allElements);
     console.log(`🎨 Found ${patternGroups.size} specialized UI patterns`);
     
     // Step 2: Create smart buckets for remaining elements  
@@ -178,27 +178,27 @@ export class ComponentDetector {
   /**
    * Detect specialized UI patterns like cards, forms, navigation
    */
-  private detectUIPatterns(allElements: Array<{ element: Element; node: ElementNode }>): Map<string, ComponentGroup> {
+  private async detectUIPatterns(allElements: Array<{ element: Element; node: ElementNode }>): Promise<Map<string, ComponentGroup>> {
     const patternGroups = new Map<string, ComponentGroup>();
     
     // Detect card-like patterns (container + image + text + action)
-    const cardPatterns = this.detectCardPatterns(allElements);
+    const cardPatterns = await this.detectCardPatterns(allElements);
     cardPatterns.forEach((group, key) => patternGroups.set(key, group));
     
     // Detect button patterns
-    const buttonPatterns = this.detectButtonPatterns(allElements);
+    const buttonPatterns = await this.detectButtonPatterns(allElements);
     buttonPatterns.forEach((group, key) => patternGroups.set(key, group));
     
     // Detect form input patterns  
-    const inputPatterns = this.detectInputPatterns(allElements);
+    const inputPatterns = await this.detectInputPatterns(allElements);
     inputPatterns.forEach((group, key) => patternGroups.set(key, group));
     
     // Detect navigation link patterns
-    const navPatterns = this.detectNavigationPatterns(allElements);
+    const navPatterns = await this.detectNavigationPatterns(allElements);
     navPatterns.forEach((group, key) => patternGroups.set(key, group));
     
     // Detect list item patterns
-    const listPatterns = this.detectListItemPatterns(allElements);
+    const listPatterns = await this.detectListItemPatterns(allElements);
     listPatterns.forEach((group, key) => patternGroups.set(key, group));
     
     return patternGroups;
@@ -207,7 +207,7 @@ export class ComponentDetector {
   /**
    * Detect card-like components (image + text + optional button)
    */
-  private detectCardPatterns(allElements: Array<{ element: Element; node: ElementNode }>): Map<string, ComponentGroup> {
+  private async detectCardPatterns(allElements: Array<{ element: Element; node: ElementNode }>): Promise<Map<string, ComponentGroup>> {
     const cardCandidates = allElements.filter(({ element, node }) => {
       // Look for container elements that might be cards
       const hasImage = element.querySelector('img, svg, [style*="background-image"]') !== null;
@@ -218,13 +218,13 @@ export class ComponentDetector {
       return hasMultipleChildren && (hasImage || hasText) && reasonableSize;
     });
     
-    return this.groupSimilarElements(cardCandidates, 'card', 0.6); // Lower threshold for cards
+    return await this.groupSimilarElements(cardCandidates, 'card', 0.6); // Lower threshold for cards
   }
 
   /**
    * Detect button patterns
    */
-  private detectButtonPatterns(allElements: Array<{ element: Element; node: ElementNode }>): Map<string, ComponentGroup> {
+  private async detectButtonPatterns(allElements: Array<{ element: Element; node: ElementNode }>): Promise<Map<string, ComponentGroup>> {
     const buttonCandidates = allElements.filter(({ element, node }) => {
       const tagName = element.tagName.toLowerCase();
       const role = element.getAttribute('role');
@@ -237,13 +237,13 @@ export class ComponentDetector {
       return (isButton || hasClickHandler || looksLikeButton) && reasonableSize;
     });
     
-    return this.groupSimilarElements(buttonCandidates, 'button', 0.75);
+    return await this.groupSimilarElements(buttonCandidates, 'button', 0.75);
   }
 
   /**
    * Detect form input patterns
    */
-  private detectInputPatterns(allElements: Array<{ element: Element; node: ElementNode }>): Map<string, ComponentGroup> {
+  private async detectInputPatterns(allElements: Array<{ element: Element; node: ElementNode }>): Promise<Map<string, ComponentGroup>> {
     const inputCandidates = allElements.filter(({ element, node }) => {
       const tagName = element.tagName.toLowerCase();
       const isFormElement = ['input', 'textarea', 'select'].includes(tagName);
@@ -252,13 +252,13 @@ export class ComponentDetector {
       return isFormElement || hasLabel;
     });
     
-    return this.groupSimilarElements(inputCandidates, 'input', 0.8);
+    return await this.groupSimilarElements(inputCandidates, 'input', 0.8);
   }
 
   /**
    * Detect navigation link patterns
    */
-  private detectNavigationPatterns(allElements: Array<{ element: Element; node: ElementNode }>): Map<string, ComponentGroup> {
+  private async detectNavigationPatterns(allElements: Array<{ element: Element; node: ElementNode }>): Promise<Map<string, ComponentGroup>> {
     const navCandidates = allElements.filter(({ element, node }) => {
       const tagName = element.tagName.toLowerCase();
       const isNavElement = tagName === 'a' && element.getAttribute('href');
@@ -268,13 +268,13 @@ export class ComponentDetector {
       return (isNavElement && inNavigation) || (isListItem && inNavigation);
     });
     
-    return this.groupSimilarElements(navCandidates, 'navigation', 0.7);
+    return await this.groupSimilarElements(navCandidates, 'navigation', 0.7);
   }
 
   /**
    * Detect list item patterns
    */
-  private detectListItemPatterns(allElements: Array<{ element: Element; node: ElementNode }>): Map<string, ComponentGroup> {
+  private async detectListItemPatterns(allElements: Array<{ element: Element; node: ElementNode }>): Promise<Map<string, ComponentGroup>> {
     const listCandidates = allElements.filter(({ element, node }) => {
       const tagName = element.tagName.toLowerCase();
       const isListItem = tagName === 'li';
@@ -283,28 +283,41 @@ export class ComponentDetector {
       return isListItem && inList && element.textContent?.trim();
     });
     
-    return this.groupSimilarElements(listCandidates, 'list-item', 0.75);
+    return await this.groupSimilarElements(listCandidates, 'list-item', 0.75);
   }
 
   /**
    * Group similar elements using enhanced similarity detection
    */
-  private groupSimilarElements(
+  private async groupSimilarElements(
     elements: Array<{ element: Element; node: ElementNode }>, 
     patternType: string, 
     threshold: number
-  ): Map<string, ComponentGroup> {
+  ): Promise<Map<string, ComponentGroup>> {
     const groups = new Map<string, ComponentGroup>();
     const processed = new Set<Element>();
     
+    // Limit exhaustive O(N^2) search for very large sets to prevent freezing
+    const isLargeSet = elements.length > 500;
+    const maxComparisons = isLargeSet ? 50 : elements.length; // For large sets, only compare with next 50 neighbors
+    
     for (let i = 0; i < elements.length; i++) {
+      // Yield every 20 processed elements to keep UI responsive
+      if (i % 20 === 0) {
+        await new Promise(resolve => setTimeout(resolve, 0));
+      }
+
       const candidate = elements[i];
       if (processed.has(candidate.element)) continue;
       
       const similarElements = [candidate];
       processed.add(candidate.element);
       
-      for (let j = i + 1; j < elements.length; j++) {
+      // Optimization: Only check a window of subsequent elements for large sets
+      // This assumes similar elements are likely somewhat close in the DOM order
+      const searchLimit = Math.min(elements.length, i + maxComparisons);
+      
+      for (let j = i + 1; j < searchLimit; j++) {
         const other = elements[j];
         if (processed.has(other.element)) continue;
         
@@ -932,17 +945,24 @@ export class ComponentDetector {
     for (const group of componentGroups.values()) {
       const componentId = `component-${counter++}`;
       
+      const masterInstance = group.instances[0];
+      const tagName = masterInstance.element.tagName.toLowerCase();
+      const classes = Array.from(masterInstance.element.classList || []).join('.');
+      const selector = classes ? `${tagName}.${classes}` : tagName;
+
       definitions[componentId] = {
         id: componentId,
         name: group.name,
         description: `Visually similar ${group.semanticType} elements (${(group.similarity * 100).toFixed(1)}% similarity)`,
+        masterElementId: masterInstance.node.id,
+        domSelector: selector,
         signature: group.pattern,
         instanceCount: group.instances.length,
         averageSimilarity: group.similarity,
         semanticType: group.semanticType,
         properties: {
-          tag: group.instances[0].element.tagName.toLowerCase(),
-          classes: Array.from(group.instances[0].element.classList || []),
+          tag: tagName,
+          classes: Array.from(masterInstance.element.classList || []),
           visualFingerprint: group.baseFingerprint
         }
       };

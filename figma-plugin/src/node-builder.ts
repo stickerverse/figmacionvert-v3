@@ -1,7 +1,8 @@
-import { StyleManager } from './style-manager';
-import { ComponentManager } from './component-manager';
-import { ImportOptions } from './importer';
-import { DesignTokensManager } from './design-tokens-manager';
+import { StyleManager } from "./style-manager";
+import { ComponentManager } from "./component-manager";
+import { ImportOptions } from "./importer";
+import { DesignTokensManager } from "./design-tokens-manager";
+import { requestWebpTranscode } from "./ui-bridge";
 
 type SceneNodeWithGeometry = SceneNode & GeometryMixin;
 
@@ -25,19 +26,29 @@ export class NodeBuilder {
     this.assets = assets;
   }
 
+  preloadImageHash(hash: string, figmaImageHash: string): void {
+    this.imagePaintCache.set(hash, figmaImageHash);
+  }
+
   /**
    * Find a matching design token for a color value
    */
-  private findColorToken(color: { r: number; g: number; b: number; a?: number }): string | undefined {
+  private findColorToken(color: {
+    r: number;
+    g: number;
+    b: number;
+    a?: number;
+  }): string | undefined {
     if (!this.designTokensManager) return undefined;
 
-    // Look through the design tokens registry to find a matching color
-    // This is a simplified matching - in practice you'd want more sophisticated color matching
-    const tolerance = 0.01; // Allow small differences in color values
-    
-    for (const [tokenId, token] of Object.entries((this.designTokensManager as any).tokensRegistry.variables)) {
-      if (token.type === 'COLOR' && token.resolvedValue) {
-        const tokenColor = token.resolvedValue;
+    const tolerance = 0.01;
+
+    for (const [tokenId, token] of Object.entries(
+      (this.designTokensManager as any).tokensRegistry.variables
+    )) {
+      const typedToken = token as any;
+      if (typedToken.type === "COLOR" && typedToken.resolvedValue) {
+        const tokenColor = typedToken.resolvedValue;
         if (
           Math.abs(tokenColor.r - color.r) < tolerance &&
           Math.abs(tokenColor.g - color.g) < tolerance &&
@@ -51,103 +62,115 @@ export class NodeBuilder {
     return undefined;
   }
 
-  private async loadFontWithFallbacks(requestedFamily: string, requestedStyle: string): Promise<{ family: string; style: string }> {
+  private async loadFontWithFallbacks(
+    requestedFamily: string,
+    requestedStyle: string
+  ): Promise<{ family: string; style: string } | null> {
     const cacheKey = `${requestedFamily}:${requestedStyle}`;
     if (this.fontCache.has(cacheKey)) {
       return this.fontCache.get(cacheKey)!;
     }
 
-    // Clean and normalize font family name
-    const cleanFamily = requestedFamily.replace(/['"]/g, '').trim();
-    
-    // Define font fallback chains for common web fonts
-    const fontFallbacks = new Map([
-      // Serif fonts
-      ['Times', ['Times New Roman', 'Times', 'serif']],
-      ['Times New Roman', ['Times New Roman', 'Times', 'serif']],
-      ['Georgia', ['Georgia', 'Times New Roman', 'serif']],
-      
-      // Sans-serif fonts  
-      ['Arial', ['Arial', 'Helvetica', 'sans-serif']],
-      ['Helvetica', ['Helvetica', 'Arial', 'sans-serif']],
-      ['Helvetica Neue', ['Helvetica Neue', 'Helvetica', 'Arial', 'sans-serif']],
-      ['Roboto', ['Roboto', 'Arial', 'sans-serif']],
-      ['Open Sans', ['Open Sans', 'Arial', 'sans-serif']],
-      ['Lato', ['Lato', 'Arial', 'sans-serif']],
-      ['Montserrat', ['Montserrat', 'Arial', 'sans-serif']],
-      ['Source Sans Pro', ['Source Sans Pro', 'Arial', 'sans-serif']],
-      
-      // Monospace fonts
-      ['Monaco', ['Monaco', 'Menlo', 'monospace']],
-      ['Menlo', ['Menlo', 'Monaco', 'monospace']],
-      ['Courier', ['Courier', 'Courier New', 'monospace']],
-      ['Courier New', ['Courier New', 'Courier', 'monospace']],
-      ['SF Mono', ['SF Mono', 'Monaco', 'Menlo', 'monospace']],
-      
-      // System fonts
-      ['-apple-system', ['Inter', 'Arial', 'sans-serif']],
-      ['system-ui', ['Inter', 'Arial', 'sans-serif']],
-      ['BlinkMacSystemFont', ['Inter', 'Arial', 'sans-serif']],
+    const cleanFamily = requestedFamily.replace(/['"]/g, "").trim();
+
+    const fontFallbacks = new Map<string, string[]>([
+      ["Times", ["Times New Roman", "Times", "serif"]],
+      ["Times New Roman", ["Times New Roman", "Times", "serif"]],
+      ["Georgia", ["Georgia", "Times New Roman", "serif"]],
+
+      ["Arial", ["Arial", "Helvetica", "sans-serif"]],
+      ["Helvetica", ["Helvetica", "Arial", "sans-serif"]],
+      [
+        "Helvetica Neue",
+        ["Helvetica Neue", "Helvetica", "Arial", "sans-serif"],
+      ],
+      ["Roboto", ["Roboto", "Arial", "sans-serif"]],
+      ["Open Sans", ["Open Sans", "Arial", "sans-serif"]],
+      ["Lato", ["Lato", "Arial", "sans-serif"]],
+      ["Montserrat", ["Montserrat", "Arial", "sans-serif"]],
+      ["Source Sans Pro", ["Source Sans Pro", "Arial", "sans-serif"]],
+
+      ["Monaco", ["Monaco", "Menlo", "monospace"]],
+      ["Menlo", ["Menlo", "Monaco", "monospace"]],
+      ["Courier", ["Courier", "Courier New", "monospace"]],
+      ["Courier New", ["Courier New", "Courier", "monospace"]],
+      ["SF Mono", ["SF Mono", "Monaco", "Menlo", "monospace"]],
+
+      ["-apple-system", ["Inter", "Arial", "sans-serif"]],
+      ["system-ui", ["Inter", "Arial", "sans-serif"]],
+      ["BlinkMacSystemFont", ["Inter", "Arial", "sans-serif"]],
+
+      ["sohne-var", ["Inter", "Helvetica Neue", "Arial", "sans-serif"]],
+      ["Sohne", ["Inter", "Helvetica Neue", "Arial", "sans-serif"]],
+      ["Stripe Sans", ["Inter", "Helvetica Neue", "Arial", "sans-serif"]],
     ]);
 
-    // Get fallback chain for the requested font
-    const fallbackChain = fontFallbacks.get(cleanFamily) || [cleanFamily, 'Arial', 'Inter'];
-    
-    // Try each font in the fallback chain
+    const fallbackChain = fontFallbacks.get(cleanFamily) || [
+      cleanFamily,
+      "Arial",
+      "Inter",
+    ];
+
     for (const fontFamily of fallbackChain) {
-      // Try different style variations for each font
-      const stylesToTry = [
-        requestedStyle,
-        'Regular',
-        'Normal',
-        'Medium',
-        'Bold',
-        'Light'
-      ].filter((style, index, arr) => arr.indexOf(style) === index); // Remove duplicates
+      const stylesToTry = Array.from(
+        new Set([
+          requestedStyle,
+          "Regular",
+          "Normal",
+          "Medium",
+          "Bold",
+          "Light",
+        ])
+      );
 
       for (const style of stylesToTry) {
         try {
           await figma.loadFontAsync({ family: fontFamily, style });
           const result = { family: fontFamily, style };
           this.fontCache.set(cacheKey, result);
-          console.log(`✅ Loaded font: ${fontFamily} ${style} (requested: ${cleanFamily} ${requestedStyle})`);
+          console.log(
+            `✅ Loaded font: ${fontFamily} ${style} (requested: ${cleanFamily} ${requestedStyle})`
+          );
           return result;
-        } catch (error) {
-          // Continue to next fallback
+        } catch {
           console.log(`⚠️ Failed to load: ${fontFamily} ${style}`);
         }
       }
     }
 
-    // Last resort fallback to Inter Regular
     try {
-      await figma.loadFontAsync({ family: 'Inter', style: 'Regular' });
-      const result = { family: 'Inter', style: 'Regular' };
+      await figma.loadFontAsync({ family: "Inter", style: "Regular" });
+      const result = { family: "Inter", style: "Regular" };
       this.fontCache.set(cacheKey, result);
-      console.warn(`❌ Using last resort font Inter Regular for: ${cleanFamily} ${requestedStyle}`);
+      console.warn(
+        `❌ Using last resort font Inter Regular for: ${cleanFamily} ${requestedStyle}`
+      );
       return result;
     } catch (error) {
-      console.error(`❌ Critical: Cannot load Inter Regular. Trying system fallback.`);
-      // Try system fonts before throwing critical error
+      console.error(
+        `❌ Critical: Cannot load Inter Regular. Trying system fallback.`,
+        error
+      );
       const systemFonts = [
-        { family: 'Arial', style: 'Regular' },
-        { family: 'Helvetica', style: 'Regular' },
-        { family: 'San Francisco', style: 'Regular' },
-        { family: 'Roboto', style: 'Regular' }
+        { family: "Arial", style: "Regular" },
+        { family: "Helvetica", style: "Regular" },
+        { family: "San Francisco", style: "Regular" },
+        { family: "Roboto", style: "Regular" },
       ];
-      
+
       for (const font of systemFonts) {
         try {
           await figma.loadFontAsync(font);
           console.warn(`✅ Using system fallback font: ${font.family}`);
           return font;
-        } catch (fallbackError) {
+        } catch {
           continue;
         }
       }
-      
-      console.error(`❌ Critical: No fonts available - will create rectangle placeholders`);
-      // Don't throw - return null to indicate font failure
+
+      console.error(
+        `❌ Critical: No fonts available - will create rectangle placeholders`
+      );
       return null;
     }
   }
@@ -156,8 +179,10 @@ export class NodeBuilder {
     if (!nodeData) return null;
 
     if (nodeData.componentSignature) {
-      const registered = this.componentManager.getComponentBySignature(nodeData.componentSignature);
-      if (registered && nodeData.type !== 'COMPONENT') {
+      const registered = this.componentManager.getComponentBySignature(
+        nodeData.componentSignature
+      );
+      if (registered && nodeData.type !== "COMPONENT") {
         const instance = registered.createInstance();
         await this.afterCreate(instance, nodeData, { reuseComponent: true });
         return instance;
@@ -167,25 +192,25 @@ export class NodeBuilder {
     let node: SceneNode | null = null;
 
     switch (nodeData.type) {
-      case 'TEXT':
+      case "TEXT":
         node = await this.createText(nodeData);
         break;
-      case 'IMAGE':
+      case "IMAGE":
         node = await this.createImage(nodeData);
         break;
-      case 'VECTOR':
+      case "VECTOR":
         node = await this.createVector(nodeData);
         break;
-      case 'RECTANGLE':
+      case "RECTANGLE":
         node = await this.createRectangle(nodeData);
         break;
-      case 'COMPONENT':
+      case "COMPONENT":
         node = await this.createComponent(nodeData);
         break;
-      case 'INSTANCE':
+      case "INSTANCE":
         node = await this.createInstance(nodeData);
         break;
-      case 'FRAME':
+      case "FRAME":
       default:
         node = await this.createFrame(nodeData);
         break;
@@ -197,15 +222,22 @@ export class NodeBuilder {
 
     await this.afterCreate(node, nodeData, { reuseComponent: false });
 
-    if (nodeData.type === 'COMPONENT') {
+    if (nodeData.type === "COMPONENT") {
       const component = node as ComponentNode;
       const componentId = nodeData.componentId || nodeData.id || component.id;
       this.componentManager.registerComponent(componentId, component);
       if (nodeData.componentSignature) {
-        this.componentManager.registerSignature(nodeData.componentSignature, component);
+        this.componentManager.registerSignature(
+          nodeData.componentSignature,
+          component
+        );
       }
     } else if (nodeData.componentSignature) {
-      this.safeSetPluginData(node, 'componentSignature', nodeData.componentSignature);
+      this.safeSetPluginData(
+        node,
+        "componentSignature",
+        nodeData.componentSignature
+      );
     }
 
     return node;
@@ -213,15 +245,21 @@ export class NodeBuilder {
 
   private async createFrame(data: any): Promise<FrameNode> {
     const frame = figma.createFrame();
-    frame.name = data.name || 'Frame';
-    frame.resize(Math.max(data.layout.width || 1, 1), Math.max(data.layout.height || 1, 1));
+    frame.name = data.name || "Frame";
+    frame.resize(
+      Math.max(data.layout.width || 1, 1),
+      Math.max(data.layout.height || 1, 1)
+    );
     return frame;
   }
 
   private async createRectangle(data: any): Promise<RectangleNode> {
     const rect = figma.createRectangle();
-    rect.name = data.name || 'Rectangle';
-    rect.resize(Math.max(data.layout.width || 1, 1), Math.max(data.layout.height || 1, 1));
+    rect.name = data.name || "Rectangle";
+    rect.resize(
+      Math.max(data.layout.width || 1, 1),
+      Math.max(data.layout.height || 1, 1)
+    );
     rect.strokes = [];
     rect.effects = [];
     return rect;
@@ -229,61 +267,92 @@ export class NodeBuilder {
 
   private async createText(data: any): Promise<TextNode> {
     const text = figma.createText();
-    text.name = data.name || 'Text';
+    text.name = data.name || "Text";
+
+    const characters = data.characters || data.textContent || "";
 
     if (data.textStyle) {
       const fontStyle = this.mapFontWeight(data.textStyle.fontWeight);
       let fontFamily = data.textStyle.fontFamily;
       let finalFontStyle = fontStyle;
 
-      // Progressive font fallback strategy for better fidelity
       const originalFontFamily = fontFamily;
-      const fontLoadResult = await this.loadFontWithFallbacks(fontFamily, fontStyle);
-      
+      const fontLoadResult = await this.loadFontWithFallbacks(
+        fontFamily,
+        fontStyle
+      );
+
       if (!fontLoadResult) {
-        console.error(`❌ Font loading failed completely for ${originalFontFamily}. Creating rectangle placeholder.`);
-        // Create rectangle placeholder instead of text when fonts fail
+        console.error(
+          `❌ Font loading failed completely for ${originalFontFamily}. Creating rectangle placeholder.`
+        );
         const placeholder = figma.createRectangle();
-        placeholder.name = `${data.name || 'Text'} (font failed)`;
-        placeholder.resize(Math.max(data.layout.width || 100, 1), Math.max(data.layout.height || 20, 1));
-        placeholder.fills = [{ type: 'SOLID', color: { r: 0.9, g: 0.9, b: 0.9 } }];
-        placeholder.strokes = [{ type: 'SOLID', color: { r: 0.7, g: 0.7, b: 0.7 } }];
+        placeholder.name = `${data.name || "Text"} (font failed)`;
+        placeholder.resize(
+          Math.max(data.layout.width || 100, 1),
+          Math.max(data.layout.height || 20, 1)
+        );
+        placeholder.fills = [
+          { type: "SOLID", color: { r: 0.9, g: 0.9, b: 0.9 } },
+        ];
+        placeholder.strokes = [
+          { type: "SOLID", color: { r: 0.7, g: 0.7, b: 0.7 } },
+        ];
         placeholder.strokeWeight = 1;
-        return placeholder as any; // Return as TextNode for compatibility
+        return placeholder as any;
       }
-      
+
       fontFamily = fontLoadResult.family;
       finalFontStyle = fontLoadResult.style;
 
-      // Critical fix: Compensate for font metric differences if font fallback occurred
       let fontMetricsRatio = 1.0;
       if (fontFamily !== originalFontFamily) {
-        fontMetricsRatio = this.getFontMetricsRatio(fontFamily, originalFontFamily);
-        console.log(`📝 Font fallback: ${originalFontFamily} → ${fontFamily} (ratio: ${fontMetricsRatio.toFixed(3)})`);
+        fontMetricsRatio = this.getFontMetricsRatio(
+          fontFamily,
+          originalFontFamily
+        );
+        console.log(
+          `📝 Font fallback: ${originalFontFamily} → ${fontFamily} (ratio: ${fontMetricsRatio.toFixed(
+            3
+          )})`
+        );
       }
 
       text.fontName = { family: fontFamily, style: finalFontStyle };
-      
-      // Apply font metrics compensation if font fallback occurred
+
       const adjustedFontSize = data.textStyle.fontSize * fontMetricsRatio;
       text.fontSize = adjustedFontSize;
       text.textAlignHorizontal = data.textStyle.textAlignHorizontal;
       text.textAlignVertical = data.textStyle.textAlignVertical;
 
-      if (data.textStyle.lineHeight?.unit === 'PIXELS') {
-        text.lineHeight = { unit: 'PIXELS', value: data.textStyle.lineHeight.value };
-      } else if (data.textStyle.lineHeight?.unit === 'PERCENT') {
-        text.lineHeight = { unit: 'PERCENT', value: data.textStyle.lineHeight.value };
+      if (data.renderedMetrics?.lineHeightPx) {
+        text.lineHeight = {
+          unit: "PIXELS",
+          value: data.renderedMetrics.lineHeightPx,
+        };
+      } else if (data.textStyle.lineHeight?.unit === "PIXELS") {
+        text.lineHeight = {
+          unit: "PIXELS",
+          value: data.textStyle.lineHeight.value,
+        };
+      } else if (data.textStyle.lineHeight?.unit === "PERCENT") {
+        text.lineHeight = {
+          unit: "PERCENT",
+          value: data.textStyle.lineHeight.value,
+        };
       } else {
-        text.lineHeight = { unit: 'AUTO' };
+        text.lineHeight = { unit: "AUTO" };
       }
 
-      if (data.textStyle.letterSpacing?.unit === 'PIXELS') {
-        text.letterSpacing = { unit: 'PIXELS', value: data.textStyle.letterSpacing.value };
+      if (data.textStyle.letterSpacing?.unit === "PIXELS") {
+        text.letterSpacing = {
+          unit: "PIXELS",
+          value: data.textStyle.letterSpacing.value,
+        };
       } else {
         text.letterSpacing = {
-          unit: data.textStyle.letterSpacing?.unit || 'PIXELS',
-          value: data.textStyle.letterSpacing?.value || 0
+          unit: data.textStyle.letterSpacing?.unit || "PIXELS",
+          value: data.textStyle.letterSpacing?.value || 0,
         };
       }
 
@@ -291,75 +360,299 @@ export class NodeBuilder {
         text.fills = await this.convertFillsAsync(data.textStyle.fills);
       }
 
-      // Apply text decoration (underline, strikethrough)
       if (data.textStyle.textDecoration) {
         text.textDecoration = data.textStyle.textDecoration;
       }
 
-      // Apply text case (uppercase, lowercase, capitalize, title)
       if (data.textStyle.textCase) {
         text.textCase = data.textStyle.textCase;
       }
 
       if (data.textStyle.fontStyle) {
-        this.safeSetPluginData(text, 'fontStyle', data.textStyle.fontStyle);
+        this.safeSetPluginData(text, "fontStyle", data.textStyle.fontStyle);
       }
       if (data.textStyle.paragraphSpacing !== undefined) {
-        this.safeSetPluginData(text, 'paragraphSpacing', String(data.textStyle.paragraphSpacing));
+        this.safeSetPluginData(
+          text,
+          "paragraphSpacing",
+          String(data.textStyle.paragraphSpacing)
+        );
       }
       if (data.textStyle.paragraphIndent !== undefined) {
-        this.safeSetPluginData(text, 'paragraphIndent', String(data.textStyle.paragraphIndent));
+        this.safeSetPluginData(
+          text,
+          "paragraphIndent",
+          String(data.textStyle.paragraphIndent)
+        );
       }
       if (data.textStyle.whiteSpace) {
-        this.safeSetPluginData(text, 'whiteSpace', data.textStyle.whiteSpace);
-        // Apply text auto resize based on white-space
-        if (data.textStyle.whiteSpace === 'nowrap') {
-          text.textAutoResize = 'WIDTH_AND_HEIGHT';
-        } else if (data.textStyle.whiteSpace === 'pre' || data.textStyle.whiteSpace === 'pre-wrap') {
-          text.textAutoResize = 'HEIGHT';
+        this.safeSetPluginData(text, "whiteSpace", data.textStyle.whiteSpace);
+        if (data.textStyle.whiteSpace === "nowrap") {
+          text.textAutoResize = "WIDTH_AND_HEIGHT";
+        } else if (
+          data.textStyle.whiteSpace === "pre" ||
+          data.textStyle.whiteSpace === "pre-wrap"
+        ) {
+          text.textAutoResize = "HEIGHT";
         }
       }
       if (data.textStyle.wordWrap) {
-        this.safeSetPluginData(text, 'wordWrap', data.textStyle.wordWrap);
+        this.safeSetPluginData(text, "wordWrap", data.textStyle.wordWrap);
       }
       if (data.textStyle.textOverflow) {
-        this.safeSetPluginData(text, 'textOverflow', data.textStyle.textOverflow);
-        // Handle text-overflow: ellipsis
-        if (data.textStyle.textOverflow === 'ellipsis') {
-          text.textTruncation = 'ENDING';
+        this.safeSetPluginData(
+          text,
+          "textOverflow",
+          data.textStyle.textOverflow
+        );
+        if (data.textStyle.textOverflow === "ellipsis") {
+          text.textTruncation = "ENDING";
         }
       }
       if (data.textStyle.listStyleType) {
-        this.safeSetPluginData(text, 'listStyleType', data.textStyle.listStyleType);
+        this.safeSetPluginData(
+          text,
+          "listStyleType",
+          data.textStyle.listStyleType
+        );
       }
 
-      // Apply text shadows as effects
       if (data.textStyle.textShadows?.length) {
         const existingEffects = text.effects || [];
-        const textShadowEffects = this.convertEffects(data.textStyle.textShadows);
+        const textShadowEffects = this.convertEffects(
+          data.textStyle.textShadows
+        );
         text.effects = [...existingEffects, ...textShadowEffects];
       }
     }
 
-    text.characters = data.characters || '';
+    if (data.absoluteLayout) {
+      text.x = data.absoluteLayout.left;
+      text.y = data.absoluteLayout.top;
+      text.resize(
+        Math.max(data.absoluteLayout.width || 1, 1),
+        Math.max(data.absoluteLayout.height || 1, 1)
+      );
+      this.safeSetPluginData(text, "usedAbsoluteLayout", "true");
+    } else {
+      text.x = data.layout.x || 0;
+      text.y = data.layout.y || 0;
+      text.resize(
+        Math.max(data.layout.width || 1, 1),
+        Math.max(data.layout.height || 1, 1)
+      );
+    }
+
+    text.characters = characters;
+
+    if (data.inlineTextSegments && data.inlineTextSegments.length > 0) {
+      await this.applyInlineTextSegments(text, data.inlineTextSegments);
+    }
+
+    console.log(
+      `📝 Created text node: "${characters.substring(0, 50)}${
+        characters.length > 50 ? "..." : ""
+      }"`
+    );
     return text;
   }
 
-  private async createImage(data: any): Promise<RectangleNode> {
+  private async applyInlineTextSegments(
+    textNode: TextNode,
+    segments: any[]
+  ): Promise<void> {
+    let currentIndex = 0;
+
+    for (const segment of segments) {
+      const segmentText = segment.text || "";
+      if (!segmentText) continue;
+
+      const start = currentIndex;
+      const end = currentIndex + segmentText.length;
+
+      if (end > textNode.characters.length) break;
+
+      if (segment.style) {
+        const fontWeight = segment.style.fontWeight || 400;
+        const isItalic = segment.style.fontStyle === "italic";
+        const currentFont = textNode.fontName;
+        const fontFamily =
+          segment.style.fontFamily ||
+          (currentFont !== figma.mixed ? currentFont.family : "Inter");
+
+        let style = "Regular";
+        if (fontWeight >= 700) style = "Bold";
+        else if (fontWeight >= 600) style = "SemiBold";
+        else if (fontWeight >= 500) style = "Medium";
+        else if (fontWeight >= 300) style = "Light";
+
+        if (isItalic) {
+          style = style === "Regular" ? "Italic" : `${style} Italic`;
+        }
+
+        try {
+          const fontName = { family: fontFamily, style };
+          await figma.loadFontAsync(fontName);
+          textNode.setRangeFontName(start, end, fontName);
+        } catch (e) {
+          console.warn(
+            `Failed to apply inline font style: ${fontFamily} ${style}`,
+            e
+          );
+        }
+
+        if (segment.style.color) {
+          const { r, g, b, a } = segment.style.color;
+          textNode.setRangeFills(start, end, [
+            {
+              type: "SOLID",
+              color: { r, g, b },
+              opacity: a !== undefined ? a : 1,
+            },
+          ]);
+        }
+
+        if (segment.style.textDecoration) {
+          textNode.setRangeTextDecoration(
+            start,
+            end,
+            segment.style.textDecoration
+          );
+        }
+
+        if (
+          segment.style.fontSize &&
+          segment.style.fontSize !== textNode.fontSize
+        ) {
+          textNode.setRangeFontSize(start, end, segment.style.fontSize);
+        }
+      }
+
+      currentIndex = end;
+    }
+  }
+
+  private async createImage(data: any): Promise<SceneNode> {
+    // VIDEO placeholder handling stays the same
+    if (data.pluginData?.originalType === "VIDEO") {
+      const frame = figma.createFrame();
+      frame.name = data.name || "Video";
+      frame.resize(
+        Math.max(data.layout.width || 1, 1),
+        Math.max(data.layout.height || 1, 1)
+      );
+      frame.fills = [];
+
+      const playIcon = figma.createVector();
+      playIcon.vectorPaths = [
+        {
+          windingRule: "NONZERO",
+          data: "M 0 0 L 0 24 L 18 12 L 0 0 Z",
+        },
+      ];
+      playIcon.name = "Play Icon";
+      playIcon.fills = [{ type: "SOLID", color: { r: 1, g: 1, b: 1 } }];
+      playIcon.strokes = [
+        { type: "SOLID", color: { r: 0, g: 0, b: 0 }, opacity: 0.5 },
+      ];
+      playIcon.strokeWeight = 1;
+
+      const iconSize = Math.min(data.layout.width, data.layout.height) * 0.2;
+      const scale = iconSize / 24;
+      playIcon.resize(24 * scale, 24 * scale);
+      playIcon.x = (data.layout.width - playIcon.width) / 2;
+      playIcon.y = (data.layout.height - playIcon.height) / 2;
+
+      const circle = figma.createEllipse();
+      circle.resize(iconSize * 2, iconSize * 2);
+      circle.x = (data.layout.width - circle.width) / 2;
+      circle.y = (data.layout.height - circle.height) / 2;
+      circle.fills = [
+        { type: "SOLID", color: { r: 0, g: 0, b: 0 }, opacity: 0.5 },
+      ];
+      circle.name = "Play Button Background";
+
+      frame.appendChild(circle);
+      frame.appendChild(playIcon);
+
+      return frame;
+    }
+
     const rect = figma.createRectangle();
-    rect.name = data.name || 'Image';
-    rect.resize(Math.max(data.layout.width || 1, 1), Math.max(data.layout.height || 1, 1));
+    rect.name = data.name || "Image";
+    rect.resize(
+      Math.max(data.layout.width || 1, 1),
+      Math.max(data.layout.height || 1, 1)
+    );
+
+    // 🔥 CRITICAL: schema uses imageHash – prefer that, but still support imageAssetId.
+    // Some extractors only set image hashes on fills/backgrounds; fall back to those when needed.
+    let hash: string | undefined = data.imageAssetId || data.imageHash;
+    const asset =
+      hash && this.assets?.images && this.assets.images[hash]
+        ? this.assets.images[hash]
+        : undefined;
+
+    // Inline SVGs should be turned into vectors instead of rasterized images
+    if (asset) {
+      const svgMarkup = this.extractSvgMarkup(asset);
+      if (svgMarkup) {
+        const vectorNode = this.createVectorFromSvgMarkup(svgMarkup, data);
+        if (vectorNode) {
+          return vectorNode;
+        }
+      }
+    }
+
+    if (!hash && Array.isArray(data.fills)) {
+      const imageFill = data.fills.find(
+        (f: any) => f && f.type === "IMAGE" && typeof f.imageHash === "string"
+      );
+      if (imageFill) {
+        hash = imageFill.imageHash;
+      }
+    }
+
+    if (hash) {
+      const scaleMode = this.mapObjectFitToScaleMode(data.objectFit || "cover");
+      const imagePaint = await this.resolveImagePaint({
+        imageHash: hash,
+        scaleMode,
+      });
+      rect.fills = [imagePaint];
+    }
+
     return rect;
   }
 
   private async createVector(data: any): Promise<SceneNode | null> {
+    if (data.svgContent) {
+      try {
+        const svgPayload = data.svgContent.includes(",")
+          ? data.svgContent.split(",")[1]
+          : data.svgContent;
+        const svgString = svgPayload.trim().startsWith("<")
+          ? svgPayload
+          : this.base64ToString(svgPayload, { allowSvg: true });
+
+        const vectorRoot = figma.createNodeFromSvg(svgString);
+        vectorRoot.name = data.name || "Vector";
+        return vectorRoot;
+      } catch (error) {
+        console.warn("Failed to create node from SVG content", error);
+      }
+    }
+
     if (data.vectorData?.svgCode) {
       try {
         const vectorRoot = figma.createNodeFromSvg(data.vectorData.svgCode);
-        vectorRoot.name = data.name || 'Vector';
+        vectorRoot.name = data.name || "Vector";
         return vectorRoot as SceneNode;
       } catch (error) {
-        console.warn('Failed to create vector from SVG, falling back to rectangle.', error);
+        console.warn(
+          "Failed to create vector from SVG, falling back to rectangle.",
+          error
+        );
       }
     }
 
@@ -368,8 +661,11 @@ export class NodeBuilder {
 
   private async createComponent(data: any): Promise<ComponentNode> {
     const component = figma.createComponent();
-    component.name = data.name || 'Component';
-    component.resize(Math.max(data.layout.width || 1, 1), Math.max(data.layout.height || 1, 1));
+    component.name = data.name || "Component";
+    component.resize(
+      Math.max(data.layout.width || 1, 1),
+      Math.max(data.layout.height || 1, 1)
+    );
     return component;
   }
 
@@ -384,7 +680,8 @@ export class NodeBuilder {
 
     const signature = data.componentSignature;
     if (signature) {
-      const registered = this.componentManager.getComponentBySignature(signature);
+      const registered =
+        this.componentManager.getComponentBySignature(signature);
       if (registered) {
         return registered.createInstance();
       }
@@ -393,378 +690,581 @@ export class NodeBuilder {
     return this.createFrame(data);
   }
 
-  private async afterCreate(node: SceneNode, data: any, meta: { reuseComponent: boolean }): Promise<void> {
+  private async afterCreate(
+    node: SceneNode,
+    data: any,
+    meta: { reuseComponent: boolean }
+  ): Promise<void> {
     node.name = data.name || node.name;
 
     this.applyPositioning(node, data);
     await this.applyCommonStyles(node, data);
-    this.applyAutoLayout(node, data);
-    this.applyGridLayoutMetadata(node, data);
+
+    // Only try to convert CSS Grid → Auto Layout if auto-layout mode is enabled
+    if (this.options?.applyAutoLayout) {
+      if (data.autoLayout && node.type === "FRAME") {
+        this.applyAutoLayout(node as FrameNode, data.autoLayout);
+      }
+      this.applyGridLayoutMetadata(node, data);
+    }
+
     this.applyOverflow(node, data);
     this.applyVisibility(node, data);
     this.applyFilters(node, data);
     this.applyMetadata(node, data, meta);
+
+    if (data.designTokens && this.designTokensManager) {
+      await this.applyDesignTokens(node, data.designTokens);
+    }
+  }
+
+  private async applyDesignTokens(node: SceneNode, tokens: any): Promise<void> {
+    if (!this.designTokensManager) return;
+
+    const getVar = (tokenId: string) =>
+      this.designTokensManager!.getVariableByTokenId(tokenId);
+
+    if (tokens.fill && "fills" in node) {
+      const variable = getVar(tokens.fill);
+      if (variable) {
+        const fills = (node as GeometryMixin).fills as Paint[];
+        if (fills && fills.length > 0) {
+          const newFills = JSON.parse(JSON.stringify(fills));
+          const boundFill = figma.variables.setBoundVariableForPaint(
+            newFills[0],
+            "color",
+            variable
+          );
+          newFills[0] = boundFill;
+          (node as GeometryMixin).fills = newFills;
+        }
+      }
+    }
+
+    if (tokens.stroke && "strokes" in node) {
+      const variable = getVar(tokens.stroke);
+      if (variable) {
+        const strokes = (node as GeometryMixin).strokes as Paint[];
+        if (strokes && strokes.length > 0) {
+          const newStrokes = JSON.parse(JSON.stringify(strokes));
+          const boundStroke = figma.variables.setBoundVariableForPaint(
+            newStrokes[0],
+            "color",
+            variable
+          );
+          newStrokes[0] = boundStroke;
+          (node as GeometryMixin).strokes = newStrokes;
+        }
+      }
+    }
+
+    if (tokens.borderRadius && "cornerRadius" in node) {
+      const variable = getVar(tokens.borderRadius);
+      if (variable) {
+        try {
+          node.setBoundVariable("topLeftRadius", variable.id);
+          node.setBoundVariable("topRightRadius", variable.id);
+          node.setBoundVariable("bottomLeftRadius", variable.id);
+          node.setBoundVariable("bottomRightRadius", variable.id);
+        } catch {}
+      }
+    }
+
+    if (tokens.width && "resize" in node) {
+      const variable = getVar(tokens.width);
+      if (variable) {
+        try {
+          node.setBoundVariable("width", variable.id);
+        } catch {}
+      }
+    }
+    if (tokens.height && "resize" in node) {
+      const variable = getVar(tokens.height);
+      if (variable) {
+        try {
+          node.setBoundVariable("height", variable.id);
+        } catch {}
+      }
+    }
+
+    if ("layoutMode" in node && (node as FrameNode).layoutMode !== "NONE") {
+      if (tokens.gap) {
+        const variable = getVar(tokens.gap);
+        if (variable) node.setBoundVariable("itemSpacing", variable.id);
+      }
+      if (tokens.padding) {
+        const variable = getVar(tokens.padding);
+        if (variable) {
+          node.setBoundVariable("paddingTop", variable.id);
+          node.setBoundVariable("paddingBottom", variable.id);
+          node.setBoundVariable("paddingLeft", variable.id);
+          node.setBoundVariable("paddingRight", variable.id);
+        }
+      }
+    }
   }
 
   private applyPositioning(node: SceneNode, data: any) {
     if (data.layout) {
-      // Adjust dimensions based on box-sizing and stroke compensation
+      let x = data.layout.x || 0;
+      let y = data.layout.y || 0;
       let width = data.layout.width || 1;
       let height = data.layout.height || 1;
-      
-      // Critical fix: Compensate for Figma stroke expansion based on stroke alignment
+
+      if (data.absoluteLayout) {
+        x = data.absoluteLayout.left || x;
+        y = data.absoluteLayout.top || y;
+        width = data.absoluteLayout.width || width;
+        height = data.absoluteLayout.height || height;
+
+        this.safeSetPluginData(node, "usedAbsoluteLayout", "true");
+      }
+
       if (data.strokes?.length) {
         let totalWidthCompensation = 0;
         let totalHeightCompensation = 0;
         const compensationDetails: any[] = [];
-        
-        // Calculate compensation for each stroke based on its alignment and thickness
+
         for (const stroke of data.strokes) {
           const strokeWeight = stroke.thickness || data.strokeWeight || 0;
-          const strokeAlign = stroke.strokeAlign || data.strokeAlign || 'CENTER';
-          
+          const strokeAlign =
+            stroke.strokeAlign || data.strokeAlign || "CENTER";
+
           let widthCompensation = 0;
           let heightCompensation = 0;
-          
-          if (data.layout.boxSizing === 'border-box') {
-            // Border-box: CSS dimensions include borders, compensation depends on stroke alignment
+
+          if (data.layout.boxSizing === "border-box") {
             switch (strokeAlign) {
-              case 'INSIDE':
-                // Stroke stays within bounds - no compensation needed
+              case "INSIDE":
                 widthCompensation = 0;
                 heightCompensation = 0;
                 break;
-              case 'CENTER':
-                // Stroke expands outward by strokeWeight/2
+              case "CENTER":
                 widthCompensation = strokeWeight / 2;
                 heightCompensation = strokeWeight / 2;
                 break;
-              case 'OUTSIDE':
-                // Stroke expands fully outward - but for outline in CSS, this doesn't affect box dimensions
-                // Only apply compensation if this is a border stroke that affects layout
+              case "OUTSIDE":
                 widthCompensation = 0;
                 heightCompensation = 0;
                 break;
             }
           } else {
-            // Content-box: No adjustment needed as strokes are additional to content dimensions
             widthCompensation = 0;
             heightCompensation = 0;
           }
-          
+
           totalWidthCompensation += widthCompensation;
           totalHeightCompensation += heightCompensation;
-          
+
           compensationDetails.push({
             strokeWeight,
             strokeAlign,
             widthCompensation,
-            heightCompensation
+            heightCompensation,
           });
         }
-        
-        // Apply total compensation
+
         width = Math.max(width - totalWidthCompensation, 1);
         height = Math.max(height - totalHeightCompensation, 1);
-        
-        // Store detailed compensation metadata for debugging and future processing
-        this.safeSetPluginData(node, 'strokeCompensationDetails', JSON.stringify({
-          boxSizing: data.layout.boxSizing,
-          totalWidthCompensation,
-          totalHeightCompensation,
-          originalWidth: data.layout.width,
-          originalHeight: data.layout.height,
-          strokes: compensationDetails
-        }));
+
+        this.safeSetPluginData(
+          node,
+          "strokeCompensationDetails",
+          JSON.stringify({
+            boxSizing: data.layout.boxSizing,
+            totalWidthCompensation,
+            totalHeightCompensation,
+            originalWidth: data.layout.width,
+            originalHeight: data.layout.height,
+            strokes: compensationDetails,
+          })
+        );
       }
-      
-      node.x = data.layout.x || 0;
-      node.y = data.layout.y || 0;
-      
-      // Handle absolute positioning with better precision
-      if (data.position === 'absolute' || data.position === 'fixed') {
-        if (data.positionValues) {
-          // Use absolute layout positioning if available for better accuracy
-          if (data.absoluteLayout) {
-            node.x = data.absoluteLayout.left || node.x;
-            node.y = data.absoluteLayout.top || node.y;
-            width = data.absoluteLayout.width || width;
-            height = data.absoluteLayout.height || height;
-          }
-          
-          // Store CSS position values for reference
-          this.safeSetPluginData(node, 'cssPositionValues', JSON.stringify(data.positionValues));
-        }
-      }
-      
-      if ('rotation' in node) {
+
+      node.x = x;
+      node.y = y;
+
+      if ("rotation" in node) {
         (node as any).rotation = data.layout.rotation || 0;
       }
-      
-      if (typeof width === 'number' && typeof height === 'number') {
-        if ('resize' in node) {
+
+      if (typeof width === "number" && typeof height === "number") {
+        if ("resize" in node) {
           (node as LayoutMixin).resize(Math.max(width, 1), Math.max(height, 1));
         }
       }
     }
 
-    // Note: layoutPositioning is not set here because:
-    // - If parent has Auto Layout (layoutMode !== NONE), children must use AUTO positioning
-    // - If parent has manual layout (layoutMode === NONE), children use x/y positions (already set above)
-    // - Setting ABSOLUTE on a node before it has a parent, then adding it to an Auto Layout parent, causes errors
-
-    // Store CSS position type for reference (absolute, fixed, relative, sticky)
     if (data.position) {
-      this.safeSetPluginData(node, 'cssPosition', data.position);
-
-      if ('layoutPositioning' in node) {
-        if (data.position === 'absolute' || data.position === 'fixed' || data.position === 'sticky') {
-          try {
-            (node as FrameNode).layoutPositioning = 'ABSOLUTE';
-          } catch {
-            // ignore nodes that don't support it
-          }
-        }
-      }
+      this.safeSetPluginData(node, "cssPosition", data.position);
     }
 
-    // Store enhanced layout context for layout upgrader
+    // 🔥 RESPECT IMPORT OPTIONS: only apply Auto Layout when enabled
+    if (
+      data.autoLayout &&
+      "layoutMode" in node &&
+      this.options?.applyAutoLayout
+    ) {
+      this.applyAutoLayout(node as FrameNode, data.autoLayout);
+    } else if ("layoutMode" in node) {
+      (node as FrameNode).layoutMode = "NONE";
+      this.safeSetPluginData(node, "layoutMode", "ABSOLUTE");
+    }
+
     if (data.layoutContext) {
-      this.safeSetPluginData(node, 'cssLayoutContext', JSON.stringify(data.layoutContext));
-      
-      // Store specific CSS properties that affect layout decisions
-      if (data.layoutContext.transform && data.layoutContext.transform !== 'none') {
-        this.safeSetPluginData(node, 'cssTransform', data.layoutContext.transform);
+      this.safeSetPluginData(
+        node,
+        "cssLayoutContext",
+        JSON.stringify(data.layoutContext)
+      );
+
+      if (
+        data.layoutContext.transform &&
+        data.layoutContext.transform !== "none"
+      ) {
+        this.safeSetPluginData(
+          node,
+          "cssTransform",
+          data.layoutContext.transform
+        );
       }
-      
+
       if (data.layoutContext.position) {
-        this.safeSetPluginData(node, 'cssPosition', data.layoutContext.position);
+        this.safeSetPluginData(
+          node,
+          "cssPosition",
+          data.layoutContext.position
+        );
       }
-      
-      // Store flexbox analysis if available
+
       if (data.autoLayout && (data.autoLayout as any).flexAnalysis) {
-        this.safeSetPluginData(node, 'flexAnalysis', JSON.stringify((data.autoLayout as any).flexAnalysis));
+        this.safeSetPluginData(
+          node,
+          "flexAnalysis",
+          JSON.stringify((data.autoLayout as any).flexAnalysis)
+        );
       }
     }
 
-    // layoutGrow and layoutAlign can only be set on children of Auto Layout containers
-    if ('layoutGrow' in node && typeof data.autoLayout?.layoutGrow === 'number') {
+    if (
+      "layoutGrow" in node &&
+      typeof data.autoLayout?.layoutGrow === "number"
+    ) {
       try {
         (node as any).layoutGrow = data.autoLayout.layoutGrow;
-      } catch (error) {
-        console.warn(`Cannot set layoutGrow on node "${node.name}":`, error);
-        this.safeSetPluginData(node, 'cssLayoutGrow', data.autoLayout.layoutGrow.toString());
+      } catch (e) {
+        console.warn(`Could not set layoutGrow on ${node.name}`, e);
       }
+      this.safeSetPluginData(
+        node,
+        "cssLayoutGrow",
+        data.autoLayout.layoutGrow.toString()
+      );
     }
-    if ('layoutAlign' in node && data.autoLayout?.layoutAlign) {
+    if ("layoutAlign" in node && data.autoLayout?.layoutAlign) {
       try {
         (node as any).layoutAlign = data.autoLayout.layoutAlign;
-      } catch (error) {
-        console.warn(`Cannot set layoutAlign on node "${node.name}":`, error);
-        this.safeSetPluginData(node, 'cssLayoutAlign', data.autoLayout.layoutAlign);
+      } catch (e) {
+        console.warn(`Could not set layoutAlign on ${node.name}`, e);
       }
+      this.safeSetPluginData(
+        node,
+        "cssLayoutAlign",
+        data.autoLayout.layoutAlign
+      );
     }
 
-    // Apply CSS transform matrix to positioning
     if (data.transform?.matrix) {
-      this.applyTransformMatrix(node, data.transform, data.transformOrigin, data.layout);
-      
-      // Store transform data for reference
-      this.safeSetPluginData(node, 'cssTransform', JSON.stringify(data.transform));
+      this.applyTransformMatrix(
+        node,
+        data.transform,
+        data.transformOrigin,
+        data.layout
+      );
+      this.safeSetPluginData(
+        node,
+        "cssTransform",
+        JSON.stringify(data.transform)
+      );
     }
 
-    // Apply responsive constraints if available
     if (data.layout) {
       this.applyResponsiveConstraints(node, data.layout);
     }
   }
 
-  /**
-   * Apply responsive constraints (min/max width/height) to Figma nodes
-   * Note: minWidth/maxWidth can only be set on Auto Layout nodes and their children
-   */
   private applyResponsiveConstraints(node: SceneNode, layout: any) {
-    // Figma supports minWidth, maxWidth, minHeight, maxHeight on frames
-    if (!('minWidth' in node)) return;
+    if (!("minWidth" in node)) return;
 
     const frameNode = node as FrameNode;
+    const supportsMinMaxConstraints =
+      this.nodeSupportsMinMaxConstraints(frameNode);
 
-    // Check if this node supports min/max constraints
-    // These can only be set on Auto Layout nodes (layoutMode !== 'NONE') or their children
-    const supportsMinMaxConstraints = this.nodeSupportsMinMaxConstraints(frameNode);
+    if (typeof layout.minWidth === "number" && layout.minWidth > 0) {
+      this.safeSetPluginData(node, "cssMinWidth", layout.minWidth.toString());
 
-    // Always store the CSS values in plugin data for reference
-    if (typeof layout.minWidth === 'number' && layout.minWidth > 0) {
-      this.safeSetPluginData(node, 'cssMinWidth', layout.minWidth.toString());
-      
       if (supportsMinMaxConstraints) {
         try {
           frameNode.minWidth = layout.minWidth;
         } catch (error) {
-          console.warn(`Cannot set minWidth on node "${frameNode.name}":`, error);
+          console.warn(
+            `Cannot set minWidth on node "${frameNode.name}":`,
+            error
+          );
         }
       }
     }
 
-    if (typeof layout.maxWidth === 'number' && layout.maxWidth > 0) {
-      this.safeSetPluginData(node, 'cssMaxWidth', layout.maxWidth.toString());
-      
+    if (typeof layout.maxWidth === "number" && layout.maxWidth > 0) {
+      this.safeSetPluginData(node, "cssMaxWidth", layout.maxWidth.toString());
+
       if (supportsMinMaxConstraints) {
         try {
           frameNode.maxWidth = layout.maxWidth;
         } catch (error) {
-          console.warn(`Cannot set maxWidth on node "${frameNode.name}":`, error);
+          console.warn(
+            `Cannot set maxWidth on node "${frameNode.name}":`,
+            error
+          );
         }
       }
     }
 
-    // Apply min/max height (these have fewer restrictions)
-    if (typeof layout.minHeight === 'number' && layout.minHeight > 0) {
-      this.safeSetPluginData(node, 'cssMinHeight', layout.minHeight.toString());
-      
-      try {
-        frameNode.minHeight = layout.minHeight;
-      } catch (error) {
-        console.warn(`Cannot set minHeight on node "${frameNode.name}":`, error);
+    if (typeof layout.minHeight === "number" && layout.minHeight > 0) {
+      this.safeSetPluginData(node, "cssMinHeight", layout.minHeight.toString());
+
+      if (supportsMinMaxConstraints) {
+        try {
+          frameNode.minHeight = layout.minHeight;
+        } catch (error) {
+          console.warn(
+            `Cannot set minHeight on node "${frameNode.name}":`,
+            error
+          );
+        }
       }
     }
 
-    if (typeof layout.maxHeight === 'number' && layout.maxHeight > 0) {
-      this.safeSetPluginData(node, 'cssMaxHeight', layout.maxHeight.toString());
-      
-      try {
-        frameNode.maxHeight = layout.maxHeight;
-      } catch (error) {
-        console.warn(`Cannot set maxHeight on node "${frameNode.name}":`, error);
+    if (typeof layout.maxHeight === "number" && layout.maxHeight > 0) {
+      this.safeSetPluginData(node, "cssMaxHeight", layout.maxHeight.toString());
+
+      if (supportsMinMaxConstraints) {
+        try {
+          frameNode.maxHeight = layout.maxHeight;
+        } catch (error) {
+          console.warn(
+            `Cannot set maxHeight on node "${frameNode.name}":`,
+            error
+          );
+        }
       }
     }
   }
 
-  /**
-   * Check if a node supports min/max width constraints
-   * Returns true if the node is an Auto Layout container or child of one
-   */
   private nodeSupportsMinMaxConstraints(node: FrameNode): boolean {
-    // If this node itself has Auto Layout, it supports constraints
-    if ('layoutMode' in node && node.layoutMode !== 'NONE') {
+    if ("layoutMode" in node && node.layoutMode !== "NONE") {
       return true;
     }
 
-    // If this node's parent has Auto Layout, this node (as a child) supports constraints
-    if (node.parent && 'layoutMode' in node.parent) {
+    if (node.parent && "layoutMode" in node.parent) {
       const parentFrame = node.parent as FrameNode;
-      return parentFrame.layoutMode !== 'NONE';
+      return parentFrame.layoutMode !== "NONE";
     }
 
     return false;
   }
 
-  private async applyCommonStyles(node: SceneNode, data: any): Promise<void> {
-    // Process backgrounds if available (preferred for proper positioning/sizing)
-    if (data.backgrounds?.length && 'fills' in node && node.type !== 'TEXT') {
-      (node as SceneNodeWithGeometry).fills = await this.convertBackgroundLayersAsync(
-        data.backgrounds,
-        data.layout
+  private applyAutoLayout(node: FrameNode, layout: any) {
+    try {
+      node.layoutMode = layout.layoutMode;
+
+      node.primaryAxisAlignItems = layout.primaryAxisAlignItems;
+      node.counterAxisAlignItems = layout.counterAxisAlignItems;
+      node.itemSpacing = layout.itemSpacing;
+
+      node.paddingTop = layout.paddingTop;
+      node.paddingRight = layout.paddingRight;
+      node.paddingBottom = layout.paddingBottom;
+      node.paddingLeft = layout.paddingLeft;
+
+      if (layout.primaryAxisSizingMode) {
+        node.primaryAxisSizingMode = layout.primaryAxisSizingMode;
+      }
+      if (layout.counterAxisSizingMode) {
+        node.counterAxisSizingMode = layout.counterAxisSizingMode;
+      }
+
+      if (layout.layoutWrap) {
+        node.layoutWrap = layout.layoutWrap;
+      }
+
+      console.log(
+        `✅ Applied Auto Layout to ${node.name}: ${layout.layoutMode} (Wrap: ${
+          layout.layoutWrap || "NO_WRAP"
+        })`
       );
-    } else if (data.fills && 'fills' in node && node.type !== 'TEXT') {
-      // Fallback to basic fills if no backgrounds
-      (node as SceneNodeWithGeometry).fills = await this.convertFillsAsync(data.fills);
-    } else if (data.imageHash && 'fills' in node && node.type !== 'TEXT') {
-      // CRITICAL FIX: Handle IMAGE type nodes (<img> tags)
-      // The Chrome extension sets imageHash directly on the node for img elements
+    } catch (error) {
+      console.warn(`Failed to apply Auto Layout to ${node.name}:`, error);
+      node.layoutMode = "NONE";
+    }
+  }
+
+  private async applyCommonStyles(node: SceneNode, data: any): Promise<void> {
+    console.log(`🎨 Applying common styles to ${data.name}:`, {
+      hasBackgrounds: !!data.backgrounds?.length,
+      backgroundsCount: data.backgrounds?.length || 0,
+      hasFills: !!data.fills?.length,
+      fillsCount: data.fills?.length || 0,
+      hasImageHash: !!data.imageHash,
+      nodeType: node.type,
+      canHaveFills: "fills" in node,
+    });
+
+    if (data.backgrounds?.length && "fills" in node && node.type !== "TEXT") {
+      console.log(
+        `  ✅ Applying ${data.backgrounds.length} background layers to ${data.name}`
+      );
+      (node as SceneNodeWithGeometry).fills =
+        await this.convertBackgroundLayersAsync(data.backgrounds, data.layout);
+    } else if (data.fills && "fills" in node && node.type !== "TEXT") {
+      console.log(`  ✅ Applying ${data.fills.length} fills to ${data.name}`);
+      (node as SceneNodeWithGeometry).fills = await this.convertFillsAsync(
+        data.fills
+      );
+    } else if (data.imageHash && "fills" in node && node.type !== "TEXT") {
       const imageFill = {
-        type: 'IMAGE' as const,
+        type: "IMAGE" as const,
         imageHash: data.imageHash,
-        scaleMode: (data.objectFit ? this.mapObjectFitToScaleMode(data.objectFit) : 'FILL') as 'FILL' | 'FIT' | 'CROP' | 'TILE',
-        visible: true
+        scaleMode: (data.objectFit
+          ? this.mapObjectFitToScaleMode(data.objectFit)
+          : "FILL") as "FILL" | "FIT" | "CROP" | "TILE",
+        visible: true,
       };
 
-      console.log(`🖼️ Applying image fill for ${data.name} with hash ${data.imageHash}`);
-      (node as SceneNodeWithGeometry).fills = [await this.resolveImagePaint(imageFill)];
-    } else if ('fills' in node && node.type !== 'TEXT') {
-      // DEBUGGING: Make elements without extracted backgrounds visible with a semi-transparent fill
-      // This helps identify which elements are missing proper background extraction
-      // Pink tint makes it obvious these need proper background/fill data
-      (node as SceneNodeWithGeometry).fills = [{
-        type: 'SOLID',
-        color: { r: 1, g: 0.9, b: 0.95 }, // Light pink to indicate "missing background data"
-        opacity: 0.2, // 20% visible for debugging
-        visible: true
-      }];
+      const fills: Paint[] = [];
+      const placeholderColor = this.getPlaceholderColor(data);
+      fills.push({
+        type: "SOLID",
+        color: placeholderColor,
+        opacity: 1,
+      } as SolidPaint);
 
-      // Log this so we can track which elements are missing fills
-      console.warn(`⚠️ Element "${data.name}" has no backgrounds/fills - using debug fill`);
+      console.log(
+        `🖼️ Applying image fill for ${data.name} with hash ${data.imageHash}`
+      );
+      fills.push(await this.resolveImagePaint(imageFill));
+
+      (node as SceneNodeWithGeometry).fills = fills;
+    } else if ("fills" in node && node.type !== "TEXT") {
+      console.log(
+        `  ⚪ No fills/backgrounds for ${data.name}, setting transparent`
+      );
+      (node as SceneNodeWithGeometry).fills = [];
     }
 
-    if (data.strokes && 'strokes' in node) {
-      (node as SceneNodeWithGeometry).strokes = await this.convertStrokesAsync(data.strokes);
+    if (data.strokes && "strokes" in node) {
+      console.log(`  ✏️ Applying strokes to ${data.name}`);
+      (node as SceneNodeWithGeometry).strokes = await this.convertStrokesAsync(
+        data.strokes
+      );
     }
 
-    if ('strokeWeight' in node && data.strokeWeight !== undefined) {
+    if ("strokeWeight" in node && data.strokeWeight !== undefined) {
       (node as any).strokeWeight = data.strokeWeight;
-    } else if ('strokeWeight' in node && data.strokes?.[0]?.thickness) {
+    } else if ("strokeWeight" in node && data.strokes?.[0]?.thickness) {
       (node as any).strokeWeight = data.strokes[0].thickness;
     }
 
-    if ('strokeAlign' in node && data.strokeAlign) {
-      (node as any).strokeAlign = data.strokeAlign;
-    }
-
-    // Apply dashed/dotted border styles
-    if ('dashPattern' in node && data.borderStyle) {
-      const dashPatterns: Record<string, number[]> = {
-        dashed: [10, 5],
-        dotted: [2, 3],
-        solid: []
-      };
-      const pattern = dashPatterns[data.borderStyle] || [];
-      if (pattern.length > 0) {
-        (node as any).dashPattern = pattern;
+    if ("strokeAlign" in node) {
+      if (data.strokeAlign) {
+        (node as any).strokeAlign = data.strokeAlign;
+      } else if (data.strokes?.[0]?.strokeAlign) {
+        (node as any).strokeAlign = data.strokes[0].strokeAlign;
       }
-      // Store original border style in plugin data
-      this.safeSetPluginData(node, 'borderStyle', data.borderStyle);
     }
 
-    if (data.cornerRadius && 'cornerRadius' in node) {
+    if ("dashPattern" in node) {
+      if (data.strokes?.[0]?.dashPattern) {
+        (node as any).dashPattern = data.strokes[0].dashPattern;
+      } else if (data.borderStyle) {
+        const dashPatterns: Record<string, number[]> = {
+          dashed: [10, 5],
+          dotted: [2, 3],
+          solid: [],
+        };
+        const pattern = dashPatterns[data.borderStyle] || [];
+        if (pattern.length > 0) {
+          (node as any).dashPattern = pattern;
+        }
+      }
+    }
+
+    if (this.designTokensManager && "fills" in node) {
+      await this.bindVariablesToNode(node as any, data);
+    }
+
+    if (data.borderStyle) {
+      this.safeSetPluginData(node, "borderStyle", data.borderStyle);
+    }
+
+    if (data.cornerRadius && "cornerRadius" in node) {
+      console.log(
+        `  🔲 Applying corner radius to ${data.name}:`,
+        data.cornerRadius
+      );
       this.applyCornerRadius(node as any, data.cornerRadius);
     }
 
-    const existingEffects = 'effects' in node ? [...((node as BlendMixin).effects || [])] : [];
-    if (data.effects?.length && 'effects' in node) {
-      existingEffects.push(...this.convertEffects(data.effects));
+    const existingEffects =
+      "effects" in node ? [...((node as BlendMixin).effects || [])] : [];
+    if (data.effects?.length && "effects" in node) {
+      console.log(
+        `  ✨ Applying ${data.effects.length} effects to ${data.name}`
+      );
+      const convertedEffects = this.convertEffects(data.effects);
+      console.log(
+        `  ✨ Converted effects:`,
+        convertedEffects.map((e: any) => ({ type: e.type, visible: e.visible }))
+      );
+      existingEffects.push(...convertedEffects);
     }
 
-    if (existingEffects.length && 'effects' in node) {
+    if (existingEffects.length && "effects" in node) {
       (node as BlendMixin).effects = existingEffects;
+      console.log(
+        `  ✅ Applied ${existingEffects.length} total effects to ${data.name}`
+      );
     }
 
-    if (data.opacity !== undefined && 'opacity' in node) {
+    if (data.opacity !== undefined && "opacity" in node) {
       (node as any).opacity = data.opacity;
     }
 
-    if (data.blendMode && 'blendMode' in node) {
+    if (data.blendMode && "blendMode" in node) {
       (node as any).blendMode = data.blendMode;
     }
-    if (data.mixBlendMode && 'blendMode' in node) {
+    if (data.mixBlendMode && "blendMode" in node) {
       (node as any).blendMode = data.mixBlendMode;
     }
   }
 
   private applyCornerRadius(node: any, radius: any, tokenId?: string) {
-    if (typeof radius === 'number') {
-      // Try to bind to a variable if available
+    if (typeof radius === "number") {
       if (this.designTokensManager && tokenId) {
         const variable = this.designTokensManager.getVariableByTokenId(tokenId);
-        if (variable && variable.resolvedType === 'FLOAT' && 'boundVariables' in node) {
-          node.boundVariables = { 
+        if (
+          variable &&
+          variable.resolvedType === "FLOAT" &&
+          "boundVariables" in node
+        ) {
+          node.boundVariables = {
             ...(node.boundVariables || {}),
-            cornerRadius: { type: 'VARIABLE_ALIAS', id: variable.id }
+            cornerRadius: { type: "VARIABLE_ALIAS", id: variable.id },
           };
         }
       }
       node.cornerRadius = radius;
     } else {
-      // For individual corner radius, we could bind each corner separately if variables exist
       node.topLeftRadius = radius.topLeft || 0;
       node.topRightRadius = radius.topRight || 0;
       node.bottomRightRadius = radius.bottomRight || 0;
@@ -772,199 +1272,212 @@ export class NodeBuilder {
     }
   }
 
-  private applyAutoLayout(node: SceneNode, data: any) {
-    // Auto Layout is applied later via layout-upgrader to preserve fidelity
-    return;
-  }
-
-  /**
-   * Apply enhanced CSS Grid layout conversion to nested Auto Layout structures
-   * Now handles fr units, minmax(), grid-template-areas, and complex positioning
-   */
   private applyGridLayoutMetadata(node: SceneNode, data: any) {
     if (!data.gridLayout) return;
 
     const grid = data.gridLayout;
 
-    // Apply immediate grid layout conversion based on strategy
     this.applyGridLayoutConversion(node as FrameNode, grid, data);
 
-    // Store comprehensive grid layout information for layout-upgrader and debugging
-    this.safeSetPluginData(node, 'enhancedGridLayout', JSON.stringify({
-      ...grid,
-      conversionApplied: true,
-      timestamp: Date.now()
-    }));
+    this.safeSetPluginData(
+      node,
+      "enhancedGridLayout",
+      JSON.stringify({
+        ...grid,
+        conversionApplied: true,
+        timestamp: Date.now(),
+      })
+    );
 
-    // Store legacy format for backward compatibility
-    this.safeSetPluginData(node, 'cssGridLayout', JSON.stringify({
-      templateColumns: grid.templateColumns,
-      templateRows: grid.templateRows,
-      columnGap: grid.columnGap,
-      rowGap: grid.rowGap,
-      autoFlow: grid.autoFlow,
-      justifyItems: grid.justifyItems,
-      alignItems: grid.alignItems,
-      justifyContent: grid.justifyContent,
-      alignContent: grid.alignContent
-    }));
+    this.safeSetPluginData(
+      node,
+      "cssGridLayout",
+      JSON.stringify({
+        templateColumns: grid.templateColumns,
+        templateRows: grid.templateRows,
+        columnGap: grid.columnGap,
+        rowGap: grid.rowGap,
+        autoFlow: grid.autoFlow,
+        justifyItems: grid.justifyItems,
+        alignItems: grid.alignItems,
+        justifyContent: grid.justifyContent,
+        alignContent: grid.alignContent,
+      })
+    );
 
-    // Store grid child properties if present
     if (data.gridChild) {
-      this.safeSetPluginData(node, 'gridChild', JSON.stringify(data.gridChild));
+      this.safeSetPluginData(node, "gridChild", JSON.stringify(data.gridChild));
     }
 
-    // Add visual indicator with conversion strategy
-    if ('name' in node && typeof node.name === 'string') {
-      const strategy = grid.conversionStrategy || 'auto';
-      if (!node.name.includes('[Grid')) {
+    if ("name" in node && typeof node.name === "string") {
+      const strategy = grid.conversionStrategy || "auto";
+      if (!node.name.includes("[Grid")) {
         node.name = `${node.name} [Grid:${strategy}]`;
       }
     }
 
-    // Add annotations for complex features
     if (grid.figmaAnnotations && grid.figmaAnnotations.length > 0) {
-      this.safeSetPluginData(node, 'gridAnnotations', JSON.stringify(grid.figmaAnnotations));
+      this.safeSetPluginData(
+        node,
+        "gridAnnotations",
+        JSON.stringify(grid.figmaAnnotations)
+      );
     }
   }
 
-  /**
-   * Apply grid layout conversion based on the determined strategy
-   */
-  private applyGridLayoutConversion(node: FrameNode, gridData: any, elementData: any) {
+  private applyGridLayoutConversion(
+    node: FrameNode,
+    gridData: any,
+    elementData: any
+  ) {
     switch (gridData.conversionStrategy) {
-      case 'nested-auto-layout':
+      case "nested-auto-layout":
         this.applyNestedAutoLayoutConversion(node, gridData);
         break;
-      case 'absolute-positioning':
+      case "absolute-positioning":
         this.applyAbsolutePositioningConversion(node, gridData);
         break;
-      case 'hybrid':
+      case "hybrid":
         this.applyHybridLayoutConversion(node, gridData);
         break;
       default:
-        // Fallback to basic Auto Layout
         this.applyBasicGridAutoLayout(node, gridData);
     }
   }
 
-  /**
-   * Convert grid to nested Auto Layout frames for simple uniform grids
-   */
   private applyNestedAutoLayoutConversion(node: FrameNode, gridData: any) {
-    if (!('layoutMode' in node)) return;
+    if (!("layoutMode" in node)) return;
 
-    // Determine primary direction based on grid analysis
-    const isRowMajor = gridData.computedRowSizes.length <= gridData.computedColumnSizes.length;
-    
-    // Apply Auto Layout to main container
-    node.layoutMode = isRowMajor ? 'VERTICAL' : 'HORIZONTAL';
-    node.primaryAxisAlignItems = this.mapGridAlignment(gridData.alignContent || gridData.justifyContent);
-    node.counterAxisAlignItems = this.mapGridAlignment(gridData.justifyContent || gridData.alignContent);
+    const isRowMajor =
+      gridData.computedRowSizes.length <= gridData.computedColumnSizes.length;
+
+    node.layoutMode = isRowMajor ? "VERTICAL" : "HORIZONTAL";
+
+    const primaryProp = isRowMajor
+      ? gridData.alignContent || "start"
+      : gridData.justifyContent || "start";
+    const counterProp = isRowMajor
+      ? gridData.justifyContent || "start"
+      : gridData.alignContent || "start";
+
+    node.primaryAxisAlignItems = this.mapGridAlignment(primaryProp);
+
+    const counterAlign = this.mapGridAlignment(counterProp);
+    node.counterAxisAlignItems =
+      counterAlign === "SPACE_BETWEEN" ? "CENTER" : (counterAlign as any);
     node.itemSpacing = isRowMajor ? gridData.rowGap : gridData.columnGap;
 
-    // Store metadata for child frame creation by layout-upgrader
-    this.safeSetPluginData(node, 'gridConversionData', JSON.stringify({
-      strategy: 'nested-auto-layout',
-      isRowMajor,
-      rowCount: gridData.computedRowSizes.length,
-      columnCount: gridData.computedColumnSizes.length,
-      rowSizes: gridData.computedRowSizes,
-      columnSizes: gridData.computedColumnSizes,
-      rowGap: gridData.rowGap,
-      columnGap: gridData.columnGap
-    }));
+    this.safeSetPluginData(
+      node,
+      "gridConversionData",
+      JSON.stringify({
+        strategy: "nested-auto-layout",
+        isRowMajor,
+        rowCount: gridData.computedRowSizes.length,
+        columnCount: gridData.computedColumnSizes.length,
+        rowSizes: gridData.computedRowSizes,
+        columnSizes: gridData.computedColumnSizes,
+        rowGap: gridData.rowGap,
+        columnGap: gridData.columnGap,
+      })
+    );
 
-    console.log(`✅ Applied nested Auto Layout to grid: ${gridData.computedColumnSizes.length}x${gridData.computedRowSizes.length}`);
+    console.log(
+      `✅ Applied nested Auto Layout to grid: ${gridData.computedColumnSizes.length}x${gridData.computedRowSizes.length}`
+    );
   }
 
-  /**
-   * Handle grids that require absolute positioning due to complexity
-   */
   private applyAbsolutePositioningConversion(node: FrameNode, gridData: any) {
-    if (!('layoutMode' in node)) return;
+    if (!("layoutMode" in node)) return;
 
-    // Keep manual positioning for complex grids
-    node.layoutMode = 'NONE';
+    node.layoutMode = "NONE";
 
-    // Store detailed positioning data for manual layout
-    this.safeSetPluginData(node, 'gridConversionData', JSON.stringify({
-      strategy: 'absolute-positioning',
-      templateAreas: gridData.templateAreas,
-      computedColumnSizes: gridData.computedColumnSizes,
-      computedRowSizes: gridData.computedRowSizes,
-      positioning: 'manual'
-    }));
+    this.safeSetPluginData(
+      node,
+      "gridConversionData",
+      JSON.stringify({
+        strategy: "absolute-positioning",
+        templateAreas: gridData.templateAreas,
+        computedColumnSizes: gridData.computedColumnSizes,
+        computedRowSizes: gridData.computedRowSizes,
+        positioning: "manual",
+      })
+    );
 
     console.log(`⚠️ Applied absolute positioning to complex grid`);
   }
 
-  /**
-   * Apply hybrid conversion combining Auto Layout and absolute positioning
-   */
   private applyHybridLayoutConversion(node: FrameNode, gridData: any) {
-    // Start with nested Auto Layout structure
     this.applyNestedAutoLayoutConversion(node, gridData);
 
-    // Store additional data for complex item positioning
-    this.safeSetPluginData(node, 'gridHybridData', JSON.stringify({
-      strategy: 'hybrid',
-      complexItems: gridData.templateAreas || [],
-      fallbackToAbsolute: true
-    }));
+    this.safeSetPluginData(
+      node,
+      "gridHybridData",
+      JSON.stringify({
+        strategy: "hybrid",
+        complexItems: gridData.templateAreas || [],
+        fallbackToAbsolute: true,
+      })
+    );
 
     console.log(`🔀 Applied hybrid layout conversion to grid`);
   }
 
-  /**
-   * Fallback basic grid-to-Auto Layout conversion
-   */
   private applyBasicGridAutoLayout(node: FrameNode, gridData: any) {
-    if (!('layoutMode' in node)) return;
+    if (!("layoutMode" in node)) return;
 
-    // Simple horizontal/vertical layout approximation
-    const hasMoreColumns = gridData.computedColumnSizes.length > gridData.computedRowSizes.length;
-    
-    node.layoutMode = hasMoreColumns ? 'HORIZONTAL' : 'VERTICAL';
+    const hasMoreColumns =
+      gridData.computedColumnSizes.length > gridData.computedRowSizes.length;
+
+    node.layoutMode = hasMoreColumns ? "HORIZONTAL" : "VERTICAL";
     node.itemSpacing = hasMoreColumns ? gridData.columnGap : gridData.rowGap;
-    node.primaryAxisAlignItems = 'MIN';
-    node.counterAxisAlignItems = 'STRETCH';
+    node.primaryAxisAlignItems = "MIN";
+    node.counterAxisAlignItems = "MIN";
 
-    console.log(`📐 Applied basic Auto Layout to grid (${gridData.computedColumnSizes.length}x${gridData.computedRowSizes.length})`);
+    console.log(
+      `📐 Applied basic Auto Layout to grid (${gridData.computedColumnSizes.length}x${gridData.computedRowSizes.length})`
+    );
   }
 
-  /**
-   * Map CSS Grid alignment to Figma Auto Layout alignment
-   */
-  private mapGridAlignment(value?: string): 'MIN' | 'CENTER' | 'MAX' | 'SPACE_BETWEEN' {
+  private mapGridAlignment(
+    value?: string
+  ): "MIN" | "CENTER" | "MAX" | "SPACE_BETWEEN" {
     switch (value) {
-      case 'start':
-      case 'flex-start':
-        return 'MIN';
-      case 'center':
-        return 'CENTER';
-      case 'end':
-      case 'flex-end':
-        return 'MAX';
-      case 'space-between':
-        return 'SPACE_BETWEEN';
-      case 'stretch':
+      case "start":
+      case "flex-start":
+        return "MIN";
+      case "center":
+        return "CENTER";
+      case "end":
+      case "flex-end":
+        return "MAX";
+      case "space-between":
+        return "SPACE_BETWEEN";
+      case "stretch":
       default:
-        return 'MIN';
+        return "MIN";
     }
   }
 
   private applyOverflow(node: SceneNode, data: any) {
     if (!data.overflow) return;
-    if ('clipsContent' in node) {
-      const horizontalHidden = data.overflow.horizontal === 'hidden' || data.overflow.horizontal === 'clip';
-      const verticalHidden = data.overflow.vertical === 'hidden' || data.overflow.vertical === 'clip';
+    if ("clipsContent" in node) {
+      const horizontalHidden =
+        data.overflow.horizontal === "hidden" ||
+        data.overflow.horizontal === "clip";
+      const verticalHidden =
+        data.overflow.vertical === "hidden" ||
+        data.overflow.vertical === "clip";
       (node as FrameNode).clipsContent = horizontalHidden || verticalHidden;
     }
   }
 
   private applyVisibility(node: SceneNode, data: any) {
-    if (data.display === 'none' || data.visibility === 'hidden' || data.visibility === 'collapse') {
+    if (
+      data.display === "none" ||
+      data.visibility === "hidden" ||
+      data.visibility === "collapse"
+    ) {
       node.visible = false;
     } else {
       node.visible = true;
@@ -972,168 +1485,260 @@ export class NodeBuilder {
   }
 
   private applyFilters(node: SceneNode, data: any) {
-    if (!('setPluginData' in node)) return;
-    const existingEffects = 'effects' in node ? [...((node as BlendMixin).effects || [])] : [];
+    if (!("setPluginData" in node)) return;
+    const existingEffects =
+      "effects" in node ? [...((node as BlendMixin).effects || [])] : [];
 
     (data.filters || []).forEach((filter: any) => {
-      if (filter.type === 'blur' && 'effects' in node) {
+      if (filter.type === "blur" && "effects" in node) {
         existingEffects.push({
-          type: 'LAYER_BLUR',
-          radius: filter.unit === 'px' ? filter.value : filter.value || 0,
-          visible: true
+          type: "LAYER_BLUR",
+          radius: filter.unit === "px" ? filter.value : filter.value || 0,
+          visible: true,
         } as BlurEffect);
       }
-      if (filter.type === 'dropShadow' && 'effects' in node) {
+      if (filter.type === "dropShadow" && "effects" in node) {
         existingEffects.push({
-          type: 'DROP_SHADOW',
+          type: "DROP_SHADOW",
           color: filter.color || { r: 0, g: 0, b: 0, a: 0.5 },
           offset: filter.offset || { x: 0, y: 0 },
-          radius: filter.unit === 'px' ? filter.value : filter.value || 0,
+          radius: filter.unit === "px" ? filter.value : filter.value || 0,
           spread: 0,
           visible: true,
-          blendMode: 'NORMAL'
+          blendMode: "NORMAL",
         } as DropShadowEffect);
       }
     });
 
-    if (existingEffects.length && 'effects' in node) {
+    (data.backdropFilters || []).forEach((filter: any) => {
+      if (filter.type === "blur" && "effects" in node) {
+        existingEffects.push({
+          type: "BACKGROUND_BLUR",
+          radius: filter.unit === "px" ? filter.value : filter.value || 0,
+          visible: true,
+        } as BlurEffect);
+      }
+    });
+
+    if (existingEffects.length && "effects" in node) {
       (node as BlendMixin).effects = existingEffects;
     }
 
     if (data.filters?.length) {
-      this.safeSetPluginData(node, 'cssFilters', JSON.stringify(data.filters));
+      this.safeSetPluginData(node, "cssFilters", JSON.stringify(data.filters));
     }
     if (data.backdropFilters?.length) {
-      this.safeSetPluginData(node, 'cssBackdropFilters', JSON.stringify(data.backdropFilters));
+      this.safeSetPluginData(
+        node,
+        "cssBackdropFilters",
+        JSON.stringify(data.backdropFilters)
+      );
     }
   }
 
-  private applyMetadata(node: SceneNode, data: any, meta: { reuseComponent: boolean }) {
+  private applyMetadata(
+    node: SceneNode,
+    data: any,
+    meta: { reuseComponent: boolean }
+  ) {
     this.applyConstraints(node, data);
 
-    // layoutGrow and layoutAlign can only be set on children of Auto Layout containers
-    if ('layoutGrow' in node && data.autoLayout?.layoutGrow !== undefined) {
+    const isTextNode = node.type === "TEXT";
+    const canHaveLayoutProperties = !isTextNode && "layoutGrow" in node;
+
+    if (canHaveLayoutProperties && data.autoLayout?.layoutGrow !== undefined) {
       try {
         (node as any).layoutGrow = data.autoLayout.layoutGrow;
       } catch (error) {
-        console.warn(`Cannot set layoutGrow on node "${node.name}" in metadata:`, error);
-        this.safeSetPluginData(node, 'cssLayoutGrow', data.autoLayout.layoutGrow.toString());
+        console.warn(
+          `Cannot set layoutGrow on node "${node.name}" in metadata:`,
+          error
+        );
+        this.safeSetPluginData(
+          node,
+          "cssLayoutGrow",
+          data.autoLayout.layoutGrow.toString()
+        );
       }
     }
-    if ('layoutAlign' in node && data.autoLayout?.layoutAlign) {
+    if (canHaveLayoutProperties && data.autoLayout?.layoutAlign) {
       try {
         (node as any).layoutAlign = data.autoLayout.layoutAlign;
       } catch (error) {
-        console.warn(`Cannot set layoutAlign on node "${node.name}" in metadata:`, error);
-        this.safeSetPluginData(node, 'cssLayoutAlign', data.autoLayout.layoutAlign);
+        console.warn(
+          `Cannot set layoutAlign on node "${node.name}" in metadata:`,
+          error
+        );
+        this.safeSetPluginData(
+          node,
+          "cssLayoutAlign",
+          data.autoLayout.layoutAlign
+        );
       }
     }
 
-    this.safeSetPluginData(node, 'sourceNodeId', data.id || '');
-    this.safeSetPluginData(node, 'htmlTag', data.htmlTag || '');
+    this.safeSetPluginData(node, "sourceNodeId", data.id || "");
+    this.safeSetPluginData(node, "htmlTag", data.htmlTag || "");
 
     if (data.cssClasses?.length) {
-      this.safeSetPluginData(node, 'cssClasses', JSON.stringify(data.cssClasses));
+      this.safeSetPluginData(
+        node,
+        "cssClasses",
+        JSON.stringify(data.cssClasses)
+      );
     }
 
     if (data.dataAttributes && Object.keys(data.dataAttributes).length) {
-      this.safeSetPluginData(node, 'dataAttributes', JSON.stringify(data.dataAttributes));
+      this.safeSetPluginData(
+        node,
+        "dataAttributes",
+        JSON.stringify(data.dataAttributes)
+      );
     }
 
     if (data.cssCustomProperties) {
-      this.safeSetPluginData(node, 'cssCustomProperties', JSON.stringify(data.cssCustomProperties));
+      this.safeSetPluginData(
+        node,
+        "cssCustomProperties",
+        JSON.stringify(data.cssCustomProperties)
+      );
     }
 
     if (data.clipPath) {
-      this.safeSetPluginData(node, 'cssClipPath', JSON.stringify(data.clipPath));
+      this.safeSetPluginData(
+        node,
+        "cssClipPath",
+        JSON.stringify(data.clipPath)
+      );
     }
 
     if (data.mask) {
-      this.safeSetPluginData(node, 'cssMask', JSON.stringify(data.mask));
+      this.safeSetPluginData(node, "cssMask", JSON.stringify(data.mask));
     }
 
     if (data.pointerEvents) {
-      this.safeSetPluginData(node, 'pointerEvents', data.pointerEvents);
+      this.safeSetPluginData(node, "pointerEvents", data.pointerEvents);
     }
 
     if (data.position) {
-      this.safeSetPluginData(node, 'positioning', data.position);
+      this.safeSetPluginData(node, "positioning", data.position);
     }
 
     if (data.absoluteLayout) {
-      this.safeSetPluginData(node, 'absoluteLayout', JSON.stringify(data.absoluteLayout));
+      this.safeSetPluginData(
+        node,
+        "absoluteLayout",
+        JSON.stringify(data.absoluteLayout)
+      );
     }
 
     if (data.scrollData) {
-      this.safeSetPluginData(node, 'scrollData', JSON.stringify(data.scrollData));
+      this.safeSetPluginData(
+        node,
+        "scrollData",
+        JSON.stringify(data.scrollData)
+      );
     }
 
     if (data.contentHash) {
-      this.safeSetPluginData(node, 'contentHash', data.contentHash);
+      this.safeSetPluginData(node, "contentHash", data.contentHash);
     }
 
     if (meta.reuseComponent) {
-      this.safeSetPluginData(node, 'componentInstance', 'true');
+      this.safeSetPluginData(node, "componentInstance", "true");
+    }
+
+    if (data.computedStyles) {
+      this.safeSetPluginData(
+        node,
+        "computedStyles",
+        JSON.stringify(data.computedStyles)
+      );
     }
   }
 
   private applyConstraints(node: SceneNode, data: any) {
     if (!data.constraints) return;
-    if ('constraints' in node) {
+    if ("constraints" in node) {
       (node as ConstraintMixin).constraints = {
-        horizontal: data.constraints.horizontal || 'MIN',
-        vertical: data.constraints.vertical || 'MIN'
+        horizontal: data.constraints.horizontal || "MIN",
+        vertical: data.constraints.vertical || "MIN",
       };
     }
   }
 
-  /**
-   * Convert background layers with proper positioning, sizing, and repeat handling
-   */
   private async convertBackgroundLayersAsync(
     backgrounds: any[],
     nodeLayout?: { width: number; height: number }
   ): Promise<Paint[]> {
     const paints: Paint[] = [];
 
+    // Diagnostic logging for background processing
+    console.log(
+      `🔍 convertBackgroundLayersAsync called with ${
+        backgrounds?.length || 0
+      } backgrounds`
+    );
+    backgrounds?.forEach((layer, i) => {
+      const fill = layer?.fill || layer;
+      console.log(`  Background ${i}:`, {
+        layerType: layer?.type,
+        hasFill: !!layer?.fill,
+        fillType: fill?.type,
+        hasImageHash: !!fill?.imageHash,
+        imageHash: fill?.imageHash,
+      });
+    });
+
     for (const layer of backgrounds) {
-      if (!layer || !layer.fill) continue;
+      if (!layer) continue;
 
-      const fill = layer.fill;
+      const fill = layer.fill || layer;
 
-      // Handle solid colors and gradients
-      if (fill.type === 'SOLID' && fill.color) {
+      if (fill.type === "SOLID" && fill.color) {
         const { r, g, b } = fill.color;
+        console.log(`  🎨 Converting SOLID background:`, {
+          r,
+          g,
+          b,
+          opacity: fill.opacity,
+        });
         paints.push({
-          type: 'SOLID',
+          type: "SOLID",
           color: { r, g, b },
-          opacity: fill.opacity !== undefined ? fill.opacity : fill.color.a ?? 1,
-          visible: fill.visible !== false
+          opacity:
+            fill.opacity !== undefined ? fill.opacity : fill.color.a ?? 1,
+          visible: fill.visible !== false,
         } as SolidPaint);
         continue;
       }
 
-      if ((fill.type === 'GRADIENT_LINEAR' || fill.type === 'GRADIENT_RADIAL') && fill.gradientStops) {
+      if (
+        (fill.type === "GRADIENT_LINEAR" || fill.type === "GRADIENT_RADIAL") &&
+        fill.gradientStops
+      ) {
+        console.log(
+          `  🌈 Converting ${fill.type} gradient with ${fill.gradientStops.length} stops`
+        );
         paints.push({
           type: fill.type,
           gradientStops: fill.gradientStops.map((stop: any) => {
             const { r, g, b, a } = stop.color;
             return {
               position: stop.position,
-              color: { r, g, b, a }
+              color: { r, g, b, a },
             };
           }),
           gradientTransform: fill.gradientTransform || [
             [1, 0, 0],
-            [0, 1, 0]
+            [0, 1, 0],
           ],
-          visible: fill.visible !== false
+          visible: fill.visible !== false,
         } as GradientPaint);
         continue;
       }
 
-      // Handle images with advanced positioning/sizing
-      if (fill.type === 'IMAGE') {
+      if (fill.type === "IMAGE") {
         paints.push(
           await this.resolveImagePaintWithBackground(fill, layer, nodeLayout)
         );
@@ -1141,40 +1746,44 @@ export class NodeBuilder {
       }
     }
 
+    console.log(`  ✅ Converted ${paints.length} background layers`);
     return paints;
   }
 
-  private async convertFillsAsync(fills: any[], context?: { tokenId?: string; property?: string }): Promise<Paint[]> {
+  private async convertFillsAsync(
+    fills: any[],
+    context?: { tokenId?: string; property?: string }
+  ): Promise<Paint[]> {
     const paints: Paint[] = [];
 
     for (const fill of fills) {
       if (!fill) continue;
 
-      if (fill.type === 'SOLID' && fill.color) {
+      if (fill.type === "SOLID" && fill.color) {
         const { r, g, b } = fill.color;
-        
-        // Try to use a variable if available and design tokens manager exists
+
         const paint: SolidPaint = {
-          type: 'SOLID',
+          type: "SOLID",
           color: { r, g, b },
-          opacity: fill.opacity !== undefined ? fill.opacity : fill.color.a ?? 1,
-          visible: fill.visible !== false
+          opacity:
+            fill.opacity !== undefined ? fill.opacity : fill.color.a ?? 1,
+          visible: fill.visible !== false,
         };
 
-        // Check if we can bind this to a variable
         if (this.designTokensManager) {
-          // First try to use the provided token ID
           let tokenId = context?.tokenId;
-          
-          // If no token ID provided, try to find a matching color token
+
           if (!tokenId) {
             tokenId = this.findColorToken({ r, g, b, a: fill.color.a });
           }
-          
+
           if (tokenId) {
-            const variable = this.designTokensManager.getVariableByTokenId(tokenId);
-            if (variable && variable.resolvedType === 'COLOR') {
-              paint.boundVariables = { color: { type: 'VARIABLE_ALIAS', id: variable.id } };
+            const variable =
+              this.designTokensManager.getVariableByTokenId(tokenId);
+            if (variable && variable.resolvedType === "COLOR") {
+              (paint as any).boundVariables = {
+                color: { type: "VARIABLE_ALIAS", id: variable.id },
+              };
             }
           }
         }
@@ -1183,26 +1792,29 @@ export class NodeBuilder {
         continue;
       }
 
-      if ((fill.type === 'GRADIENT_LINEAR' || fill.type === 'GRADIENT_RADIAL') && fill.gradientStops) {
+      if (
+        (fill.type === "GRADIENT_LINEAR" || fill.type === "GRADIENT_RADIAL") &&
+        fill.gradientStops
+      ) {
         paints.push({
           type: fill.type,
           gradientStops: fill.gradientStops.map((stop: any) => {
             const { r, g, b, a } = stop.color;
             return {
               position: stop.position,
-              color: { r, g, b, a }
+              color: { r, g, b, a },
             };
           }),
           gradientTransform: fill.gradientTransform || [
             [1, 0, 0],
-            [0, 1, 0]
+            [0, 1, 0],
           ],
-          visible: fill.visible !== false
+          visible: fill.visible !== false,
         } as GradientPaint);
         continue;
       }
 
-      if (fill.type === 'IMAGE') {
+      if (fill.type === "IMAGE") {
         paints.push(await this.resolveImagePaint(fill));
         continue;
       }
@@ -1211,59 +1823,106 @@ export class NodeBuilder {
     return paints;
   }
 
-  /**
-   * Resolve image paint with background layer properties (position, size, repeat)
-   */
   private async resolveImagePaintWithBackground(
     fill: any,
     layer: any,
     nodeLayout?: { width: number; height: number }
   ): Promise<Paint> {
     const hash = fill.imageHash;
-    if (!hash || !this.assets?.images?.[hash]) {
+
+    // Diagnostic logging for image resolution
+    console.log(`🔍 resolveImagePaintWithBackground called:`, {
+      hash,
+      hasAssets: !!this.assets,
+      hasImages: !!this.assets?.images,
+      hashFound: !!this.assets?.images?.[hash],
+      availableHashes: this.assets?.images
+        ? Object.keys(this.assets.images).slice(0, 5)
+        : [],
+    });
+
+    if (!hash) {
+      console.error(
+        `❌ resolveImagePaintWithBackground: No imageHash in fill:`,
+        fill
+      );
       return {
-        type: 'SOLID',
+        type: "SOLID",
         color: { r: 0.9, g: 0.9, b: 0.9 },
-        opacity: 1
+        opacity: 1,
       } as SolidPaint;
     }
 
-    // Get or create the Figma image
+    if (!this.assets) {
+      console.error(
+        `❌ resolveImagePaintWithBackground: No assets available! Hash: ${hash}`
+      );
+      return {
+        type: "SOLID",
+        color: { r: 1, g: 0.5, b: 0 },
+        opacity: 0.5,
+      } as SolidPaint;
+    }
+
+    if (!this.assets.images) {
+      console.error(
+        `❌ resolveImagePaintWithBackground: assets.images is undefined! Keys:`,
+        Object.keys(this.assets)
+      );
+      return {
+        type: "SOLID",
+        color: { r: 1, g: 1, b: 0 },
+        opacity: 0.5,
+      } as SolidPaint;
+    }
+
+    if (!this.assets.images[hash]) {
+      console.error(
+        `❌ resolveImagePaintWithBackground: Hash "${hash}" not found in assets.images`
+      );
+      console.error(
+        `Available hashes (${Object.keys(this.assets.images).length}):`,
+        Object.keys(this.assets.images).slice(0, 10)
+      );
+      return {
+        type: "SOLID",
+        color: { r: 0.5, g: 0, b: 1 },
+        opacity: 0.5,
+      } as SolidPaint;
+    }
+
     let imageHash: string;
     if (this.imagePaintCache.has(hash)) {
       imageHash = this.imagePaintCache.get(hash)!;
     } else {
       try {
         const asset = this.assets.images[hash];
-        let imageBytes: Uint8Array | undefined;
-
-        if (asset.base64) {
-          imageBytes = this.base64ToUint8Array(asset.base64);
-        } else if (asset.url) {
-          imageBytes = await this.fetchImage(asset.url);
+        console.log(`🔍 Creating Figma image from asset:`, {
+          hash,
+          hasData: !!asset.data,
+          hasBase64: !!asset.base64,
+          dataLen: (asset.data || asset.base64 || "").length,
+        });
+        const image = await this.createFigmaImageFromAsset(asset, hash);
+        if (!image) {
+          throw new Error("No image data available");
         }
 
-        if (!imageBytes) {
-          throw new Error('No image data available');
-        }
-
-        const image = figma.createImage(imageBytes);
         this.imagePaintCache.set(hash, image.hash);
         imageHash = image.hash;
+        console.log(`✅ Successfully created Figma image: ${imageHash}`);
       } catch (error) {
-        console.warn('Failed to resolve image paint', error);
+        console.error(`❌ Failed to resolve image paint for ${hash}:`, error);
         return {
-          type: 'SOLID',
+          type: "SOLID",
           color: { r: 0.9, g: 0.9, b: 0.9 },
-          opacity: 1
+          opacity: 1,
         } as SolidPaint;
       }
     }
 
-    // Determine scale mode from background-repeat
     const scaleMode = this.getScaleModeFromRepeat(layer.repeat);
 
-    // Calculate image transform from background-position and background-size
     const imageTransform = this.calculateImageTransform(
       layer.position,
       layer.size,
@@ -1272,13 +1931,15 @@ export class NodeBuilder {
     );
 
     const paint: ImagePaint = {
-      type: 'IMAGE',
+      type: "IMAGE",
       imageHash,
       scaleMode,
       visible: fill.visible !== false,
       ...(imageTransform && { imageTransform }),
       ...(fill.rotation !== undefined && { rotation: fill.rotation }),
-      ...(fill.scalingFactor !== undefined && { scalingFactor: fill.scalingFactor })
+      ...(fill.scalingFactor !== undefined && {
+        scalingFactor: fill.scalingFactor,
+      }),
     };
 
     return paint;
@@ -1287,255 +1948,215 @@ export class NodeBuilder {
   private async resolveImagePaint(fill: any): Promise<Paint> {
     const hash = fill.imageHash;
 
-    // CRITICAL: Debug image lookup failures
     if (!hash) {
-      console.error('❌ resolveImagePaint: No imageHash provided in fill:', fill);
+      console.error(
+        "❌ resolveImagePaint: No imageHash provided in fill:",
+        fill
+      );
       return {
-        type: 'SOLID',
-        color: { r: 1, g: 0, b: 0 }, // RED = missing hash
-        opacity: 0.5
+        type: "SOLID",
+        color: { r: 1, g: 0, b: 0 },
+        opacity: 0.5,
       } as SolidPaint;
     }
 
-    if (!this.assets) {
-      console.error('❌ resolveImagePaint: No assets available! Hash:', hash);
-      return {
-        type: 'SOLID',
-        color: { r: 1, g: 0.5, b: 0 }, // ORANGE = no assets
-        opacity: 0.5
-      } as SolidPaint;
-    }
-
-    if (!this.assets.images) {
-      console.error('❌ resolveImagePaint: assets.images is undefined! Available keys:', Object.keys(this.assets));
-      return {
-        type: 'SOLID',
-        color: { r: 1, g: 1, b: 0 }, // YELLOW = no images registry
-        opacity: 0.5
-      } as SolidPaint;
-    }
-
-    if (!this.assets.images[hash]) {
-      console.error(`❌ resolveImagePaint: Image hash "${hash}" not found in assets.images`);
-      console.error(`Available image hashes (${Object.keys(this.assets.images).length}):`, Object.keys(this.assets.images).slice(0, 10));
-      return {
-        type: 'SOLID',
-        color: { r: 0.5, g: 0, b: 1 }, // PURPLE = hash not found
-        opacity: 0.5
-      } as SolidPaint;
-    }
-
-    console.log(`✅ Found image asset for hash: ${hash}`);
-
-
+    // Check if we already have a Figma image hash cached
     if (this.imagePaintCache.has(hash)) {
-      const cachedHash = this.imagePaintCache.get(hash)!;
-      
-      // Enhanced scale mode mapping from object-fit
-      let scaleMode = fill.scaleMode || 'FILL';
-      if (fill.objectFit) {
-        scaleMode = this.mapObjectFitToScaleMode(fill.objectFit);
-      }
-      
-      const imagePaint: ImagePaint = {
-        type: 'IMAGE',
-        imageHash: cachedHash,
-        scaleMode,
-        visible: fill.visible !== false,
-        ...(fill.objectPosition && fill.objectPosition !== 'center center' && {
-          imageTransform: this.parseObjectPositionToTransform(fill.objectPosition)
-        })
+      return {
+        type: "IMAGE",
+        imageHash: this.imagePaintCache.get(hash)!,
+        scaleMode: fill.scaleMode || "FILL",
       };
-
-      return imagePaint;
     }
 
-    try {
-      const asset = this.assets.images[hash];
-      console.log(`🔍 Processing image asset:`, {
-        hash,
-        hasBase64: !!asset.base64,
-        hasUrl: !!asset.url,
-        base64Length: asset.base64?.length,
-        url: asset.url,
-        width: asset.width,
-        height: asset.height
-      });
+    let image: Image | null = null;
 
-      let imageBytes: Uint8Array | undefined;
-
-      if (asset.base64) {
-        console.log(`📦 Converting base64 to bytes (length: ${asset.base64.length})`);
-        imageBytes = this.base64ToUint8Array(asset.base64);
-        console.log(`✅ Converted to ${imageBytes.length} bytes`);
-      } else if (asset.url) {
-        console.log(`🌐 Fetching image from URL: ${asset.url}`);
-        imageBytes = await this.fetchImage(asset.url);
+    // 1. Try to find in assets
+    if (this.assets?.images?.[hash]) {
+      try {
+        const asset = this.assets.images[hash];
+        image = await this.createFigmaImageFromAsset(asset, hash);
+      } catch (e) {
+        console.warn(`Failed to create image from asset ${hash}`, e);
       }
+    }
 
-      if (!imageBytes) {
-        throw new Error('No image data available');
+    // 2. If not in assets, and hash looks like a URL, try to fetch it
+    if (!image && (hash.startsWith("http") || hash.startsWith("data:"))) {
+      try {
+        console.log(`🌐 Fetching image from URL: ${hash}`);
+        const response = await fetch(hash);
+        if (response.ok) {
+          const blob = await response.blob();
+          const buffer = await blob.arrayBuffer();
+          image = figma.createImage(new Uint8Array(buffer));
+        }
+      } catch (e) {
+        console.warn(`Failed to fetch image from URL ${hash}`, e);
       }
+    }
 
-      console.log(`🎨 Creating Figma image from ${imageBytes.length} bytes`);
-      const image = figma.createImage(imageBytes);
-      this.imagePaintCache.set(hash, image.hash);
-      console.log(`✅ Created Figma image with hash: ${image.hash}`);
-
-      // Enhanced scale mode mapping from object-fit
-      let scaleMode = fill.scaleMode || 'FILL';
-      if (fill.objectFit) {
-        scaleMode = this.mapObjectFitToScaleMode(fill.objectFit);
-      }
-
-      const imagePaint: ImagePaint = {
-        type: 'IMAGE',
-        imageHash: image.hash,
-        scaleMode,
-        visible: fill.visible !== false,
-        ...(fill.objectPosition && fill.objectPosition !== 'center center' && {
-          imageTransform: this.parseObjectPositionToTransform(fill.objectPosition)
-        })
-      };
-
-      console.log(`✅ Successfully created image paint with scaleMode: ${scaleMode}`);
-      return imagePaint;
-    } catch (error) {
-      console.error(`❌ Failed to resolve image paint for hash ${hash}:`, error);
+    if (!image) {
+      console.error(
+        `❌ resolveImagePaint: Image hash "${hash}" not found in assets and fetch failed`
+      );
       return {
-        type: 'SOLID',
-        color: { r: 0, g: 1, b: 0 }, // GREEN = image processing error
-        opacity: 0.5
+        type: "SOLID",
+        color: { r: 0.8, g: 0.8, b: 0.8 },
+        opacity: 0.5,
       } as SolidPaint;
     }
-  }
 
-  private mapObjectFitToScaleMode(objectFit: string): 'FILL' | 'FIT' | 'CROP' | 'TILE' {
-    const mapping: Record<string, 'FILL' | 'FIT' | 'CROP' | 'TILE'> = {
-      'fill': 'FILL',        // Stretch to fill completely
-      'contain': 'FIT',      // Scale to fit within bounds
-      'cover': 'CROP',       // Scale to cover, may crop
-      'none': 'CROP',        // Use original size
-      'scale-down': 'FIT'    // Similar to contain
+    this.imagePaintCache.set(hash, image.hash);
+    console.log(`✅ Created Figma image with hash: ${image.hash}`);
+
+    let scaleMode = fill.scaleMode || "FILL";
+    if (fill.objectFit) {
+      scaleMode = this.mapObjectFitToScaleMode(fill.objectFit);
+    }
+
+    const imagePaint: ImagePaint = {
+      type: "IMAGE",
+      imageHash: image.hash,
+      scaleMode,
+      visible: fill.visible !== false,
+      ...(fill.objectPosition &&
+        fill.objectPosition !== "center center" && {
+          imageTransform: this.parseObjectPositionToTransform(
+            fill.objectPosition
+          ),
+        }),
     };
-    return mapping[objectFit] || 'FILL';
+
+    return imagePaint;
   }
 
-  private getFontMetricsRatio(actualFont: string, originalFont: string): number {
-    // Font metrics compensation ratios for common font substitutions
-    const fontMetricsMap = new Map([
-      // Web fonts → System font ratios (height adjustment factors)
-      ['Inter:Arial', 0.98],
-      ['Inter:Helvetica', 0.97],
-      ['Arial:Inter', 1.02],
-      ['Helvetica:Inter', 1.03],
-      ['Roboto:Inter', 0.99],
-      ['Open Sans:Inter', 1.01],
-      ['Lato:Inter', 0.99],
-      ['Montserrat:Inter', 1.02],
-      ['Source Sans Pro:Inter', 0.98],
-      
-      // Serif fallbacks
-      ['Times New Roman:Times', 1.0],
-      ['Georgia:Times New Roman', 0.95],
-      
-      // Monospace fallbacks
-      ['Monaco:Menlo', 1.01],
-      ['SF Mono:Monaco', 0.99],
-      ['Courier New:Courier', 1.0]
+  private mapObjectFitToScaleMode(
+    objectFit: string
+  ): "FILL" | "FIT" | "CROP" | "TILE" {
+    const mapping: Record<string, "FILL" | "FIT" | "CROP" | "TILE"> = {
+      fill: "FILL",
+      contain: "FIT",
+      cover: "CROP",
+      none: "CROP",
+      "scale-down": "FIT",
+    };
+    return mapping[objectFit] || "FILL";
+  }
+
+  private getFontMetricsRatio(
+    actualFont: string,
+    originalFont: string
+  ): number {
+    const fontMetricsMap = new Map<string, number>([
+      ["Inter:Arial", 0.98],
+      ["Inter:Helvetica", 0.97],
+      ["Arial:Inter", 1.02],
+      ["Helvetica:Inter", 1.03],
+      ["Roboto:Inter", 0.99],
+      ["Open Sans:Inter", 1.01],
+      ["Lato:Inter", 0.99],
+      ["Montserrat:Inter", 1.02],
+      ["Source Sans Pro:Inter", 0.98],
+
+      ["Times New Roman:Times", 1.0],
+      ["Georgia:Times New Roman", 0.95],
+
+      ["Monaco:Menlo", 1.01],
+      ["SF Mono:Monaco", 0.99],
+      ["Courier New:Courier", 1.0],
     ]);
-    
+
     const key = `${originalFont}:${actualFont}`;
     return fontMetricsMap.get(key) || 1.0;
   }
 
-  private parseObjectPositionToTransform(objectPosition: string): [[number, number, number], [number, number, number]] {
-    // Parse object-position values like "center center", "50% 50%", "left top", etc.
+  private parseObjectPositionToTransform(
+    objectPosition: string
+  ): [[number, number, number], [number, number, number]] {
     const parts = objectPosition.trim().split(/\s+/);
     let xOffset = 0;
     let yOffset = 0;
 
-    // Handle horizontal position
     if (parts[0]) {
-      if (parts[0] === 'left') xOffset = -0.5;
-      else if (parts[0] === 'right') xOffset = 0.5;
-      else if (parts[0] === 'center') xOffset = 0;
-      else if (parts[0].endsWith('%')) {
+      if (parts[0] === "left") xOffset = -0.5;
+      else if (parts[0] === "right") xOffset = 0.5;
+      else if (parts[0] === "center") xOffset = 0;
+      else if (parts[0].endsWith("%")) {
         const percent = parseFloat(parts[0]) / 100;
-        xOffset = percent - 0.5; // Convert to offset from center
+        xOffset = percent - 0.5;
       }
     }
 
-    // Handle vertical position  
     if (parts[1]) {
-      if (parts[1] === 'top') yOffset = -0.5;
-      else if (parts[1] === 'bottom') yOffset = 0.5;
-      else if (parts[1] === 'center') yOffset = 0;
-      else if (parts[1].endsWith('%')) {
+      if (parts[1] === "top") yOffset = -0.5;
+      else if (parts[1] === "bottom") yOffset = 0.5;
+      else if (parts[1] === "center") yOffset = 0;
+      else if (parts[1].endsWith("%")) {
         const percent = parseFloat(parts[1]) / 100;
-        yOffset = percent - 0.5; // Convert to offset from center
+        yOffset = percent - 0.5;
       }
     }
 
-    // Return transform matrix with position offsets
     return [
       [1, 0, xOffset],
-      [0, 1, yOffset]
+      [0, 1, yOffset],
     ];
   }
 
   private async convertStrokesAsync(strokes: any[]): Promise<Paint[]> {
+    console.log(`  ✏️ Converting ${strokes.length} strokes`);
     return strokes.map((stroke) => {
       const color = stroke.color || { r: 0, g: 0, b: 0 };
       const { r, g, b } = color;
       return {
-        type: 'SOLID',
+        type: "SOLID",
         color: { r, g, b },
         opacity: stroke.opacity !== undefined ? stroke.opacity : color.a ?? 1,
-        visible: stroke.visible !== false
+        visible: stroke.visible !== false,
       };
     }) as SolidPaint[];
   }
 
   private convertEffects(effects: any[]): Effect[] {
     return effects.map((effect) => {
-      if (effect.type === 'DROP_SHADOW') {
+      if (effect.type === "DROP_SHADOW") {
         return {
-          type: 'DROP_SHADOW',
+          type: "DROP_SHADOW",
           color: effect.color,
           offset: effect.offset,
           radius: effect.radius,
           spread: effect.spread || 0,
           visible: effect.visible !== false,
-          blendMode: effect.blendMode || 'NORMAL'
+          blendMode: effect.blendMode || "NORMAL",
         } as DropShadowEffect;
       }
 
-      if (effect.type === 'INNER_SHADOW') {
+      if (effect.type === "INNER_SHADOW") {
         return {
-          type: 'INNER_SHADOW',
+          type: "INNER_SHADOW",
           color: effect.color,
           offset: effect.offset,
           radius: effect.radius,
           spread: effect.spread || 0,
           visible: effect.visible !== false,
-          blendMode: effect.blendMode || 'NORMAL'
+          blendMode: effect.blendMode || "NORMAL",
         } as InnerShadowEffect;
       }
 
-      if (effect.type === 'LAYER_BLUR') {
+      if (effect.type === "LAYER_BLUR") {
         return {
-          type: 'LAYER_BLUR',
+          type: "LAYER_BLUR",
           radius: effect.radius,
-          visible: effect.visible !== false
+          visible: effect.visible !== false,
         } as BlurEffect;
       }
 
-      if (effect.type === 'BACKGROUND_BLUR') {
+      if (effect.type === "BACKGROUND_BLUR") {
         return {
-          type: 'BACKGROUND_BLUR',
+          type: "BACKGROUND_BLUR",
           radius: effect.radius,
-          visible: effect.visible !== false
+          visible: effect.visible !== false,
         } as BlurEffect;
       }
 
@@ -1543,89 +2164,85 @@ export class NodeBuilder {
     });
   }
 
-  /**
-   * Convert CSS background-repeat to Figma scaleMode
-   */
-  private getScaleModeFromRepeat(repeat?: string): 'FILL' | 'FIT' | 'CROP' | 'TILE' {
-    if (!repeat) return 'FILL';
+  private getScaleModeFromRepeat(
+    repeat?: string
+  ): "FILL" | "FIT" | "CROP" | "TILE" {
+    if (!repeat) return "FILL";
 
     const repeatLower = repeat.toLowerCase().trim();
 
-    // 'repeat' or 'repeat repeat' means tile
-    if (repeatLower === 'repeat' || repeatLower === 'repeat repeat') {
-      return 'TILE';
+    if (repeatLower === "repeat" || repeatLower === "repeat repeat") {
+      return "TILE";
     }
 
-    // 'repeat-x' or 'repeat-y' also means tile
-    if (repeatLower === 'repeat-x' || repeatLower === 'repeat-y') {
-      return 'TILE';
+    if (repeatLower === "repeat-x" || repeatLower === "repeat-y") {
+      return "TILE";
     }
 
-    // 'no-repeat' with other properties will be handled by imageTransform
-    // Default to FILL for 'no-repeat', 'space', 'round'
-    return 'FILL';
+    return "FILL";
   }
 
-  /**
-   * Calculate Figma imageTransform from CSS background-position and background-size
-   * Returns a 2x3 transform matrix: [[a, b, c], [d, e, f]]
-   */
   private calculateImageTransform(
     position?: { x: string; y: string },
     size?: { width: string; height: string },
     nodeLayout?: { width: number; height: number },
     imageAsset?: { width: number; height: number }
   ): [[number, number, number], [number, number, number]] | undefined {
-    // If we don't have enough info, skip transform
     if (!position && !size) return undefined;
 
-    // Start with identity matrix
     let scaleX = 1;
     let scaleY = 1;
     let translateX = 0;
     let translateY = 0;
 
-    // Process background-size
     if (size && nodeLayout && imageAsset) {
       const { width: sizeWidth, height: sizeHeight } = size;
 
-      // Handle 'cover' - scale to cover the entire area
-      if (sizeWidth === 'cover') {
+      if (sizeWidth === "cover") {
         const scaleRatio = Math.max(
           nodeLayout.width / imageAsset.width,
           nodeLayout.height / imageAsset.height
         );
         scaleX = scaleRatio;
         scaleY = scaleRatio;
-      }
-      // Handle 'contain' - scale to fit within the area
-      else if (sizeWidth === 'contain') {
+      } else if (sizeWidth === "contain") {
         const scaleRatio = Math.min(
           nodeLayout.width / imageAsset.width,
           nodeLayout.height / imageAsset.height
         );
         scaleX = scaleRatio;
         scaleY = scaleRatio;
-      }
-      // Handle 'auto' or specific dimensions
-      else {
-        scaleX = this.parseSizeValue(sizeWidth, nodeLayout.width, imageAsset.width);
-        scaleY = this.parseSizeValue(sizeHeight || sizeWidth, nodeLayout.height, imageAsset.height);
+      } else {
+        scaleX = this.parseSizeValue(
+          sizeWidth,
+          nodeLayout.width,
+          imageAsset.width
+        );
+        scaleY = this.parseSizeValue(
+          sizeHeight || sizeWidth,
+          nodeLayout.height,
+          imageAsset.height
+        );
       }
     }
 
-    // Process background-position
     if (position && nodeLayout && imageAsset) {
       const { x: posX, y: posY } = position;
 
-      // Calculate effective image dimensions after scaling
       const scaledImageWidth = imageAsset.width * scaleX;
       const scaledImageHeight = imageAsset.height * scaleY;
 
-      translateX = this.parsePositionValue(posX, nodeLayout.width, scaledImageWidth);
-      translateY = this.parsePositionValue(posY, nodeLayout.height, scaledImageHeight);
+      translateX = this.parsePositionValue(
+        posX,
+        nodeLayout.width,
+        scaledImageWidth
+      );
+      translateY = this.parsePositionValue(
+        posY,
+        nodeLayout.height,
+        scaledImageHeight
+      );
 
-      // Normalize to Figma's coordinate system (0-1 range relative to image size)
       if (imageAsset.width > 0) {
         translateX = translateX / imageAsset.width;
       }
@@ -1634,56 +2251,54 @@ export class NodeBuilder {
       }
     }
 
-    // Return the transform matrix: [[scaleX, 0, translateX], [0, scaleY, translateY]]
     return [
       [scaleX, 0, translateX],
-      [0, scaleY, translateY]
+      [0, scaleY, translateY],
     ];
   }
 
-  /**
-   * Parse CSS size value (e.g., "100px", "50%", "auto") to a scale factor
-   */
-  private parseSizeValue(value: string, containerSize: number, imageSize: number): number {
+  private parseSizeValue(
+    value: string,
+    containerSize: number,
+    imageSize: number
+  ): number {
     const trimmed = value.trim().toLowerCase();
 
-    if (trimmed === 'auto') {
-      return 1; // Use intrinsic size
+    if (trimmed === "auto") {
+      return 1;
     }
 
-    if (trimmed.endsWith('%')) {
+    if (trimmed.endsWith("%")) {
       const percentage = parseFloat(trimmed);
       return (containerSize * (percentage / 100)) / imageSize;
     }
 
-    if (trimmed.endsWith('px')) {
+    if (trimmed.endsWith("px")) {
       const pixels = parseFloat(trimmed);
       return pixels / imageSize;
     }
 
-    // Try to parse as number (assumed pixels)
     const num = parseFloat(trimmed);
     if (!isNaN(num)) {
       return num / imageSize;
     }
 
-    return 1; // Default
+    return 1;
   }
 
-  /**
-   * Parse CSS position value (e.g., "center", "50%", "10px", "left", "right", "top", "bottom")
-   * Returns position in pixels
-   */
-  private parsePositionValue(value: string, containerSize: number, imageSize: number): number {
+  private parsePositionValue(
+    value: string,
+    containerSize: number,
+    imageSize: number
+  ): number {
     const trimmed = value.trim().toLowerCase();
 
-    // Handle keywords
     const keywordMap: Record<string, number> = {
       left: 0,
       top: 0,
       center: 0.5,
       right: 1,
-      bottom: 1
+      bottom: 1,
     };
 
     if (trimmed in keywordMap) {
@@ -1691,24 +2306,21 @@ export class NodeBuilder {
       return (containerSize - imageSize) * ratio;
     }
 
-    // Handle percentage
-    if (trimmed.endsWith('%')) {
+    if (trimmed.endsWith("%")) {
       const percentage = parseFloat(trimmed) / 100;
       return (containerSize - imageSize) * percentage;
     }
 
-    // Handle pixels
-    if (trimmed.endsWith('px')) {
+    if (trimmed.endsWith("px")) {
       return parseFloat(trimmed);
     }
 
-    // Try to parse as number (assumed pixels)
     const num = parseFloat(trimmed);
     if (!isNaN(num)) {
       return num;
     }
 
-    return 0; // Default to 0
+    return 0;
   }
 
   private async fetchImage(url: string): Promise<Uint8Array> {
@@ -1727,38 +2339,456 @@ export class NodeBuilder {
     return bytes;
   }
 
-  private base64ToUint8Array(base64: string): Uint8Array {
-    const normalized = base64.includes(',') ? base64.split(',')[1] : base64;
-    const binary = atob(normalized);
-    const len = binary.length;
-    const bytes = new Uint8Array(len);
-    for (let i = 0; i < len; i++) {
-      bytes[i] = binary.charCodeAt(i);
+  private getPlaceholderColor(data: any): RGB {
+    const defaultColor: RGB = { r: 0.92, g: 0.92, b: 0.92 };
+
+    if (
+      data?.imageHash &&
+      this.assets?.images?.[data.imageHash]?.placeholderColor
+    ) {
+      const c = this.assets.images[data.imageHash].placeholderColor as any;
+      if (
+        typeof c.r === "number" &&
+        typeof c.g === "number" &&
+        typeof c.b === "number"
+      ) {
+        return { r: c.r, g: c.g, b: c.b };
+      }
+    }
+
+    const bg =
+      data?.style?.backgroundColor || data?.backgroundColor || data?.fillColor;
+    if (bg && typeof bg === "string") {
+      return defaultColor;
+    }
+
+    return defaultColor;
+  }
+
+  private async createFigmaImageFromAsset(
+    asset: any,
+    hash: string
+  ): Promise<Image | null> {
+    let base64Candidate: string | undefined =
+      asset?.data || asset?.base64 || asset?.screenshot;
+    const url = asset?.url;
+    const isWebpAsset =
+      asset?.mimeType === "image/webp" ||
+      asset?.contentType === "image/webp" ||
+      (typeof url === "string" && url.toLowerCase().includes(".webp"));
+
+    let imageBytes: Uint8Array | undefined;
+    if (base64Candidate) {
+      try {
+        imageBytes = await this.base64ToImageBytes(
+          base64Candidate,
+          isWebpAsset
+        );
+      } catch (error) {
+        console.warn(
+          `❌ base64 decode failed for ${hash}, will retry/transcode if possible`,
+          error
+        );
+      }
+    }
+
+    if (!imageBytes && url) {
+      try {
+        imageBytes = await this.fetchImage(url);
+      } catch (error) {
+        console.warn(`❌ fetchImage failed for ${hash} (${url})`, error);
+      }
+    }
+
+    if (!imageBytes && base64Candidate) {
+      try {
+        imageBytes = await this.base64ToImageBytes(base64Candidate, true);
+      } catch (error) {
+        console.warn(`❌ forced WebP transcode failed for ${hash}`, error);
+      }
+    }
+
+    if (!imageBytes || !imageBytes.length) {
+      console.warn(`❌ No image bytes available for ${hash}`);
+      return null;
+    }
+
+    try {
+      const image = figma.createImage(imageBytes);
+      return image;
+    } catch (error: any) {
+      const message = error?.message || String(error);
+      console.warn(
+        `❌ createImage failed for ${hash}: ${message} (bytes=${imageBytes.length})`
+      );
+
+      if (
+        base64Candidate &&
+        message.toLowerCase().includes("unsupported") &&
+        !url
+      ) {
+        try {
+          const transBytes = await this.base64ToImageBytes(
+            base64Candidate,
+            true
+          );
+          if (transBytes?.length) {
+            const image = figma.createImage(transBytes);
+            console.log(
+              `✅ createImage succeeded after WebP transcode for ${hash}`
+            );
+            return image;
+          }
+        } catch (fallbackError) {
+          console.warn(
+            `❌ createImage still failed after transcode for ${hash}`,
+            fallbackError
+          );
+        }
+      }
+      return null;
+    }
+  }
+
+  private isLikelyWebpBase64(clean: string): boolean {
+    return clean.startsWith("UklG") || clean.includes("WEBP");
+  }
+
+  private async transcodeWebpWithRetry(
+    base64: string,
+    retries: number = 2
+  ): Promise<Uint8Array> {
+    let lastError: any;
+    for (let attempt = 0; attempt < retries; attempt++) {
+      try {
+        const pngBytes = await requestWebpTranscode(base64);
+        if (pngBytes && pngBytes.length > 0) {
+          return pngBytes;
+        }
+        lastError = new Error("Empty transcode result");
+      } catch (error) {
+        lastError = error;
+        await new Promise((resolve) =>
+          setTimeout(resolve, 200 * (attempt + 1))
+        );
+      }
+    }
+    throw lastError || new Error("WebP transcode failed");
+  }
+
+  private extractDataUrlParts(value: string): {
+    payload: string;
+    mimeTypeHint?: string;
+    isBase64: boolean;
+  } {
+    if (typeof value !== "string") {
+      return { payload: "", mimeTypeHint: undefined, isBase64: false };
+    }
+
+    if (!value.startsWith("data:")) {
+      return { payload: value, mimeTypeHint: undefined, isBase64: true };
+    }
+
+    const commaIndex = value.indexOf(",");
+    const meta = value.substring(5, commaIndex === -1 ? undefined : commaIndex);
+    const payload = commaIndex === -1 ? "" : value.substring(commaIndex + 1);
+    const parts = meta.split(";");
+    const mimeTypeHint = parts[0] || undefined;
+    const isBase64 = parts.includes("base64");
+
+    return { payload, mimeTypeHint, isBase64 };
+  }
+
+  private safeDecodeUriComponent(value: string): string {
+    if (typeof value !== "string") return "";
+    try {
+      return decodeURIComponent(value);
+    } catch {
+      return value;
+    }
+  }
+
+  private normalizeBase64Payload(payload: string): string {
+    if (typeof payload !== "string") return "";
+    let normalized = payload.replace(/\s/g, "");
+    normalized = this.safeDecodeUriComponent(normalized);
+    normalized = normalized.replace(/-/g, "+").replace(/_/g, "/");
+    normalized = normalized.replace(/[^A-Za-z0-9+/=]/g, "");
+    while (normalized.length % 4 !== 0) {
+      normalized += "=";
+    }
+    return normalized;
+  }
+
+  private isSvgPayload(
+    normalizedBase64: string,
+    rawPayload?: string,
+    mimeTypeHint?: string
+  ): boolean {
+    if (mimeTypeHint && mimeTypeHint.toLowerCase().includes("svg")) {
+      return true;
+    }
+    const raw = rawPayload || "";
+    const trimmedRaw = raw.trim();
+    if (trimmedRaw.startsWith("<svg") || trimmedRaw.startsWith("<?xml")) {
+      return true;
+    }
+    const clean = normalizedBase64.trim();
+    return (
+      clean.startsWith("PHN2Zy") ||
+      clean.startsWith("PD94bW") ||
+      clean.startsWith("c3Zn")
+    );
+  }
+
+  private stringToUint8Array(value: string): Uint8Array {
+    if (typeof TextEncoder !== "undefined") {
+      return new TextEncoder().encode(value);
+    }
+    const bytes = new Uint8Array(value.length);
+    for (let i = 0; i < value.length; i++) {
+      bytes[i] = value.charCodeAt(i);
     }
     return bytes;
   }
 
-  private mapFontWeight(weight: number): string {
-    const map: Record<number, string> = {
-      100: 'Thin',
-      200: 'Extra Light',
-      300: 'Light',
-      400: 'Regular',
-      500: 'Medium',
-      600: 'Semi Bold',
-      700: 'Bold',
-      800: 'Extra Bold',
-      900: 'Black'
-    };
-    return map[weight] || 'Regular';
+  private extractSvgMarkup(asset: any): string | null {
+    const mimeHint = asset?.mimeType || asset?.contentType;
+    const rawSource =
+      typeof asset?.data === "string"
+        ? asset.data
+        : typeof asset?.base64 === "string"
+        ? asset.base64
+        : typeof asset?.screenshot === "string"
+        ? asset.screenshot
+        : typeof asset?.url === "string" && asset.url.startsWith("data:")
+        ? asset.url
+        : undefined;
+
+    if (!rawSource) return null;
+
+    const { payload, mimeTypeHint, isBase64 } =
+      this.extractDataUrlParts(rawSource);
+    const mime = mimeHint || mimeTypeHint;
+    const isSvgMime = mime ? mime.toLowerCase().includes("svg") : false;
+    const combinedPayload = rawSource.startsWith("data:") ? payload : rawSource;
+
+    if (isSvgMime && combinedPayload) {
+      try {
+        if (!isBase64 && combinedPayload.trim().startsWith("<")) {
+          return combinedPayload;
+        }
+        return this.base64ToString(combinedPayload, { allowSvg: true });
+      } catch (error) {
+        console.warn("Failed to decode SVG data URL", error);
+      }
+    }
+
+    const looksLikeSvg = this.isSvgPayload(
+      this.normalizeBase64Payload(combinedPayload),
+      combinedPayload,
+      mime
+    );
+    if (!looksLikeSvg) {
+      return null;
+    }
+
+    if (combinedPayload.trim().startsWith("<")) {
+      return combinedPayload;
+    }
+
+    try {
+      return this.base64ToString(combinedPayload, { allowSvg: true });
+    } catch (error) {
+      const decoded = this.safeDecodeUriComponent(combinedPayload);
+      if (decoded.trim().startsWith("<")) {
+        return decoded;
+      }
+      console.warn("Unable to decode suspected SVG payload", error);
+      return null;
+    }
   }
 
-  /**
-   * Apply CSS transform matrix to Figma node positioning
-   */
+  private createVectorFromSvgMarkup(
+    svgString: string,
+    data: any
+  ): SceneNode | null {
+    try {
+      const vectorRoot = figma.createNodeFromSvg(svgString);
+      vectorRoot.name = data?.name || "Vector";
+
+      const targetWidth = data?.layout?.width;
+      const targetHeight = data?.layout?.height;
+      if (
+        typeof targetWidth === "number" &&
+        typeof targetHeight === "number" &&
+        targetWidth > 0 &&
+        targetHeight > 0
+      ) {
+        const needsResize =
+          Math.abs(vectorRoot.width - targetWidth) > 0.1 ||
+          Math.abs(vectorRoot.height - targetHeight) > 0.1;
+        if (needsResize) {
+          vectorRoot.resize(targetWidth, targetHeight);
+        }
+      }
+
+      return vectorRoot;
+    } catch (error) {
+      console.warn("Failed to create vector from SVG markup", error);
+      return null;
+    }
+  }
+
+  private async base64ToImageBytes(
+    base64: string,
+    forceWebp = false
+  ): Promise<Uint8Array> {
+    const parts = this.extractDataUrlParts(base64);
+    const payload = parts.payload;
+    const clean = this.normalizeBase64Payload(payload);
+
+    if (this.isSvgPayload(clean, payload, parts.mimeTypeHint) && !forceWebp) {
+      throw new Error("SVG payload detected - not a raster image");
+    }
+
+    if (forceWebp || this.isLikelyWebpBase64(clean)) {
+      try {
+        const pngBytes = await this.transcodeWebpWithRetry(clean);
+        if (pngBytes && pngBytes.length > 0) {
+          return pngBytes;
+        }
+        console.warn("⚠️ WebP transcode returned empty result");
+      } catch (error) {
+        console.warn("❌ WebP transcode failed, cannot create image", error);
+        if (!forceWebp) {
+          return this.base64ToUint8Array(clean);
+        }
+        throw error;
+      }
+    }
+
+    return this.base64ToUint8Array(clean);
+  }
+
+  private base64ToUint8Array(base64: string, allowSvg = false): Uint8Array {
+    try {
+      if (typeof base64 !== "string") {
+        throw new Error(`Expected string for base64, got ${typeof base64}`);
+      }
+
+      const { payload, mimeTypeHint, isBase64 } =
+        this.extractDataUrlParts(base64);
+      const decodedPayload = this.safeDecodeUriComponent(payload);
+      const clean = this.normalizeBase64Payload(decodedPayload);
+
+      if (this.isSvgPayload(clean, decodedPayload, mimeTypeHint)) {
+        if (!allowSvg) {
+          console.warn(
+            "⚠️ Detected SVG content in image asset. Figma createImage does not support SVGs."
+          );
+          throw new Error(
+            "SVG content detected - cannot create raster image from SVG data"
+          );
+        }
+        if (!isBase64 && decodedPayload.trim().startsWith("<")) {
+          return this.stringToUint8Array(decodedPayload);
+        }
+      }
+
+      if (
+        typeof figma !== "undefined" &&
+        typeof figma.base64Decode === "function"
+      ) {
+        return figma.base64Decode(clean);
+      }
+
+      if (typeof atob === "function") {
+        const binary = atob(clean);
+        const len = binary.length;
+        const bytes = new Uint8Array(len);
+        for (let i = 0; i < len; i++) {
+          bytes[i] = binary.charCodeAt(i);
+        }
+        return bytes;
+      }
+
+      const base64Chars =
+        "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+      const sanitized = clean.replace(/[^A-Za-z0-9+/=]/g, "");
+      const outputLength =
+        Math.floor((sanitized.length * 3) / 4) -
+        (sanitized.endsWith("==") ? 2 : sanitized.endsWith("=") ? 1 : 0);
+      const bytes = new Uint8Array(outputLength);
+
+      let buffer = 0;
+      let bitsCollected = 0;
+      let byteIndex = 0;
+
+      for (let i = 0; i < sanitized.length; i++) {
+        const char = sanitized.charAt(i);
+        if (char === "=") break;
+
+        const value = base64Chars.indexOf(char);
+        if (value === -1) continue;
+        buffer = (buffer << 6) | value;
+        bitsCollected += 6;
+        if (bitsCollected >= 8) {
+          bitsCollected -= 8;
+          bytes[byteIndex++] = (buffer >> bitsCollected) & 0xff;
+        }
+      }
+
+      return bytes;
+    } catch (error) {
+      console.error("❌ base64ToUint8Array failed:", error);
+      const snippet =
+        typeof base64 === "string"
+          ? base64.substring(0, 50) + "..."
+          : String(base64);
+      console.error("Input snippet:", snippet);
+      throw error;
+    }
+  }
+
+  private base64ToString(
+    base64: string,
+    options?: { allowSvg?: boolean }
+  ): string {
+    const normalized = base64.includes(",") ? base64.split(",")[1] : base64;
+    const clean = normalized.replace(/\s/g, "");
+
+    const bytes = this.base64ToUint8Array(clean, options?.allowSvg === true);
+
+    if (typeof TextDecoder !== "undefined") {
+      return new TextDecoder("utf-8").decode(bytes);
+    }
+
+    let result = "";
+    for (let i = 0; i < bytes.length; i++) {
+      result += String.fromCharCode(bytes[i]);
+    }
+    return result;
+  }
+
+  private mapFontWeight(weight: number): string {
+    const map: Record<number, string> = {
+      100: "Thin",
+      200: "Extra Light",
+      300: "Light",
+      400: "Regular",
+      500: "Medium",
+      600: "Semi Bold",
+      700: "Bold",
+      800: "Extra Bold",
+      900: "Black",
+    };
+    return map[weight] || "Regular";
+  }
+
   private applyTransformMatrix(
-    node: SceneNode, 
-    transform: any, 
+    node: SceneNode,
+    transform: any,
     transformOrigin?: { x: number; y: number; z?: number },
     layout?: { width: number; height: number; x: number; y: number }
   ): void {
@@ -1767,124 +2797,120 @@ export class NodeBuilder {
     }
 
     const matrix = transform.matrix;
-    
-    // For 2D transforms, apply positioning and rotation
+
     if (matrix.length === 6) {
       const [a, b, c, d, tx, ty] = matrix;
-      
-      // Calculate effective position with transform-origin offset
+
       let finalX = layout.x;
       let finalY = layout.y;
-      
+
       if (transformOrigin) {
-        // Convert transform-origin from percentage/pixels to center-relative offset
-        const originX = this.calculateTransformOriginOffset(transformOrigin.x, layout.width);
-        const originY = this.calculateTransformOriginOffset(transformOrigin.y, layout.height);
-        
-        // Apply transform-origin offset to matrix translation
+        const originX = this.calculateTransformOriginOffset(
+          transformOrigin.x,
+          layout.width
+        );
+        const originY = this.calculateTransformOriginOffset(
+          transformOrigin.y,
+          layout.height
+        );
+
         const offsetTx = tx + originX * (1 - a) - originY * c;
         const offsetTy = ty + originY * (1 - d) - originX * b;
-        
+
         finalX += offsetTx;
         finalY += offsetTy;
       } else {
-        // No transform-origin, apply translation directly
         finalX += tx;
         finalY += ty;
       }
-      
-      // Apply position
+
       node.x = finalX;
       node.y = finalY;
-      
-      // Extract and apply rotation if the node supports it
-      if ('rotation' in node && this.shouldApplyRotation(matrix)) {
+
+      if ("rotation" in node && this.shouldApplyRotation(matrix)) {
         const rotation = Math.atan2(b, a);
         (node as any).rotation = rotation;
       }
-      
-      // Apply scale to dimensions if significant and node supports resize
-      if ('resize' in node && this.shouldApplyScale(matrix)) {
+
+      if ("resize" in node && this.shouldApplyScale(matrix)) {
         const scaleX = Math.hypot(a, b);
         const scaleY = Math.hypot(c, d);
-        
-        // Only apply scale if it's not too extreme (to avoid breaking layouts)
+
         if (scaleX > 0.1 && scaleX < 10 && scaleY > 0.1 && scaleY < 10) {
           const newWidth = Math.max(layout.width * scaleX, 1);
           const newHeight = Math.max(layout.height * scaleY, 1);
           (node as LayoutMixin).resize(newWidth, newHeight);
-          
-          // Store scale info for reference
-          this.safeSetPluginData(node, 'appliedScale', JSON.stringify({ 
-            scaleX, 
-            scaleY, 
-            originalWidth: layout.width, 
-            originalHeight: layout.height 
-          }));
+
+          this.safeSetPluginData(
+            node,
+            "appliedScale",
+            JSON.stringify({
+              scaleX,
+              scaleY,
+              originalWidth: layout.width,
+              originalHeight: layout.height,
+            })
+          );
         }
       }
-      
-      // Store complex transforms that can't be fully represented
+
       if (this.hasComplexTransform(matrix)) {
-        this.safeSetPluginData(node, 'complexTransform', JSON.stringify({
-          matrix,
-          skew: transform.skew,
-          decomposed: {
-            translate: transform.translate,
-            scale: transform.scale,
-            rotate: transform.rotate,
-            skew: transform.skew
-          }
-        }));
+        this.safeSetPluginData(
+          node,
+          "complexTransform",
+          JSON.stringify({
+            matrix,
+            skew: transform.skew,
+            decomposed: {
+              translate: transform.translate,
+              scale: transform.scale,
+              rotate: transform.rotate,
+              skew: transform.skew,
+            },
+          })
+        );
       }
-    }
-    
-    // Handle 3D transforms (store for reference, limited Figma support)
-    else if (matrix.length === 16) {
-      // Extract 2D components from 3D matrix for basic positioning
+    } else if (matrix.length === 16) {
       const tx = matrix[12] || 0;
       const ty = matrix[13] || 0;
       const tz = matrix[14] || 0;
-      
-      node.x = (layout.x + tx);
-      node.y = (layout.y + ty);
-      
-      // Store full 3D transform for reference
-      this.safeSetPluginData(node, 'transform3D', JSON.stringify({
-        matrix,
-        translate: { x: tx, y: ty, z: tz },
-        originalPosition: { x: layout.x, y: layout.y }
-      }));
-      
-      console.warn(`3D transform applied to "${node.name}" - limited Figma support, stored for reference`);
+
+      node.x = layout.x + tx;
+      node.y = layout.y + ty;
+
+      this.safeSetPluginData(
+        node,
+        "transform3D",
+        JSON.stringify({
+          matrix,
+          translate: { x: tx, y: ty, z: tz },
+          originalPosition: { x: layout.x, y: layout.y },
+        })
+      );
+
+      console.warn(
+        `3D transform applied to "${node.name}" - limited Figma support, stored for reference`
+      );
     }
   }
 
-  /**
-   * Calculate transform-origin offset in pixels
-   */
-  private calculateTransformOriginOffset(value: number, dimension: number): number {
-    // If value is between 0-100, treat as percentage
+  private calculateTransformOriginOffset(
+    value: number,
+    dimension: number
+  ): number {
     if (value >= 0 && value <= 100) {
-      return (value / 100) * dimension - (dimension / 2);
+      return (value / 100) * dimension - dimension / 2;
     }
-    // Otherwise treat as pixel value, center-relative
-    return value - (dimension / 2);
+    return value - dimension / 2;
   }
 
-  /**
-   * Check if rotation should be applied (avoid very small rotations)
-   */
   private shouldApplyRotation(matrix: number[]): boolean {
     if (matrix.length !== 6) return false;
     const [a, b] = matrix;
     const rotation = Math.atan2(b, a);
-    return Math.abs(rotation) > 0.01; // ~0.6 degrees threshold
+    return Math.abs(rotation) > 0.01;
   }
 
-  /**
-   * Check if scale should be applied (avoid identity scale)
-   */
   private shouldApplyScale(matrix: number[]): boolean {
     if (matrix.length !== 6) return false;
     const [a, b, c, d] = matrix;
@@ -1893,30 +2919,125 @@ export class NodeBuilder {
     return Math.abs(scaleX - 1) > 0.01 || Math.abs(scaleY - 1) > 0.01;
   }
 
-  /**
-   * Check if transform has complex components (skew, non-uniform scale)
-   */
   private hasComplexTransform(matrix: number[]): boolean {
-    if (matrix.length !== 6) return true; // 3D is always complex
+    if (matrix.length !== 6) return true;
     const [a, b, c, d] = matrix;
-    
-    // Check for skew (non-perpendicular axes)
+
     const crossProduct = a * c + b * d;
     const hasSkew = Math.abs(crossProduct) > 0.01;
-    
-    // Check for non-uniform scale
+
     const scaleX = Math.hypot(a, b);
     const scaleY = Math.hypot(c, d);
     const hasNonUniformScale = Math.abs(scaleX - scaleY) > 0.01;
-    
+
     return hasSkew || hasNonUniformScale;
+  }
+
+  private async bindVariablesToNode(
+    node: GeometryMixin & SceneNode,
+    data: any
+  ): Promise<void> {
+    if (!this.designTokensManager) return;
+
+    if (node.fills && Array.isArray(node.fills) && node.fills.length > 0) {
+      const fills = node.fills as Paint[];
+      for (let i = 0; i < fills.length; i++) {
+        const fill = fills[i];
+        if (fill.type === "SOLID" && "color" in fill) {
+          const matchingVariable = this.findMatchingColorVariable(
+            fill.color as RGB
+          );
+          if (matchingVariable) {
+            try {
+              const alias =
+                figma.variables.createVariableAlias(matchingVariable);
+              node.fills = [{ ...fill, color: alias as any }];
+              console.log(
+                `🔗 Bound fill on ${node.name} to variable ${matchingVariable.name}`
+              );
+              break;
+            } catch (error) {
+              console.warn(
+                `Failed to bind fill variable on ${node.name}:`,
+                error
+              );
+            }
+          }
+        }
+      }
+    }
+
+    if (
+      node.strokes &&
+      Array.isArray(node.strokes) &&
+      node.strokes.length > 0
+    ) {
+      const strokes = node.strokes as Paint[];
+      for (let i = 0; i < strokes.length; i++) {
+        const stroke = strokes[i];
+        if (stroke.type === "SOLID" && "color" in stroke) {
+          const matchingVariable = this.findMatchingColorVariable(
+            stroke.color as RGB
+          );
+          if (matchingVariable) {
+            try {
+              const alias =
+                figma.variables.createVariableAlias(matchingVariable);
+              node.strokes = [{ ...stroke, color: alias as any }];
+              console.log(
+                `🔗 Bound stroke on ${node.name} to variable ${matchingVariable.name}`
+              );
+              break;
+            } catch (error) {
+              console.warn(
+                `Failed to bind stroke variable on ${node.name}:`,
+                error
+              );
+            }
+          }
+        }
+      }
+    }
+  }
+
+  private findMatchingColorVariable(color: RGB): Variable | undefined {
+    if (!this.designTokensManager) return undefined;
+
+    const allVariables = Array.from(figma.variables.getLocalVariables());
+
+    const tolerance = 0.01;
+
+    for (const variable of allVariables) {
+      if (variable.resolvedType === "COLOR") {
+        const collection = figma.variables.getVariableCollectionById(
+          variable.variableCollectionId
+        );
+        if (collection && collection.modes.length > 0) {
+          const defaultMode = collection.modes[0];
+          const value = variable.valuesByMode[defaultMode.modeId];
+
+          if (value && typeof value === "object" && "r" in value) {
+            const varColor = value as RGBA;
+            if (
+              Math.abs(varColor.r - color.r) < tolerance &&
+              Math.abs(varColor.g - color.g) < tolerance &&
+              Math.abs(varColor.b - color.b) < tolerance
+            ) {
+              return variable;
+            }
+          }
+        }
+      }
+    }
+
+    return undefined;
   }
 
   private safeSetPluginData(node: SceneNode, key: string, value: string) {
     try {
       node.setPluginData(key, value);
     } catch {
-      // Ignore plugin data errors for nodes that cannot store plugin data (rare)
+      // Some node types can't store plugin data; ignore
     }
   }
 }

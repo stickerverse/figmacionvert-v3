@@ -1,0 +1,173 @@
+version: 1
+name: pixel-perfect-url-to-figma-builder
+description: >
+  AI-assisted URL→Figma builder that uses a CDP-based capture pipeline,
+  a normalized schema, and strict pixel-perfect rules to reconstruct webpages as Figma documents.
+
+meta:
+  owner: "Stephen"
+  project: "WebsiteToFigma"
+  target_fidelity: "near_pixel_perfect"
+  capture_engine: "CDP"
+  figma_context: "Figma plugin + Chrome extension"
+
+goals:
+  primary:
+    - "Given a URL and capture JSON, build a Figma file that visually matches the page as closely as Figma allows."
+  secondary:
+    - "Detect and report any fidelity gaps instead of guessing."
+    - "Continuously refine mapping code using the rulebook docs."
+
+docs:
+  root_dir: "./md_files"
+
+  rulebooks:
+    - id: pixel_rules
+      file: "PIXEL_PERFECT_RULESET.md"
+      purpose: "Non-negotiable laws for fidelity and error handling."
+      priority: highest
+
+    - id: dom_capture
+      file: "DOM_CAPTURE_PIPELINE.md"
+      purpose: "How to capture DOM, styles, layout via CDP."
+
+    - id: cdp_notes
+      file: "CDP_CAPTURE_NOTES.md"
+      purpose: "CDP domain usage, stabilization, and screenshot notes."
+
+    - id: css_normalization
+      file: "CSS_NORMALIZATION_RULES.md"
+      purpose: "Normalize computed CSS to a stable, schema-friendly shape."
+
+    - id: inheritance
+      file: "STYLE_INHERITANCE_ENGINE.md"
+      purpose: "How to resolve inherited styles so each node is self-contained."
+
+    - id: box_model
+      file: "BOX_MODEL_ALGORITHM.md"
+      purpose: "Map browser box model to Figma frame geometry."
+
+    - id: layout_mapping
+      file: "LAYOUT_MAPPING_TO_FIGMA.md"
+      purpose: "Map CSS layout (block/flex/grid/absolute) into Figma frames & auto layout."
+
+    - id: text_mapping
+      file: "TEXT_ENGINE_MAPPING.md"
+      purpose: "Map browser text rendering to Figma TextNodes, including ranges."
+
+    - id: assets
+      file: "ASSET_AND_IMAGE_EXTRACTION.md"
+      purpose: "Extract images, backgrounds, gradients; map to Figma image/gradient paints."
+
+    - id: svg_processing
+      file: "SVG_VECTOR_PROCESSING.md"
+      purpose: "Convert SVG to Figma VectorNodes."
+
+    - id: stacking
+      file: "STACKING_CONTEXTS_AND_ZINDEX.md"
+      purpose: "Compute painting order and map to Figma layer order."
+
+    - id: schema
+      file: "SCHEMA_DESIGN_AND_NORMALIZATION.md"
+      purpose: "Intermediate JSON schema between capture and Figma builder."
+
+    - id: figma_builder
+      file: "FIGMA_NODE_CREATION_ENGINE.md"
+      purpose: "How to create and configure Figma nodes from the schema."
+
+pipeline:
+  stages:
+    - id: capture
+      name: "CDP Capture"
+      docs: ["dom_capture", "cdp_notes", "pixel_rules"]
+      input: "url"
+      output: "raw_capture.json"
+      responsibilities:
+        - "Use CDP to stabilize and capture DOM, styles, box models, resources."
+        - "Return structured errors instead of partial data."
+
+    - id: normalize
+      name: "Normalization & Schema"
+      docs:
+        [
+          "css_normalization",
+          "inheritance",
+          "box_model",
+          "schema",
+          "pixel_rules",
+        ]
+      input: "raw_capture.json"
+      output: "schema.json"
+      responsibilities:
+        - "Normalize CSS values."
+        - "Resolve inheritance."
+        - "Embed layout box model."
+        - "Produce schema conforming to SCHEMA_DESIGN_AND_NORMALIZATION.md."
+
+    - id: semantics
+      name: "Layout & Semantics"
+      docs: ["layout_mapping", "stacking", "pixel_rules"]
+      input: "schema.json"
+      output: "schema_with_layout.json"
+      responsibilities:
+        - "Infer layoutMode, stacking contexts, constraints hints."
+        - "Annotate nodes with semantic info needed by the Figma builder."
+
+    - id: assets
+      name: "Assets & Vectors"
+      docs: ["assets", "svg_processing", "pixel_rules"]
+      input: "raw_capture.json"
+      output: "asset_manifest.json"
+      responsibilities:
+        - "Extract and dedupe images and SVGs."
+        - "Prepare image/vector data for Figma upload."
+
+    - id: figma_build
+      name: "Figma Node Creation"
+      docs:
+        [
+          "figma_builder",
+          "text_mapping",
+          "layout_mapping",
+          "box_model",
+          "stacking",
+          "pixel_rules",
+        ]
+      input:
+        - "schema_with_layout.json"
+        - "asset_manifest.json"
+      output: "figma_document"
+      responsibilities:
+        - "Create nodes, set geometry, apply styles and layout."
+        - "Ensure layer order respects stacking."
+        - "Log any fidelity gaps as errors, not guesses."
+
+agent_behavior:
+  priorities:
+    - "Follow PIXEL_PERFECT_RULESET.md first. Do not violate those constraints."
+    - "When unsure about layout or style, consult CSS_NORMALIZATION_RULES.md and LAYOUT_MAPPING_TO_FIGMA.md before inventing behavior."
+    - "Treat SCHEMA_DESIGN_AND_NORMALIZATION.md as the single source of truth for the schema shape."
+    - "Treat FIGMA_NODE_CREATION_ENGINE.md as the single source of truth for builder logic."
+
+  error_policy:
+    - "Never silently guess about missing data if it affects visible fidelity."
+    - "Emit explicit, structured errors that point to the nodeId and property."
+    - "If a stage fails, stop and return diagnostics rather than degraded output."
+
+  refactor_policy:
+    - "When modifying code, keep the architecture aligned with the 'pipeline.stages' defined above."
+    - "If a code path contradicts any rule in the docs section, prefer updating the code, not the rulebook (unless the rule is clearly wrong)."
+
+interfaces:
+  chrome_extension:
+    role: "Implements 'capture' stage using CDP."
+    outputs: ["raw_capture.json"]
+
+  backend_service:
+    role: "Implements 'normalize', 'semantics', and 'assets' stages."
+    outputs: ["schema.json", "schema_with_layout.json", "asset_manifest.json"]
+
+  figma_plugin:
+    role: "Implements 'figma_build' stage."
+    inputs: ["schema_with_layout.json", "asset_manifest.json"]
+    outputs: ["figma_document"]

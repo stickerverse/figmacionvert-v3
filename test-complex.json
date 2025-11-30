@@ -1,0 +1,150 @@
+{
+  "version": "1.0",
+  "metadata": {
+    "url": "http://test.complex",
+    "title": "Complex Styling Test",
+    "viewport": {
+      "width": 800,
+      "height": 600
+    }
+  },
+  "tree": {
+    "id": "root",
+    "type": "FRAME",
+    "name": "Complex Test Page",
+    "htmlTag": "body",
+    "layout": {
+      "x": 0,
+      "y": 0,
+      "width": 800,
+      "height": 600
+    },
+    "absoluteLayout": {
+      "left": 0,
+      "top": 0,
+      "width": 800,
+      "height": 600
+    },
+    "backgrounds": [
+      {
+        "type": "GRADIENT_LINEAR",
+        "gradientStops": [
+          { "position": 0, "color": { "r": 0, "g": 0, "b": 1, "a": 1 } },
+          { "position": 1, "color": { "r": 0, "g": 0.5, "b": 1, "a": 1 } }
+        ],
+        "gradientTransform": [
+          [0, 1, 0],
+          [-1, 0, 1]
+        ],
+        "visible": true
+      }
+    ],
+    "children": [
+      {
+        "id": "card",
+        "type": "RECTANGLE",
+        "name": "Shadow Card",
+        "htmlTag": "div",
+        "layout": {
+          "x": 100,
+          "y": 100,
+          "width": 300,
+          "height": 200
+        },
+        "absoluteLayout": {
+          "left": 100,
+          "top": 100,
+          "width": 300,
+          "height": 200
+        },
+        "backgrounds": [
+          {
+            "type": "SOLID",
+            "color": { "r": 1, "g": 1, "b": 1, "a": 1 },
+            "visible": true
+          }
+        ],
+        "cornerRadius": 16,
+        "effects": [
+          {
+            "type": "DROP_SHADOW",
+            "color": { "r": 0, "g": 0, "b": 0, "a": 0.25 },
+            "offset": { "x": 0, "y": 4 },
+            "radius": 10,
+            "spread": 0,
+            "visible": true
+          }
+        ],
+        "children": []
+      },
+      {
+        "id": "button",
+        "type": "RECTANGLE",
+        "name": "Blue Button",
+        "htmlTag": "button",
+        "layout": {
+          "x": 100,
+          "y": 350,
+          "width": 150,
+          "height": 50
+        },
+        "absoluteLayout": {
+          "left": 100,
+          "top": 350,
+          "width": 150,
+          "height": 50
+        },
+        "backgrounds": [
+          {
+            "type": "SOLID",
+            "color": { "r": 0, "g": 0.627, "b": 1, "a": 1 },
+            "visible": true
+          }
+        ],
+        "cornerRadius": 8,
+        "children": []
+      },
+      {
+        "id": "input",
+        "type": "RECTANGLE",
+        "name": "Input Field",
+        "htmlTag": "input",
+        "layout": {
+          "x": 300,
+          "y": 350,
+          "width": 200,
+          "height": 50
+        },
+        "absoluteLayout": {
+          "left": 300,
+          "top": 350,
+          "width": 200,
+          "height": 50
+        },
+        "backgrounds": [
+          {
+            "type": "SOLID",
+            "color": { "r": 1, "g": 1, "b": 1, "a": 1 },
+            "visible": true
+          }
+        ],
+        "strokes": [
+          {
+            "color": { "r": 0.8, "g": 0.8, "b": 0.8, "a": 1 },
+            "opacity": 1,
+            "visible": true
+          }
+        ],
+        "strokeWeight": 1,
+        "cornerRadius": 4,
+        "children": []
+      }
+    ]
+  },
+  "assets": {
+    "images": {},
+    "svgs": {},
+    "gradients": {}
+  },
+  "styles": {}
+}

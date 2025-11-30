@@ -90,6 +90,19 @@ export class TransformMatrixProcessor {
     const { name, args } = func;
 
     switch (name) {
+      case 'matrix3d': {
+        // Gracefully degrade 3D transforms to 2D by sampling the top-left 2x2 and translation
+        // matrix3d(a1, b1, c1, d1, a2, b2, c2, d2, a3, b3, c3, d3, a4, b4, c4)
+        // We treat a4, b4 as x/y translation and ignore z to avoid warnings.
+        const [
+          a1 = 1, b1 = 0, _c1 = 0, _d1 = 0,
+          a2 = 0, b2 = 1, _c2 = 0, _d2 = 0,
+          _a3 = 0, _b3 = 0, _c3 = 1, _d3 = 0,
+          tx = 0, ty = 0
+        ] = args;
+        return { a: a1, b: b1, c: a2, d: b2, e: tx, f: ty };
+      }
+      
       case 'translate':
         return this.createTranslateMatrix(args[0] || 0, args[1] || 0);
       

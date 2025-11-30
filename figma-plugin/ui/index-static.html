@@ -13,95 +13,192 @@
     body {
       font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
       font-size: 14px;
-      background: #ffffff;
-      color: #000000;
-      padding: 20px;
+      background: #f2f3f8;
+      color: #1f2430;
+      padding: 16px;
       width: 400px;
-      min-height: 300px;
+      min-height: 400px;
     }
 
     .container {
-      display: flex;
-      flex-direction: column;
-      gap: 20px;
+      background: white;
+      border-radius: 20px;
+      box-shadow: 0 10px 30px rgba(15, 23, 42, 0.12);
+      overflow: hidden;
     }
 
-    h1 {
-      font-size: 18px;
-      font-weight: 600;
-      color: #1f2937;
-      text-align: center;
-      margin-bottom: 10px;
+    /* Header with gradient */
+    .header {
+      background: linear-gradient(135deg, #0f141d 0%, #1b1f2e 60%, #111521 100%);
+      padding: 24px;
+      position: relative;
+      overflow: hidden;
+      color: white;
+    }
+
+    .header::after {
+      content: '';
+      position: absolute;
+      inset: 0;
+      background: radial-gradient(circle at 30% 10%, rgba(255, 255, 255, 0.08), transparent 45%);
+      pointer-events: none;
+    }
+
+    .header-brand {
+      position: relative;
+      z-index: 1;
+    }
+
+    .brand-html {
+      display: block;
+      font-size: 28px;
+      font-weight: 700;
+      letter-spacing: 0.12em;
+      color: transparent;
+      background: linear-gradient(90deg, #58b4ff 0%, #3273ff 100%);
+      -webkit-background-clip: text;
+      background-clip: text;
+      text-transform: uppercase;
+    }
+
+    .brand-figma {
+      display: block;
+      margin-top: 4px;
+      font-size: 26px;
+      font-weight: 800;
+      color: #f4f6ff;
     }
 
     .status {
       padding: 12px 16px;
-      border-radius: 8px;
+      border-radius: 10px;
       text-align: center;
       font-weight: 500;
-      margin-bottom: 20px;
+      margin: 16px;
+      font-size: 13px;
     }
 
     .status.info {
-      background: #f3f4f6;
-      color: #374151;
+      background: rgba(96, 165, 250, 0.1);
+      color: #1e3a8a;
+      border: 1px solid rgba(96, 165, 250, 0.2);
     }
 
     .status.success {
-      background: #d1fae5;
+      background: rgba(52, 211, 153, 0.1);
       color: #065f46;
+      border: 1px solid rgba(52, 211, 153, 0.2);
     }
 
     .status.error {
-      background: #fee2e2;
+      background: rgba(248, 113, 113, 0.1);
       color: #991b1b;
+      border: 1px solid rgba(248, 113, 113, 0.2);
     }
 
+    /* Progress Ring */
     .progress-section {
-      margin-bottom: 20px;
+      padding: 32px 24px;
+      text-align: center;
     }
 
     .progress-section.hidden {
       display: none;
     }
 
-    .progress-bar {
-      width: 100%;
-      height: 6px;
-      background: #e5e7eb;
-      border-radius: 3px;
-      overflow: hidden;
-      margin-bottom: 8px;
-    }
-
-    .progress-fill {
-      height: 100%;
-      background: #6366f1;
-      width: 0%;
-    }
-
-    .progress-text {
-      font-size: 12px;
-      color: #6b7280;
-      text-align: center;
-    }
-
-    .upload-section {
-      padding: 20px;
-      border: 2px dashed #d1d5db;
-      border-radius: 8px;
-      text-align: center;
-      cursor: pointer;
+    .progress-ring-container {
+      position: relative;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 140px;
+      height: 140px;
       margin-bottom: 16px;
     }
 
+    .progress-ring {
+      transform: rotate(-90deg);
+      width: 140px;
+      height: 140px;
+    }
+
+    .progress-ring-bg {
+      fill: none;
+      stroke: #e5e7eb;
+      stroke-width: 10;
+    }
+
+    .progress-ring-fill {
+      fill: none;
+      stroke: url(#progress-gradient);
+      stroke-width: 10;
+      stroke-linecap: round;
+      stroke-dasharray: 401.07; /* 2 * PI * 64 */
+      stroke-dashoffset: 401.07;
+      transition: stroke-dashoffset 0.5s ease;
+    }
+
+    .progress-ring-fill.complete {
+      stroke: #34d399;
+    }
+
+    .progress-ring-fill.active {
+      animation: ring-glow 2s ease-in-out infinite;
+    }
+
+    @keyframes ring-glow {
+      0%, 100% { filter: drop-shadow(0 0 6px rgba(102, 126, 234, 0.6)); }
+      50% { filter: drop-shadow(0 0 12px rgba(102, 126, 234, 1)); }
+    }
+
+    .progress-text {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      text-align: center;
+    }
+
+    .progress-percent {
+      font-size: 32px;
+      font-weight: 700;
+      color: #1f2430;
+      line-height: 1;
+      margin-bottom: 4px;
+    }
+
+    .progress-label {
+      font-size: 13px;
+      color: #6b7280;
+      font-weight: 500;
+    }
+
+    .progress-icon {
+      font-size: 48px;
+      line-height: 1;
+    }
+
+    .progress-icon.success {
+      color: #34d399;
+    }
+
+    .upload-section {
+      padding: 24px;
+      margin: 16px;
+      border: 2px dashed #d1d5db;
+      border-radius: 12px;
+      text-align: center;
+      cursor: pointer;
+      transition: all 0.2s ease;
+    }
+
     .upload-section:hover {
-      border-color: #6366f1;
+      border-color: #667eea;
       background: #fafafa;
     }
 
     .upload-section.has-file {
-      border-color: #10b981;
+      border-color: #34d399;
       background: #f0fdf4;
       border-style: solid;
     }
@@ -110,6 +207,7 @@
       font-size: 14px;
       color: #6b7280;
       margin-bottom: 4px;
+      font-weight: 500;
     }
 
     .upload-hint {
@@ -125,10 +223,11 @@
       margin-top: 12px;
       font-size: 12px;
       color: #059669;
-      font-weight: 500;
+      font-weight: 600;
     }
 
     .import-actions {
+      padding: 0 16px 20px;
       display: flex;
       flex-direction: column;
       gap: 12px;
@@ -136,16 +235,17 @@
 
     .btn {
       width: 100%;
-      padding: 12px 16px;
+      padding: 14px 20px;
       border: none;
-      border-radius: 8px;
+      border-radius: 10px;
       font-size: 14px;
-      font-weight: 500;
+      font-weight: 600;
       cursor: pointer;
       display: flex;
       align-items: center;
       justify-content: center;
       gap: 8px;
+      transition: all 0.2s ease;
     }
 
     .btn:disabled {
@@ -154,28 +254,19 @@
     }
 
     .btn-primary {
-      background: #6366f1;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
       color: white;
+      box-shadow: 0 4px 12px rgba(102, 126, 234, 0.3);
     }
 
     .btn-primary:hover:not(:disabled) {
-      background: #4f46e5;
-    }
-
-    .btn-secondary {
-      background: #f3f4f6;
-      color: #374151;
-      border: 1px solid #d1d5db;
-    }
-
-    .btn-secondary:hover:not(:disabled) {
-      background: #e5e7eb;
+      transform: translateY(-2px);
+      box-shadow: 0 6px 16px rgba(102, 126, 234, 0.4);
     }
 
     .connection-panel {
-      border: 1px solid #e5e7eb;
-      border-radius: 10px;
-      padding: 12px 16px;
+      border-top: 1px solid #e5e7eb;
+      padding: 16px 24px;
       background: #f9fafb;
     }
 
@@ -183,13 +274,16 @@
       display: flex;
       justify-content: space-between;
       align-items: center;
-      margin-bottom: 10px;
-      font-weight: 500;
+      margin-bottom: 12px;
+      font-weight: 600;
       color: #374151;
+      font-size: 12px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
     }
 
     .connection-state-label {
-      font-size: 12px;
+      font-size: 11px;
       color: #6b7280;
     }
 
@@ -203,35 +297,45 @@
       display: flex;
       align-items: center;
       gap: 8px;
-      padding: 8px 10px;
+      padding: 10px;
       border-radius: 8px;
-      border: 1px dashed #d1d5db;
+      border: 1px solid #e5e7eb;
       font-size: 12px;
       color: #6b7280;
+      background: white;
+      font-weight: 500;
     }
 
     .connection-light .light-dot {
-      width: 12px;
-      height: 12px;
+      width: 10px;
+      height: 10px;
       border-radius: 50%;
       background: #d1d5db;
-      box-shadow: inset 0 0 0 2px #fff;
+      transition: all 0.3s ease;
     }
 
-    .connection-light.active {
-      background: #ffffff;
-      border-style: solid;
-      color: #111827;
+    .connection-light.active .light-dot {
+      background: #34d399;
+      box-shadow: 0 0 8px rgba(52, 211, 153, 0.6);
+      animation: pulse-dot 2s ease-in-out infinite;
     }
 
-    .connection-light.positive.active .light-dot {
-      background: #10b981;
-    }
-
-    .connection-light.negative.active .light-dot {
-      background: #ef4444;
+    @keyframes pulse-dot {
+      0%, 100% { box-shadow: 0 0 8px rgba(52, 211, 153, 0.6); }
+      50% { box-shadow: 0 0 16px rgba(52, 211, 153, 0.9); }
     }
   
+    .connection-message {
+      font-size: 12px;
+      color: #fb923c;
+      background: rgba(251, 146, 60, 0.1);
+      border: 1px solid rgba(251, 146, 60, 0.2);
+      padding: 8px 12px;
+      border-radius: 6px;
+      text-align: center;
+      margin-top: 12px;
+    }
+
     .hidden {
       display: none !important;
     }
@@ -239,33 +343,54 @@
 </head>
 <body>
   <div class="container">
-    <h1>🎨 Web to Figma</h1>
+    <!-- Header matching extension -->
+    <div class="header">
+      <div class="header-brand">
+        <span class="brand-html">HTML</span>
+        <span class="brand-figma">Figma</span>
+      </div>
+    </div>
     
     <div id="status" class="status info">Ready to import</div>
 
-    <div class="connection-panel">
-      <div class="connection-panel-header">
-        <span>Connection</span>
-        <span id="connection-state-label" class="connection-state-label">Negative</span>
-      </div>
-      <div class="connection-lights">
-        <div class="connection-light negative active" data-connection="negative">
-          <span class="light-dot"></span>
-          <span>Negative</span>
-        </div>
-        <div class="connection-light positive" data-connection="positive">
-          <span class="light-dot"></span>
-          <span>Positive</span>
+    <!-- Progress Section with Circular Ring -->
+    <div id="progress-section" class="progress-section hidden">
+      <div class="progress-ring-container">
+        <svg class="progress-ring" width="140" height="140">
+          <defs>
+            <linearGradient id="progress-gradient" x1="0%" y1="0%" x2="100%" y2="100%">
+              <stop offset="0%" stop-color="#667eea"/>
+              <stop offset="100%" stop-color="#764ba2"/>
+            </linearGradient>
+          </defs>
+          <circle class="progress-ring-bg" cx="70" cy="70" r="64"></circle>
+          <circle id="progress-ring-fill" class="progress-ring-fill" cx="70" cy="70" r="64"></circle>
+        </svg>
+        <div class="progress-text">
+          <div id="progress-percent" class="progress-percent">0%</div>
+          <div id="progress-label" class="progress-label">Processing...</div>
         </div>
       </div>
     </div>
 
-    <!-- Progress Indicator (no animations) -->
-    <div id="progress-section" class="progress-section hidden">
-      <div class="progress-bar">
-        <div id="progress-fill" class="progress-fill"></div>
+    <!-- Connection Panel -->
+    <div class="connection-panel">
+      <div class="connection-panel-header">
+        <span>Connection Status</span>
       </div>
-      <div id="progress-text" class="progress-text">Processing...</div>
+      <div class="connection-lights">
+        <div class="connection-light" data-connection="extension" id="connection-extension">
+          <span class="light-dot"></span>
+          <span>Extension</span>
+        </div>
+        <div class="connection-light" data-connection="server" id="connection-server">
+          <span class="light-dot"></span>
+          <span>Server</span>
+        </div>
+      </div>
+      <div id="connection-message" class="connection-message hidden">
+        Waiting for Extension...
+      </div>
     </div>
 
     <!-- File Upload (no animations) -->
@@ -291,44 +416,95 @@
     // DOM elements
     const statusEl = document.getElementById('status');
     const progressSection = document.getElementById('progress-section');
-    const progressFill = document.getElementById('progress-fill');
-    const progressText = document.getElementById('progress-text');
+    const progressRingFill = document.getElementById('progress-ring-fill');
+    const progressPercent = document.getElementById('progress-percent');
+    const progressLabel = document.getElementById('progress-label');
     const uploadSection = document.getElementById('upload-section');
     const fileInput = document.getElementById('file-input');
     const fileNameEl = document.getElementById('file-name');
     const importBtn = document.getElementById('import-btn');
-    const positiveLight = document.querySelector('[data-connection="positive"]');
-    const negativeLight = document.querySelector('[data-connection="negative"]');
-    const connectionStateLabel = document.getElementById('connection-state-label');
+    const extensionLight = document.getElementById('connection-extension');
+    const serverLight = document.getElementById('connection-server');
+    const connectionMessage = document.getElementById('connection-message');
 
-    function setConnectionState(state) {
-      if (state === 'positive') {
-        positiveLight.classList.add('active');
-        negativeLight.classList.remove('active');
-        connectionStateLabel.textContent = 'Positive';
+    // Track last-seen timestamps so transient gaps don't immediately clear lights
+    let lastExtensionSeen = 0;
+    let lastServerSeen = 0;
+    const CONNECTION_TTL_MS = 120_000; // keep lights green if seen within the last two minutes
+
+    function updateIndicators() {
+      const now = Date.now();
+      const extensionConnected = now - lastExtensionSeen < CONNECTION_TTL_MS;
+      const serverConnected = now - lastServerSeen < CONNECTION_TTL_MS;
+
+      if (extensionConnected) {
+        extensionLight.classList.add('active');
       } else {
-        negativeLight.classList.add('active');
-        positiveLight.classList.remove('active');
-        connectionStateLabel.textContent = 'Negative';
+        extensionLight.classList.remove('active');
+      }
+
+      if (serverConnected) {
+        serverLight.classList.add('active');
+      } else {
+        serverLight.classList.remove('active');
+      }
+
+      // Update message visibility
+      if (extensionConnected) {
+        connectionMessage.classList.add('hidden');
+      } else {
+        connectionMessage.classList.remove('hidden');
+        connectionMessage.textContent = 'Waiting for Extension...';
       }
     }
+
+    function markConnection(type, connected) {
+      const now = Date.now();
+      if (connected) {
+        if (type === 'extension') lastExtensionSeen = now;
+        if (type === 'server') lastServerSeen = now;
+      } else {
+        if (type === 'extension') lastExtensionSeen = 0;
+        if (type === 'server') lastServerSeen = 0;
+      }
+      updateIndicators();
+    }
+
+    // Backward-compatible helper for existing calls
+    function setConnectionState(type, connected) {
+      markConnection(type, connected);
+    }
     
-    // Update status display (no animations)
+    // Update status display
     function updateStatus(message, type = 'info') {
       statusEl.textContent = message;
       statusEl.className = `status ${type}`;
     }
 
-    // Update progress (no animations)
+    // Update progress with circular ring
     function updateProgress(percent, message = '') {
       if (percent > 0) {
         progressSection.classList.remove('hidden');
-        progressFill.style.width = `${percent}%`;
+        
+        // Update circular progress ring
+        const circumference = 2 * Math.PI * 64; // radius = 64
+        const offset = circumference - (percent / 100) * circumference;
+        progressRingFill.style.strokeDashoffset = offset;
+        
+        if (percent >= 100) {
+          progressRingFill.classList.add('complete');
+        } else if (percent > 0) {
+          progressRingFill.classList.add('active');
+        }
+        
+        progressPercent.textContent = `${Math.round(percent)}%`;
+        
         if (message) {
-          progressText.textContent = message;
+          progressLabel.textContent = message;
         }
       } else {
         progressSection.classList.add('hidden');
+        progressRingFill.classList.remove('active', 'complete');
       }
     }
 
@@ -403,24 +579,59 @@
     });
 
     // Handle messages from plugin backend (no animations)
-    onmessage = (event) => {
+    onmessage = async (event) => { // Added 'async' keyword here
       const msg = event.data.pluginMessage;
       
+      if (msg.type === 'report-to-runner') {
+        const summary = msg.summary;
+        console.log('📨 Forwarding build summary to agent runner...', summary);
+        
+        try {
+          await fetch('http://localhost:5050/figma-report', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(summary)
+          });
+          console.log('✅ Build summary sent to agent runner');
+          
+          // Show success status in UI
+          const statusEl = document.getElementById('status');
+          if (statusEl) {
+            statusEl.textContent = 'Build reported to agent runner';
+            statusEl.className = 'status success';
+          }
+        } catch (err) {
+          console.error('❌ Failed to report to agent runner:', err);
+          const statusEl = document.getElementById('status');
+          if (statusEl) {
+            statusEl.textContent = 'Failed to report to agent runner';
+            statusEl.className = 'status error';
+          }
+        }
+        return; // Stop further processing for this message type
+      }
+
+      if (msg.type === 'update-status') {
+        updateStatus(msg.message, msg.statusType);
+        return; // Stop further processing for this message type
+      }
+
       switch (msg.type) {
         case 'auto-import-ready':
           updateStatus('🔄 Checking for captures...', 'info');
-          setConnectionState('negative');
+          setConnectionState('extension', false);
+          setConnectionState('server', false);
           break;
 
         case 'auto-import-data':
           currentData = msg.data;
           currentWTFFile = null;
           uploadSection.classList.add('has-file');
-          fileNameEl.textContent = '⚡ Auto-imported';
+          fileNameEl.textContent = '⚡ Auto-imported from extension';
           fileNameEl.classList.remove('hidden');
           importBtn.disabled = false;
-          updateStatus('✅ Auto-import ready', 'success');
-          setConnectionState('positive');
+          updateStatus('✅ Capture received from extension!', 'success');
+          setConnectionState('extension', true);
           
           // Auto-trigger import
           setTimeout(() => {
@@ -430,12 +641,41 @@
 
         case 'handoff-status':
           if (msg.status === 'waiting') {
-            setConnectionState('negative');
+            // Waiting means connected to server but no job
+            // Do not reset connection states here, as they are managed by
+            // server-connected and chrome-extension-connected messages
           } else if (msg.status === 'job-ready') {
-            setConnectionState('positive');
+            setConnectionState('extension', true);
+            setConnectionState('server', true);
           } else {
-            setConnectionState('negative');
+            setConnectionState('extension', false);
+            setConnectionState('server', false);
+            
+            // Show error in connection message
+            if (msg.detail) {
+              const connectionMessage = document.getElementById('connection-message');
+              if (connectionMessage) {
+                connectionMessage.textContent = `Server Error: ${msg.detail}`;
+                connectionMessage.classList.remove('hidden');
+              }
+            }
           }
+          break;
+
+        case 'chrome-extension-connected':
+          setConnectionState('extension', true);
+          break;
+
+        case 'chrome-extension-disconnected':
+          setConnectionState('extension', false);
+          break;
+
+        case 'server-connected':
+          setConnectionState('server', true);
+          break;
+
+        case 'server-disconnected':
+          setConnectionState('server', false);
           break;
 
         case 'progress':
@@ -457,7 +697,6 @@
           updateStatus(`❌ ${msg.message}`, 'error');
           updateProgress(0);
           importBtn.disabled = false;
-          setConnectionState('negative');
           break;
 
         case 'import-busy':
@@ -466,10 +705,58 @@
       }
     };
 
+    // Poll handoff health directly from the UI so lights update even if a message is missed
+    async function pollHandoffHealth() {
+      // DISABLED: Rely on code.ts to handle connection status to avoid conflicts
+      // The UI polling was failing on 127.0.0.1 and overriding the success from code.ts
+      /*
+      try {
+        const response = await fetch('http://127.0.0.1:5511/api/health?source=plugin-ui', {
+          headers: { 'cache-control': 'no-cache' }
+        });
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        const data = await response.json();
+        const telemetry = data.telemetry || {};
+        const now = Date.now();
+
+        const hasExtensionHeartbeat =
+          typeof telemetry.lastExtensionPingAt === 'number' && now - telemetry.lastExtensionPingAt < CONNECTION_TTL_MS;
+        const hasPluginPoll =
+          typeof telemetry.lastPluginPollAt === 'number' && now - telemetry.lastPluginPollAt < CONNECTION_TTL_MS;
+
+        markConnection('extension', hasExtensionHeartbeat);
+        markConnection('server', response.ok && hasPluginPoll);
+      } catch (error) {
+        markConnection('extension', false);
+        markConnection('server', false);
+      }
+      */
+    }
+
     // Initialize
     updateStatus('Ready to import');
-    setConnectionState('negative');
+    // Optimistically show green lights to avoid gray flash while polling starts
+    markConnection('extension', true);
+    markConnection('server', true);
     console.log('Static Web to Figma plugin loaded');
+    
+    // Notify backend that UI is ready to receive messages
+    parent.postMessage({ pluginMessage: { type: 'ui-ready' } }, '*');
+
+    // DEBUG: Override onmessage to show what we receive
+    const originalOnMessage = onmessage;
+    onmessage = async (event) => {
+      const msg = event.data.pluginMessage;
+      if (msg && msg.type) {
+        // Show last message type in status for debugging
+        if (msg.type !== 'progress') {
+           // updateStatus(`Msg: ${msg.type}`, 'info');
+        }
+      }
+      if (originalOnMessage) {
+        await originalOnMessage(event);
+      }
+    };
   </script>
 </body>
 </html>
