@@ -5,10 +5,22 @@ const puppeteer = require('puppeteer');
 const fs = require('fs');
 const https = require('https');
 const path = require('path');
-const { createVisionAnalyzer } = require('./vision-analyzer');
-const { extractColorPalette } = require('./color-analyzer');
-const { analyzeTypography, analyzeSpacing } = require('./typography-analyzer');
-const { detectComponents: yoloDetect } = require('./yolo-detector');
+// Optional AI analyzers - load gracefully
+let createVisionAnalyzer, extractColorPalette, analyzeTypography, analyzeSpacing, yoloDetect;
+try {
+  createVisionAnalyzer = require('./vision-analyzer.cjs').createVisionAnalyzer;
+} catch (e) { createVisionAnalyzer = () => ({ extractTextFromImage: async () => ({ words: [], fullText: '', confidence: 0, duration: 0 }), analyzeScreenshot: async () => ({ components: [], summary: {} }), cleanup: async () => {} }); console.warn('[handoff] vision-analyzer not available'); }
+try {
+  extractColorPalette = require('./color-analyzer.cjs').extractColorPalette;
+} catch (e) { extractColorPalette = async () => ({ theme: 'light', tokens: {}, css: '', palette: {} }); console.warn('[handoff] color-analyzer not available'); }
+try {
+  const typo = require('./typography-analyzer.cjs');
+  analyzeTypography = typo.analyzeTypography;
+  analyzeSpacing = typo.analyzeSpacing;
+} catch (e) { analyzeTypography = () => ({ typeScale: { scale: 'unknown', ratio: 1, baseSize: 16, roles: {} }, families: [], tokens: {} }); analyzeSpacing = () => ({ base: 8, scale: [] }); console.warn('[handoff] typography-analyzer not available'); }
+try {
+  yoloDetect = require('./yolo-detector.cjs').detectComponents;
+} catch (e) { yoloDetect = async () => ({ detections: [], summary: { total: 0, byType: {} }, imageSize: {}, duration: 0 }); console.warn('[handoff] yolo-detector not available'); }
 
 const HOST = process.env.HANDOFF_HOST || '0.0.0.0';
 const PORT = process.env.HANDOFF_PORT ? Number(process.env.HANDOFF_PORT) : 4411;

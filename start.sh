@@ -63,7 +63,7 @@ trap cleanup SIGINT SIGTERM
 
 # Start Handoff Server
 echo -e "${BLUE}🚀 Starting Handoff Server on port 4411...${NC}"
-node handoff-server.js &
+node handoff-server.cjs &
 HANDOFF_PID=$!
 echo -e "${GREEN}✅ Handoff Server started (PID: $HANDOFF_PID)${NC}"
 
