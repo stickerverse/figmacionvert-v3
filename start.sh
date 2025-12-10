@@ -33,15 +33,21 @@ echo -e "${BLUE}║      Web to Figma - Starting Services      ║${NC}"
 echo -e "${BLUE}╚════════════════════════════════════════════╝${NC}"
 echo ""
 
-# Check if node_modules exist
-if [ ! -d "node_modules" ]; then
-  echo -e "${YELLOW}📦 Installing root dependencies...${NC}"
-  npm install
+# Install all dependencies
+echo -e "${YELLOW}📦 Installing root dependencies...${NC}"
+npm install
+
+echo -e "${YELLOW}📦 Installing Chrome extension dependencies...${NC}"
+cd chrome-extension && npm install && cd ..
+
+if [ -d "capture-service" ]; then
+  echo -e "${YELLOW}📦 Installing Capture Service dependencies...${NC}"
+  cd capture-service && npm install && cd ..
 fi
 
-if [ ! -d "chrome-extension/node_modules" ]; then
-  echo -e "${YELLOW}📦 Installing Chrome extension dependencies...${NC}"
-  cd chrome-extension && npm install && cd ..
+if [ -d "figma-plugin" ]; then
+  echo -e "${YELLOW}📦 Installing Figma Plugin dependencies...${NC}"
+  cd figma-plugin && npm install 2>/dev/null || true && cd ..
 fi
 
 # Build Chrome extension first

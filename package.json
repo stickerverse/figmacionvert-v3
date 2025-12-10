@@ -1,0 +1,33 @@
+{
+  "name": "figmacionvert",
+  "version": "1.0.0",
+  "description": "Web to Figma - Full stack page capture and import",
+  "private": true,
+  "type": "commonjs",
+  "scripts": {
+    "start": "./start.sh",
+    "install:all": "npm install && cd chrome-extension && npm install && cd ../capture-service && npm install && cd ../figma-plugin && npm install",
+    "build:extension": "cd chrome-extension && npm run build",
+    "build:plugin": "cd figma-plugin && npm run build",
+    "build:all": "npm run build:extension && npm run build:plugin"
+  },
+  "dependencies": {
+    "express": "^4.18.2",
+    "cors": "^2.8.5",
+    "uuid": "^9.0.0",
+    "puppeteer": "^21.0.0",
+    "tesseract.js": "^5.0.0",
+    "sharp": "^0.33.0",
+    "@tensorflow/tfjs": "^4.0.0",
+    "@tensorflow/tfjs-node": "^4.0.0",
+    "@tensorflow-models/coco-ssd": "^2.2.0",
+    "node-vibrant": "^3.2.0",
+    "chroma-js": "^2.4.0"
+  },
+  "devDependencies": {},
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "author": "",
+  "license": "MIT"
+}
