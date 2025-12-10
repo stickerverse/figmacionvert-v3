@@ -9,7 +9,7 @@
  * 5. Color token generation for Figma
  */
 
-const Vibrant = require('node-vibrant/node').default;
+const { Vibrant } = require('node-vibrant/node');
 const chroma = require('chroma-js');
 
 /**

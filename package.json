@@ -21,7 +21,7 @@
     "@tensorflow/tfjs": "^4.0.0",
     "@tensorflow/tfjs-node": "^4.0.0",
     "@tensorflow-models/coco-ssd": "^2.2.0",
-    "node-vibrant": "^3.2.0",
+    "node-vibrant": "^4.0.0",
     "chroma-js": "^2.4.0"
   },
   "devDependencies": {},
