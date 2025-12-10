@@ -301,6 +301,23 @@ async function handleImportRequest(
     }
   }
 
+  // ENFORCE PUPPETEER-ONLY ARCHITECTURE: Reject schemas not from Puppeteer pipeline
+  const captureEngine =
+    schema.meta?.captureEngine || schema.metadata?.captureEngine;
+  if (captureEngine && captureEngine !== "puppeteer") {
+    console.warn(`⚠️ Rejecting schema with captureEngine: ${captureEngine}`);
+    figma.ui.postMessage({
+      type: "error",
+      message: `This schema was created by "${captureEngine}" but only Puppeteer captures are supported. Please recapture using the extension.`,
+    });
+    isImporting = false;
+    return;
+  }
+  // Log if Puppeteer engine confirmed
+  if (captureEngine === "puppeteer") {
+    console.log("✅ Puppeteer capture engine confirmed");
+  }
+
   if (!schema.tree) {
     console.error("❌ No tree data available for import. Data structure:", {
       hasData: !!schema,
@@ -318,26 +335,6 @@ async function handleImportRequest(
     });
     isImporting = false;
     return;
-  }
-
-  // ===== ENFORCED: Puppeteer Engine Validation =====
-  // All schemas must come from Puppeteer capture, not direct extension injection
-  const captureEngine = schema.meta?.captureEngine;
-  if (captureEngine && captureEngine !== "puppeteer") {
-    console.warn(`⚠️ Schema from non-Puppeteer engine: ${captureEngine}`);
-    // For now, log warning but allow - strict mode can be enabled later
-    // To enforce strictly, uncomment the block below:
-    /*
-    figma.ui.postMessage({
-      type: "error",
-      message: `Only Puppeteer captures are supported. Got: ${captureEngine}`,
-    });
-    isImporting = false;
-    return;
-    */
-  }
-  if (captureEngine === "puppeteer") {
-    console.log("✅ Schema verified: captureEngine=puppeteer");
   }
 
   const resolvedOptions: ImportOptions = {
