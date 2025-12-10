@@ -582,9 +582,14 @@ export class FigmaImporter {
       };
     }
     const layout = this.data?.tree?.layout || {};
+    const viewport = this.data?.metadata?.viewport || {};
+    // Some captures report a 0-height root; fall back to viewport dimensions so the main frame
+    // has sensible bounds and children aren’t drawn into a 1px canvas.
+    const widthFallback = viewport.width || 1;
+    const heightFallback = viewport.height || 1;
     return {
-      width: Math.max(layout.width || 1, 1),
-      height: Math.max(layout.height || 1, 1),
+      width: Math.max(layout.width || widthFallback, 1),
+      height: Math.max(layout.height || heightFallback, 1),
     };
   }
 
@@ -921,6 +926,11 @@ export class FigmaImporter {
       `🎯 Layout analysis complete: ${layoutSolution.length} nodes solved`
     );
 
+    // Position this import to the right of existing frames on the page to avoid overlap
+    const nextPos = this.getNextImportPosition(rootBounds.width, rootBounds.height);
+    mainFrame.x = nextPos.x;
+    mainFrame.y = nextPos.y;
+
     // Step 2: Create screenshot overlay for reference (if enabled)
     if (this.options.createScreenshotOverlay && this.data.screenshot) {
       this.reportProgress(34, "Creating reference overlay...", "Overlay");
@@ -991,6 +1001,35 @@ export class FigmaImporter {
     });
 
     return mainFrame;
+  }
+
+  /**
+   * Compute where to place the next imported frame so it does not overlap
+   * previous imports. We lay frames out in a single row to the right with spacing.
+   */
+  private getNextImportPosition(
+    width: number,
+    height: number
+  ): { x: number; y: number } {
+    const page = figma.currentPage;
+    const siblings = page.children.filter(
+      (n) => n.type === "FRAME" || n.type === "COMPONENT" || n.type === "INSTANCE"
+    ) as Array<FrameNode | ComponentNode | InstanceNode>;
+
+    if (!siblings.length) {
+      return { x: 0, y: 0 };
+    }
+
+    let maxRight = 0;
+    let minY = 0;
+    siblings.forEach((n) => {
+      const right = n.x + n.width;
+      if (right > maxRight) maxRight = right;
+      if (n.y < minY) minY = n.y;
+    });
+
+    const padding = 200; // space between imports
+    return { x: maxRight + padding, y: minY };
   }
 
   private async addScreenshotReference(frame: FrameNode, screenshot?: string) {

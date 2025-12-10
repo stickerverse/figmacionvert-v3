@@ -178,6 +178,12 @@ export class NodeBuilder {
   async createNode(nodeData: any): Promise<SceneNode | null> {
     if (!nodeData) return null;
 
+    if (nodeData.embed?.type) {
+      const embedNode = await this.createEmbedPlaceholder(nodeData);
+      await this.afterCreate(embedNode, nodeData, { reuseComponent: false });
+      return embedNode;
+    }
+
     if (nodeData.componentSignature) {
       const registered = this.componentManager.getComponentBySignature(
         nodeData.componentSignature
@@ -265,6 +271,89 @@ export class NodeBuilder {
     return rect;
   }
 
+  private async createEmbedPlaceholder(data: any): Promise<FrameNode> {
+    if (!data.autoLayout) {
+      data.autoLayout = {
+        layoutMode: "VERTICAL",
+        primaryAxisAlignItems: "CENTER",
+        counterAxisAlignItems: "CENTER",
+        itemSpacing: 6,
+        paddingTop: 12,
+        paddingBottom: 12,
+        paddingLeft: 12,
+        paddingRight: 12,
+      };
+    }
+
+    const frame = figma.createFrame();
+    frame.name = `${data.name || "Embed"} (${data.embed?.type || "embed"})`;
+    frame.resize(
+      Math.max(data.layout?.width || 160, 40),
+      Math.max(data.layout?.height || 90, 40)
+    );
+    frame.layoutMode = "VERTICAL";
+    frame.primaryAxisAlignItems = "CENTER";
+    frame.counterAxisAlignItems = "CENTER";
+    frame.itemSpacing = 6;
+    frame.paddingTop = 12;
+    frame.paddingBottom = 12;
+    frame.paddingLeft = 12;
+    frame.paddingRight = 12;
+    frame.strokes = [
+      { type: "SOLID", color: { r: 0.36, g: 0.43, b: 0.64 }, opacity: 0.4 },
+    ];
+    frame.fills = [
+      {
+        type: "SOLID",
+        color: { r: 0.93, g: 0.95, b: 0.99 },
+        opacity: 1,
+      },
+    ];
+    frame.cornerRadius = 10;
+
+    try {
+      await figma.loadFontAsync({ family: "Inter", style: "Semi Bold" });
+      await figma.loadFontAsync({ family: "Inter", style: "Regular" });
+    } catch (e) {
+      console.warn("Font load failed for embed placeholder", e);
+    }
+
+    const title = figma.createText();
+    title.characters = (data.embed?.type || "Embed").toUpperCase();
+    title.fontSize = 12;
+    title.fontName = { family: "Inter", style: "Semi Bold" };
+    title.fills = [
+      { type: "SOLID", color: { r: 0.24, g: 0.29, b: 0.46 }, opacity: 1 },
+    ];
+
+    const subtitle = figma.createText();
+    const srcLabel = data.embed?.src
+      ? data.embed.src.slice(0, 60)
+      : "External content";
+    subtitle.characters = srcLabel;
+    subtitle.fontSize = 11;
+    subtitle.fontName = { family: "Inter", style: "Regular" };
+    subtitle.fills = [
+      { type: "SOLID", color: { r: 0.35, g: 0.41, b: 0.55 }, opacity: 1 },
+    ];
+
+    frame.appendChild(title);
+    frame.appendChild(subtitle);
+
+    this.safeSetPluginData(
+      frame,
+      "embed",
+      JSON.stringify({
+        ...data.embed,
+        htmlTag: data.htmlTag,
+        id: data.id,
+        sourceUrl: data.embed?.src,
+      })
+    );
+
+    return frame;
+  }
+
   private async createText(data: any): Promise<TextNode> {
     const text = figma.createText();
     text.name = data.name || "Text";
@@ -273,13 +362,16 @@ export class NodeBuilder {
 
     if (data.textStyle) {
       const fontStyle = this.mapFontWeight(data.textStyle.fontWeight);
+      const isItalic = (data.textStyle.fontStyle || "")
+        .toLowerCase()
+        .includes("italic");
       let fontFamily = data.textStyle.fontFamily;
-      let finalFontStyle = fontStyle;
+      let finalFontStyle = isItalic ? "Italic" : fontStyle;
 
       const originalFontFamily = fontFamily;
       const fontLoadResult = await this.loadFontWithFallbacks(
         fontFamily,
-        fontStyle
+        finalFontStyle
       );
 
       if (!fontLoadResult) {
@@ -361,10 +453,23 @@ export class NodeBuilder {
       }
 
       if (data.textStyle.textDecoration) {
-        text.textDecoration = data.textStyle.textDecoration;
+        const deco = (data.textStyle.textDecoration || "").toLowerCase();
+        if (deco.includes("line-through")) {
+          text.textDecoration = "STRIKETHROUGH";
+        } else if (deco.includes("underline")) {
+          text.textDecoration = "UNDERLINE";
+        } else {
+          text.textDecoration = "NONE";
+        }
       }
 
-      if (data.textStyle.textCase) {
+      if (data.textStyle.textTransform) {
+        const tf = (data.textStyle.textTransform || "").toLowerCase();
+        if (tf === "uppercase") text.textCase = "UPPER";
+        else if (tf === "lowercase") text.textCase = "LOWER";
+        else if (tf === "capitalize") text.textCase = "TITLE";
+        else text.textCase = "ORIGINAL";
+      } else if (data.textStyle.textCase) {
         text.textCase = data.textStyle.textCase;
       }
 
@@ -429,21 +534,27 @@ export class NodeBuilder {
     if (data.absoluteLayout) {
       text.x = data.absoluteLayout.left;
       text.y = data.absoluteLayout.top;
-      text.resize(
-        Math.max(data.absoluteLayout.width || 1, 1),
-        Math.max(data.absoluteLayout.height || 1, 1)
-      );
+      const targetWidth =
+        data.renderedMetrics?.width || data.absoluteLayout.width || 1;
+      const targetHeight =
+        data.renderedMetrics?.height || data.absoluteLayout.height || 1;
+      text.resize(Math.max(targetWidth, 1), Math.max(targetHeight, 1));
       this.safeSetPluginData(text, "usedAbsoluteLayout", "true");
     } else {
       text.x = data.layout.x || 0;
       text.y = data.layout.y || 0;
-      text.resize(
-        Math.max(data.layout.width || 1, 1),
-        Math.max(data.layout.height || 1, 1)
-      );
+      const targetWidth = data.renderedMetrics?.width || data.layout.width || 1;
+      const targetHeight =
+        data.renderedMetrics?.height || data.layout.height || 1;
+      text.resize(Math.max(targetWidth, 1), Math.max(targetHeight, 1));
     }
 
     text.characters = characters;
+    try {
+      text.textAutoResize = text.textAutoResize || "NONE";
+    } catch {
+      // ignore
+    }
 
     if (data.inlineTextSegments && data.inlineTextSegments.length > 0) {
       await this.applyInlineTextSegments(text, data.inlineTextSegments);
@@ -651,6 +762,21 @@ export class NodeBuilder {
       } catch (error) {
         console.warn(
           "Failed to create vector from SVG, falling back to rectangle.",
+          error
+        );
+      }
+    }
+
+    // NEW: Try converting SVG image assets directly to vectors
+    if (data.imageHash && this.assets?.images?.[data.imageHash]?.svgCode) {
+      try {
+        const svgMarkup = this.assets.images[data.imageHash].svgCode;
+        const vectorRoot = figma.createNodeFromSvg(svgMarkup);
+        vectorRoot.name = data.name || "Vector";
+        return vectorRoot as SceneNode;
+      } catch (error) {
+        console.warn(
+          "Failed to create vector from svgCode on asset, continuing as raster",
           error
         );
       }
@@ -1120,18 +1246,36 @@ export class NodeBuilder {
       canHaveFills: "fills" in node,
     });
 
-    if (data.backgrounds?.length && "fills" in node && node.type !== "TEXT") {
+    if (data.backgrounds?.length && "fills" in node) {
       console.log(
         `  ✅ Applying ${data.backgrounds.length} background layers to ${data.name}`
       );
-      (node as SceneNodeWithGeometry).fills =
-        await this.convertBackgroundLayersAsync(data.backgrounds, data.layout);
-    } else if (data.fills && "fills" in node && node.type !== "TEXT") {
-      console.log(`  ✅ Applying ${data.fills.length} fills to ${data.name}`);
-      (node as SceneNodeWithGeometry).fills = await this.convertFillsAsync(
-        data.fills
+      const paints = await this.convertBackgroundLayersAsync(
+        data.backgrounds,
+        data.layout
       );
-    } else if (data.imageHash && "fills" in node && node.type !== "TEXT") {
+
+      if (paints.length === 0) {
+        console.log(
+          `  ⚪ Backgrounds existed for ${data.name} but produced no paints (likely transparent).`
+        );
+        (node as SceneNodeWithGeometry).fills = [];
+      } else {
+        (node as SceneNodeWithGeometry).fills = paints;
+      }
+    } else if (data.fills && "fills" in node) {
+      console.log(`  ✅ Applying ${data.fills.length} fills to ${data.name}`);
+      const paints = await this.convertFillsAsync(data.fills);
+
+      if (paints.length === 0) {
+        console.log(
+          `  ⚪ Fills existed for ${data.name} but produced no paints (likely transparent).`
+        );
+        (node as SceneNodeWithGeometry).fills = [];
+      } else {
+        (node as SceneNodeWithGeometry).fills = paints;
+      }
+    } else if (data.imageHash && "fills" in node) {
       const imageFill = {
         type: "IMAGE" as const,
         imageHash: data.imageHash,
@@ -1155,11 +1299,77 @@ export class NodeBuilder {
       fills.push(await this.resolveImagePaint(imageFill));
 
       (node as SceneNodeWithGeometry).fills = fills;
-    } else if ("fills" in node && node.type !== "TEXT") {
-      console.log(
-        `  ⚪ No fills/backgrounds for ${data.name}, setting transparent`
+    } else if ("fills" in node) {
+      // If this node has no own fills/backgrounds but a descendant carries an IMAGE fill,
+      // promote the first image hash so the frame doesn't render empty.
+      const descendantImageHash = this.findFirstImageHash(data);
+      if (descendantImageHash) {
+        const imageFill = {
+          type: "IMAGE" as const,
+          imageHash: descendantImageHash,
+          scaleMode: "FILL" as const,
+          visible: true,
+        };
+        const placeholderColor = this.getPlaceholderColor(data);
+        const paints: Paint[] = [
+          { type: "SOLID", color: placeholderColor, opacity: 1 } as SolidPaint,
+          await this.resolveImagePaint(imageFill),
+        ];
+        console.log(
+          `🪄 Promoting descendant image hash ${descendantImageHash} to ${data.name}`
+        );
+        (node as SceneNodeWithGeometry).fills = paints;
+      } else {
+        // Try to derive a solid fill from CSS backgroundColor before giving up.
+        const parsedColor =
+          this.parseColorString(data.style?.backgroundColor) ||
+          this.parseColorString(data.backgroundColor) ||
+          this.parseColorString(data.fillColor);
+
+        if (parsedColor) {
+          console.log(
+            `  🎨 Derived solid fill for ${data.name} from backgroundColor`
+          );
+          (node as SceneNodeWithGeometry).fills = [
+            { type: "SOLID", color: parsedColor, opacity: 1 } as SolidPaint,
+          ];
+        } else {
+          console.log(
+            `  ⚪ No fills/backgrounds for ${data.name}, setting transparent`
+          );
+          (node as SceneNodeWithGeometry).fills = [];
+        }
+      }
+    }
+
+    // Apply placeholder for form controls if provided
+    if (
+      data.placeholder &&
+      node.type === "TEXT" &&
+      (data.htmlTag === "input" || data.name === "Input")
+    ) {
+      // For imports that create a TEXT node directly (rare), set characters + placeholder color
+      (node as TextNode).characters = data.placeholder;
+      const placeholderColor = this.getPlaceholderColor(data);
+      (node as TextNode).fills = [
+        {
+          type: "SOLID",
+          color: placeholderColor,
+          opacity: 0.6,
+        } as SolidPaint,
+      ];
+    } else if (
+      data.placeholder &&
+      "placeholder" in node &&
+      (data.htmlTag === "input" || data.name === "Input")
+    ) {
+      (node as any).placeholder = data.placeholder;
+      const placeholderColor = this.getPlaceholderColor(data);
+      this.safeSetPluginData(
+        node,
+        "placeholderColor",
+        JSON.stringify(placeholderColor)
       );
-      (node as SceneNodeWithGeometry).fills = [];
     }
 
     if (data.strokes && "strokes" in node) {
@@ -1460,14 +1670,25 @@ export class NodeBuilder {
   }
 
   private applyOverflow(node: SceneNode, data: any) {
-    if (!data.overflow) return;
+    if (!data.overflow && data.clipsContent === undefined) return;
     if ("clipsContent" in node) {
+      // Handle direct clipsContent flag from extractor
+      if (data.clipsContent === true) {
+        (node as FrameNode).clipsContent = true;
+        return;
+      }
+      if (!data.overflow) return;
+      // Handle both overflow.x/y (new) and overflow.horizontal/vertical (old) formats
       const horizontalHidden =
         data.overflow.horizontal === "hidden" ||
-        data.overflow.horizontal === "clip";
+        data.overflow.horizontal === "clip" ||
+        data.overflow.x === "hidden" ||
+        data.overflow.x === "clip";
       const verticalHidden =
         data.overflow.vertical === "hidden" ||
-        data.overflow.vertical === "clip";
+        data.overflow.vertical === "clip" ||
+        data.overflow.y === "hidden" ||
+        data.overflow.y === "clip";
       (node as FrameNode).clipsContent = horizontalHidden || verticalHidden;
     }
   }
@@ -1697,17 +1918,21 @@ export class NodeBuilder {
 
       if (fill.type === "SOLID" && fill.color) {
         const { r, g, b } = fill.color;
+        const opacity =
+          fill.opacity !== undefined ? fill.opacity : fill.color.a ?? 1;
+        if (opacity <= 0) {
+          continue;
+        }
         console.log(`  🎨 Converting SOLID background:`, {
           r,
           g,
           b,
-          opacity: fill.opacity,
+          opacity,
         });
         paints.push({
           type: "SOLID",
           color: { r, g, b },
-          opacity:
-            fill.opacity !== undefined ? fill.opacity : fill.color.a ?? 1,
+          opacity,
           visible: fill.visible !== false,
         } as SolidPaint);
         continue;
@@ -1761,12 +1986,16 @@ export class NodeBuilder {
 
       if (fill.type === "SOLID" && fill.color) {
         const { r, g, b } = fill.color;
+        const opacity =
+          fill.opacity !== undefined ? fill.opacity : fill.color.a ?? 1;
+        if (opacity <= 0) {
+          continue;
+        }
 
         const paint: SolidPaint = {
           type: "SOLID",
           color: { r, g, b },
-          opacity:
-            fill.opacity !== undefined ? fill.opacity : fill.color.a ?? 1,
+          opacity,
           visible: fill.visible !== false,
         };
 
@@ -1948,6 +2177,8 @@ export class NodeBuilder {
   private async resolveImagePaint(fill: any): Promise<Paint> {
     const hash = fill.imageHash;
 
+    console.log(`🖼️ [FIGMA IMPORT] Resolving image paint for hash: ${hash}`);
+
     if (!hash) {
       console.error(
         "❌ resolveImagePaint: No imageHash provided in fill:",
@@ -1962,6 +2193,7 @@ export class NodeBuilder {
 
     // Check if we already have a Figma image hash cached
     if (this.imagePaintCache.has(hash)) {
+      console.log(`  ✅ Using cached Figma image hash for ${hash}`);
       return {
         type: "IMAGE",
         imageHash: this.imagePaintCache.get(hash)!,
@@ -1973,26 +2205,40 @@ export class NodeBuilder {
 
     // 1. Try to find in assets
     if (this.assets?.images?.[hash]) {
+      console.log(
+        `  📁 Found asset for hash ${hash}, attempting to create image`
+      );
       try {
         const asset = this.assets.images[hash];
         image = await this.createFigmaImageFromAsset(asset, hash);
+        console.log(`  ✅ Successfully created image from asset`);
       } catch (e) {
-        console.warn(`Failed to create image from asset ${hash}`, e);
+        console.warn(`  ⚠️ Failed to create image from asset ${hash}`, e);
       }
+    } else {
+      console.log(`  ⚠️ No asset found for hash ${hash}`);
+      console.log(
+        `  📂 Available image hashes:`,
+        Object.keys(this.assets?.images || {}).slice(0, 5)
+      );
     }
 
     // 2. If not in assets, and hash looks like a URL, try to fetch it
     if (!image && (hash.startsWith("http") || hash.startsWith("data:"))) {
       try {
-        console.log(`🌐 Fetching image from URL: ${hash}`);
+        console.log(`🌐 [FIGMA] Attempting to fetch image from URL: ${hash}`);
         const response = await fetch(hash);
+        console.log(`  👉 Fetch response status: ${response.status}`);
         if (response.ok) {
           const blob = await response.blob();
           const buffer = await blob.arrayBuffer();
+          console.log(`  ✅ Got buffer, size: ${buffer.byteLength}`);
           image = figma.createImage(new Uint8Array(buffer));
+        } else {
+          console.warn(`  ❌ Fetch failed with status: ${response.status}`);
         }
       } catch (e) {
-        console.warn(`Failed to fetch image from URL ${hash}`, e);
+        console.warn(`  ❌ Failed to fetch image from URL ${hash}`, e);
       }
     }
 
@@ -2365,6 +2611,73 @@ export class NodeBuilder {
     return defaultColor;
   }
 
+  private findFirstImageHash(nodeData: any): string | undefined {
+    if (!nodeData) return undefined;
+
+    const fills = nodeData.fills || nodeData.backgrounds;
+    if (Array.isArray(fills)) {
+      for (const f of fills) {
+        const fill = f?.fill || f;
+        if (fill?.type === "IMAGE" && typeof fill.imageHash === "string") {
+          return fill.imageHash;
+        }
+      }
+    }
+
+    if (nodeData.imageHash && typeof nodeData.imageHash === "string") {
+      return nodeData.imageHash;
+    }
+
+    if (Array.isArray(nodeData.children)) {
+      for (const child of nodeData.children) {
+        const hash = this.findFirstImageHash(child);
+        if (hash) return hash;
+      }
+    }
+
+    return undefined;
+  }
+
+  private parseColorString(value?: string): RGB | undefined {
+    if (!value || typeof value !== "string") return undefined;
+
+    const hex = value.trim();
+    const hexMatch = /^#([0-9a-fA-F]{3,8})$/.exec(hex);
+    if (hexMatch) {
+      const h = hexMatch[1];
+      if (h.length === 3) {
+        const r = parseInt(h[0] + h[0], 16) / 255;
+        const g = parseInt(h[1] + h[1], 16) / 255;
+        const b = parseInt(h[2] + h[2], 16) / 255;
+        return { r, g, b };
+      }
+      if (h.length === 6 || h.length === 8) {
+        const r = parseInt(h.slice(0, 2), 16) / 255;
+        const g = parseInt(h.slice(2, 4), 16) / 255;
+        const b = parseInt(h.slice(4, 6), 16) / 255;
+        // ignore alpha; opacity handled separately
+        return { r, g, b };
+      }
+    }
+
+    const rgbMatch =
+      /^rgba?\\((\\d{1,3})\\s*,\\s*(\\d{1,3})\\s*,\\s*(\\d{1,3})(?:\\s*,\\s*(\\d*\\.?\\d+))?\\)$/i.exec(
+        hex
+      );
+    if (rgbMatch) {
+      const r = Math.min(255, parseInt(rgbMatch[1], 10)) / 255;
+      const g = Math.min(255, parseInt(rgbMatch[2], 10)) / 255;
+      const b = Math.min(255, parseInt(rgbMatch[3], 10)) / 255;
+      const a = rgbMatch[4]
+        ? Math.max(0, Math.min(1, parseFloat(rgbMatch[4])))
+        : 1;
+      if (a <= 0) return undefined;
+      return { r, g, b };
+    }
+
+    return undefined;
+  }
+
   private async createFigmaImageFromAsset(
     asset: any,
     hash: string
@@ -2376,6 +2689,75 @@ export class NodeBuilder {
       asset?.mimeType === "image/webp" ||
       asset?.contentType === "image/webp" ||
       (typeof url === "string" && url.toLowerCase().includes(".webp"));
+    let isSvgAsset =
+      asset?.mimeType?.includes("svg") ||
+      asset?.contentType?.includes("svg") ||
+      (typeof url === "string" && url.toLowerCase().includes(".svg")) ||
+      !!asset?.svgCode;
+
+    if (!isSvgAsset && base64Candidate) {
+      const { payload, mimeTypeHint } =
+        this.extractDataUrlParts(base64Candidate);
+      const clean = this.normalizeBase64Payload(payload);
+      if (this.isSvgPayload(clean, payload, mimeTypeHint)) {
+        isSvgAsset = true;
+      }
+    }
+
+    // Handle SVG by rasterizing via Figma before falling back to normal image path
+    if (isSvgAsset) {
+      try {
+        let svgMarkup: string | null = asset?.svgCode || null;
+        if (!svgMarkup && base64Candidate) {
+          try {
+            svgMarkup = this.base64ToString(base64Candidate, {
+              allowSvg: true,
+            });
+          } catch (decodeError) {
+            console.warn(
+              "SVG base64 decode failed, will try fetch",
+              decodeError
+            );
+          }
+        }
+        if (!svgMarkup && url) {
+          try {
+            const resp = await fetch(url);
+            if (resp.ok) {
+              svgMarkup = await resp.text();
+            }
+          } catch (fetchError) {
+            console.warn("SVG fetch failed", fetchError);
+          }
+        }
+
+        if (svgMarkup) {
+          // Inline external <use> references so sprite-based icons render
+          const inlinedMarkup = await this.inlineSvgUsesInPlugin(
+            svgMarkup,
+            url
+          );
+          const vectorRoot = figma.createNodeFromSvg(inlinedMarkup);
+          // Resize to expected dimensions if provided
+          if (
+            typeof asset?.width === "number" &&
+            typeof asset?.height === "number" &&
+            asset.width > 0 &&
+            asset.height > 0
+          ) {
+            vectorRoot.resize(asset.width, asset.height);
+          }
+          const pngBytes = await vectorRoot.exportAsync({ format: "PNG" });
+          vectorRoot.remove();
+          return figma.createImage(pngBytes);
+        }
+      } catch (svgError) {
+        console.warn(
+          `❌ SVG rasterization failed for ${hash}, falling back to standard flow`,
+          svgError
+        );
+      }
+    }
 
     let imageBytes: Uint8Array | undefined;
     if (base64Candidate) {
@@ -2394,9 +2776,13 @@ export class NodeBuilder {
 
     if (!imageBytes && url) {
       try {
+        console.log(
+          `  🔄 [FIGMA] Asset has URL fallback, trying fetch: ${url}`
+        );
         imageBytes = await this.fetchImage(url);
+        console.log(`  ✅ Fetched bytes from URL: ${imageBytes.length}`);
       } catch (error) {
-        console.warn(`❌ fetchImage failed for ${hash} (${url})`, error);
+        console.warn(`  ❌ fetchImage failed for ${hash} (${url})`, error);
       }
     }
 
@@ -2748,6 +3134,93 @@ export class NodeBuilder {
           : String(base64);
       console.error("Input snippet:", snippet);
       throw error;
+    }
+  }
+
+  /**
+   * Inline <use> references in an SVG by fetching external sprite symbols when needed.
+   * This helps logos/icons defined via sprite sheets render correctly.
+   */
+  private async inlineSvgUsesInPlugin(
+    svgMarkup: string,
+    baseUrl?: string
+  ): Promise<string> {
+    try {
+      const parser = new DOMParser();
+      const doc = parser.parseFromString(svgMarkup, "image/svg+xml");
+      const svg = doc.documentElement;
+      const uses = Array.from(svg.querySelectorAll("use"));
+      if (!uses.length) return svgMarkup;
+
+      const spriteCache = new Map<string, Document>();
+
+      for (const use of uses) {
+        const href =
+          use.getAttribute("href") || use.getAttribute("xlink:href") || "";
+        if (!href) continue;
+
+        const [urlPart, fragmentPart] = href.split("#");
+        const fragment = fragmentPart || "";
+
+        let symbolDoc: Document | null = null;
+        if (urlPart) {
+          try {
+            const absUrl = baseUrl ? new URL(urlPart, baseUrl).href : urlPart;
+            if (spriteCache.has(absUrl)) {
+              symbolDoc = spriteCache.get(absUrl)!;
+            } else {
+              const resp = await fetch(absUrl);
+              if (resp.ok) {
+                const text = await resp.text();
+                symbolDoc = parser.parseFromString(text, "image/svg+xml");
+                spriteCache.set(absUrl, symbolDoc);
+              }
+            }
+          } catch (fetchErr) {
+            console.warn("Failed to fetch external SVG sprite", fetchErr);
+          }
+        } else {
+          symbolDoc = doc;
+        }
+
+        if (!symbolDoc || !fragment) continue;
+
+        const symbol =
+          symbolDoc.getElementById(fragment) ||
+          symbolDoc.querySelector(`symbol#${fragment}`) ||
+          symbolDoc.querySelector(`#${fragment}`);
+        if (!symbol) continue;
+
+        const g = doc.createElementNS("http://www.w3.org/2000/svg", "g");
+        const symbolClone = symbol.cloneNode(true) as Element;
+        if (
+          !svg.getAttribute("viewBox") &&
+          symbolClone.getAttribute("viewBox")
+        ) {
+          svg.setAttribute(
+            "viewBox",
+            symbolClone.getAttribute("viewBox") || ""
+          );
+        }
+        while (symbolClone.firstChild) {
+          g.appendChild(symbolClone.firstChild);
+        }
+
+        const x = use.getAttribute("x");
+        const y = use.getAttribute("y");
+        if (x) g.setAttribute("x", x);
+        if (y) g.setAttribute("y", y);
+
+        use.parentNode?.replaceChild(g, use);
+      }
+
+      return svg.outerHTML;
+    } catch (error) {
+      console.warn(
+        "inlineSvgUsesInPlugin failed, returning original SVG",
+        error
+      );
+      return svgMarkup;
     }
   }
 

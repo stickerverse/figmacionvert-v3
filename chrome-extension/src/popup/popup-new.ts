@@ -154,6 +154,14 @@ function init() {
   captureComponentBtn.addEventListener("click", () =>
     log("info", "Component capture coming soon!")
   );
+  captureMultipleBtn.addEventListener("click", () => {
+    // Capture a standard responsive set (mobile/tablet/desktop)
+    startCapture("send", [
+      { name: "Mobile 375", width: 375, height: 667, deviceScaleFactor: 2 },
+      { name: "Tablet 768", width: 768, height: 1024, deviceScaleFactor: 2 },
+      { name: "Desktop 1440", width: 1440, height: 900, deviceScaleFactor: 1 },
+    ]);
+  });
   captureDownloadBtn.addEventListener("click", () => startCapture("download"));
   terminalClearBtn.addEventListener("click", clearTerminal);
   terminalMinimizeBtn.addEventListener("click", toggleTerminal);
@@ -185,9 +193,12 @@ function init() {
   const checkConnections = async () => {
     log("info", "Verifying connections...");
 
+    // Get title element inside card (don't destroy card structure)
+    const titleEl = captureFullPageBtn.querySelector(".card-title");
+
     // Disable capture button while checking
     captureFullPageBtn.disabled = true;
-    captureFullPageBtn.textContent = "Connecting...";
+    if (titleEl) titleEl.textContent = "Connecting...";
     captureFullPageBtn.classList.add("disabled");
 
     const figmaOk = await checkFigmaConnection();
@@ -195,7 +206,7 @@ function init() {
     if (figmaOk) {
       log("success", "✅ Figma plugin verified!");
       captureFullPageBtn.disabled = false;
-      captureFullPageBtn.textContent = "Capture Full Page";
+      if (titleEl) titleEl.textContent = "Capture Full Page";
       captureFullPageBtn.classList.remove("disabled");
 
       // Update UI to show ready state
@@ -209,11 +220,20 @@ function init() {
         "warning",
         "⚠️ Figma plugin not detected. Please open the plugin in Figma."
       );
-      captureFullPageBtn.disabled = true;
-      captureFullPageBtn.textContent = "Waiting for Figma Plugin...";
+      // Allow capture even if plugin isn't detected; user can download JSON
+      captureFullPageBtn.disabled = false;
+      if (titleEl) titleEl.textContent = "Capture Full Page";
+      captureFullPageBtn.classList.remove("disabled");
 
       // Keep checking if not connected
       setTimeout(checkConnections, 2000);
+
+      const statusEl = document.getElementById("status");
+      if (statusEl) {
+        statusEl.textContent =
+          "Plugin not detected. Capture will download if Figma is closed.";
+        statusEl.className = "status warning";
+      }
     }
   };
 
@@ -254,7 +274,15 @@ async function getActiveWebTab(): Promise<chrome.tabs.Tab | null> {
 /**
  * Start full page capture
  */
-async function startCapture(mode: "send" | "download" = "send") {
+async function startCapture(
+  mode: "send" | "download" = "send",
+  viewports?: Array<{
+    name?: string;
+    width?: number;
+    height?: number;
+    deviceScaleFactor?: number;
+  }>
+) {
   if (isCapturing) return;
 
   isCapturing = true;
@@ -327,10 +355,32 @@ async function startCapture(mode: "send" | "download" = "send") {
 
     await new Promise<void>((resolve, reject) => {
       chrome.runtime.sendMessage(
-        { type: "START_CAPTURE", tabId: tab.id, allowNavigation, mode },
+        {
+          type: "START_CAPTURE",
+          tabId: tab.id,
+          allowNavigation,
+          mode,
+          viewports,
+        },
         (response) => {
           if (chrome.runtime.lastError) {
-            reject(new Error(chrome.runtime.lastError.message));
+            const msg = chrome.runtime.lastError.message || "";
+            // Only treat as hard fail if background explicitly reported it.
+            if (
+              msg.includes(
+                "The message port closed before a response was received"
+              )
+            ) {
+              // Soft warning, extension will emit CAPTURE_ERROR if it's real.
+              log(
+                "warning",
+                "Background channel closed early (harmless if capture starts)"
+              );
+              resolve(); // Treat as success to let flow continue
+              return;
+            }
+
+            reject(new Error(msg));
             return;
           }
           if (response && response.ok === false) {
@@ -443,17 +493,27 @@ function showSuccessDialog(data: any) {
   const modal = document.getElementById("success-modal");
   if (!modal) return;
 
-  // Populate details
-  const viewport =
-    data.metadata?.viewportName ||
-    `${data.metadata?.viewport?.width}×${data.metadata?.viewport?.height}` ||
-    "Natural";
-  const sizeKB =
-    data.dataSizeKB || (JSON.stringify(data).length / 1024).toFixed(1);
+  // Safely get viewport string - handle undefined values properly
+  let viewport = "Natural";
+  if (data.metadata?.viewportName) {
+    viewport = data.metadata.viewportName;
+  } else if (
+    data.metadata?.viewport?.width &&
+    data.metadata?.viewport?.height
+  ) {
+    viewport = `${data.metadata.viewport.width}×${data.metadata.viewport.height}`;
+  }
+
+  // Calculate size - dataSizeKB is in KB, display as MB
+  const sizeBytes = data.dataSize || JSON.stringify(data).length;
+  const sizeMB = (sizeBytes / (1024 * 1024)).toFixed(2);
+
+  // Get element count from various locations
   const elements =
     data.metadata?.extractionSummary?.totalElements ||
     data.tree?.children?.length ||
-    0;
+    (data.tree ? 1 : 0);
+
   const duration = ((Date.now() - captureStartTime) / 1000).toFixed(1);
 
   const detailViewport = document.getElementById("detail-viewport");
@@ -462,7 +522,7 @@ function showSuccessDialog(data: any) {
   const detailDuration = document.getElementById("detail-duration");
 
   if (detailViewport) detailViewport.textContent = viewport;
-  if (detailSize) detailSize.textContent = `${sizeKB} MB`;
+  if (detailSize) detailSize.textContent = `${sizeMB} MB`;
   if (detailElements) detailElements.textContent = elements.toLocaleString();
   if (detailDuration) detailDuration.textContent = `${duration}s`;
 
@@ -559,6 +619,66 @@ function handleMessage(message: any, sender: any, sendResponse: any) {
     case "EXTRACTION_PROGRESS":
       handleExtractionProgress(message);
       break;
+
+    case "CAPTURE_REMOTE_JOB_QUEUED":
+      handleRemoteJobQueued(message);
+      break;
+
+    case "EXTENSION_ERROR":
+      handleExtensionError(message);
+      break;
+  }
+}
+
+/**
+ * Handle CAPTURE_REMOTE_JOB_QUEUED - job successfully queued on server
+ */
+function handleRemoteJobQueued(message: any) {
+  const jobId = message.jobId || "unknown";
+  const url = message.url || "";
+
+  logToTerminal(`✅ Job queued on server (ID: ${jobId})`, "terminal-success");
+  logToTerminal(`   URL: ${url}`, "terminal-log-entry");
+
+  // Update progress to show success
+  updateProgressRing(100, "Job queued for Figma import");
+
+  // Update status
+  const statusEl = document.getElementById("preview-status");
+  if (statusEl) {
+    statusEl.textContent = "Queued for Figma";
+  }
+}
+
+/**
+ * Handle EXTENSION_ERROR - detailed error reporting to terminal
+ */
+function handleExtensionError(message: any) {
+  const time = new Date(message.timestamp || Date.now()).toLocaleTimeString();
+  const source = message.source || "unknown";
+  const errorMsg = message.message || "Unknown error";
+
+  // Show terminal if hidden
+  const terminal = document.getElementById("terminal");
+  if (terminal?.classList.contains("hidden")) {
+    terminal.classList.remove("hidden");
+  }
+
+  // Log error header
+  logToTerminal(`[${time}] ❌ [${source}] ${errorMsg}`, "terminal-error");
+
+  // Log context if present
+  if (message.context && Object.keys(message.context).length > 0) {
+    logToTerminal(
+      `   📎 ${JSON.stringify(message.context)}`,
+      "terminal-context"
+    );
+  }
+
+  // Log stack trace if present (truncated)
+  if (message.stack) {
+    const stackLines = message.stack.split("\n").slice(0, 3).join("\n");
+    logToTerminal(`   📜 ${stackLines}`, "terminal-stack");
   }
 }
 
@@ -698,6 +818,11 @@ function handleCaptureComplete(message: any) {
     } catch (e) {
       log("error", `Failed to parse schema: ${e}`);
     }
+  }
+
+  // If chunked completion arrived with no payload (we keep it cached in background), preserve a stub
+  if (!data && message.chunked) {
+    data = { chunked: true };
   }
 
   // Detailed image diagnostics
@@ -925,6 +1050,25 @@ function formatTime(date: Date): string {
 }
 
 /**
+ * Log a line to the terminal with optional CSS class
+ */
+function logToTerminal(line: string, cssClass: string = "") {
+  if (!terminalLog) return;
+
+  const row = document.createElement("div");
+  row.className = `terminal-line ${cssClass}`;
+  row.textContent = line;
+
+  // Newest at top
+  terminalLog.prepend(row);
+
+  // Limit to last 100 lines
+  while (terminalLog.childElementCount > 100) {
+    terminalLog.removeChild(terminalLog.lastChild!);
+  }
+}
+
+/**
  * Clear terminal
  */
 function clearTerminal() {
@@ -957,6 +1101,8 @@ function toggleTerminal() {
  */
 async function checkFigmaConnection() {
   const statusUrls = [
+    "http://127.0.0.1:4411/api/status",
+    "http://localhost:4411/api/status",
     "http://127.0.0.1:5511/api/status",
     "http://localhost:5511/api/status",
     "http://127.0.0.1:3000/api/status",
@@ -965,11 +1111,16 @@ async function checkFigmaConnection() {
 
   for (const statusUrl of statusUrls) {
     try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 2000); // 2s timeout
+
       const response = await fetch(statusUrl, {
         method: "GET",
         headers: { "cache-control": "no-cache" },
         mode: "cors",
+        signal: controller.signal,
       });
+      clearTimeout(timeoutId);
 
       if (response.ok) {
         const status = await response.json();

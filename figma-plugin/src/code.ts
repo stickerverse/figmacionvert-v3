@@ -1,382 +1,7 @@
 import { handleWebpTranscodeResult } from "./ui-bridge";
 
 // Import the static UI
-const uiHtml = `<!DOCTYPE html>
-<html>
-<head>
-  <meta charset="UTF-8">
-  <title>Web to Figma</title>
-  <style>
-    * { margin: 0; padding: 0; box-sizing: border-box; }
-    body {
-      font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-      font-size: 14px; background: #ffffff; color: #000000; padding: 20px; width: 400px; min-height: 300px;
-    }
-    .container { display: flex; flex-direction: column; gap: 20px; }
-    h1 { font-size: 18px; font-weight: 600; color: #1f2937; text-align: center; margin-bottom: 10px; }
-    .status { padding: 12px 16px; border-radius: 8px; text-align: center; font-weight: 500; margin-bottom: 20px; }
-    .status.info { background: #f3f4f6; color: #374151; }
-    .status.success { background: #d1fae5; color: #065f46; }
-    .status.error { background: #fee2e2; color: #991b1b; }
-    .progress-section { margin-bottom: 20px; }
-    .progress-section.hidden { display: none; }
-    .progress-bar { width: 100%; height: 6px; background: #e5e7eb; border-radius: 3px; overflow: hidden; margin-bottom: 8px; }
-    .progress-fill { height: 100%; background: #6366f1; width: 0%; }
-    .progress-text { font-size: 12px; color: #6b7280; text-align: center; }
-    .upload-section { padding: 20px; border: 2px dashed #d1d5db; border-radius: 8px; text-align: center; cursor: pointer; margin-bottom: 16px; }
-    .upload-section:hover { border-color: #6366f1; background: #fafafa; }
-    .upload-section.has-file { border-color: #10b981; background: #f0fdf4; border-style: solid; }
-    .upload-text { font-size: 14px; color: #6b7280; margin-bottom: 4px; }
-    .upload-hint { font-size: 12px; color: #9ca3af; }
-    .file-input { display: none; }
-    .file-name { margin-top: 12px; font-size: 12px; color: #059669; font-weight: 500; }
-    .import-actions { display: flex; flex-direction: column; gap: 12px; }
-    .btn { width: 100%; padding: 12px 16px; border: none; border-radius: 8px; font-size: 14px; font-weight: 500; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 8px; }
-    .btn:disabled { opacity: 0.5; cursor: not-allowed; }
-    .btn-primary { background: #6366f1; color: white; }
-    .btn-primary:hover:not(:disabled) { background: #4f46e5; }
-    .connection-section { display: flex; flex-direction: column; gap: 12px; }
-    .connection-card { display: flex; align-items: center; gap: 12px; padding: 12px 14px; border: 1px solid #e5e7eb; border-radius: 10px; background: #f9fafb; }
-    .connection-dot { width: 12px; height: 12px; border-radius: 50%; background: #d1d5db; }
-    .connection-dot.connected { background: #10b981; }
-    .connection-dot.waiting { background: #f59e0b; }
-    .connection-dot.error { background: #ef4444; }
-    .connection-dot.idle { background: #9ca3af; }
-    .connection-meta { display: flex; flex-direction: column; gap: 2px; }
-    .connection-title { font-size: 13px; font-weight: 600; color: #1f2937; }
-    .connection-detail { font-size: 12px; color: #6b7280; }
-    .hidden { display: none !important; }
-  </style>
-</head>
-<body>
-  <div class="container">
-    <h1>🎨 Web to Figma</h1>
-    <div id="status" class="status info">Ready to import</div>
-    <div class="connection-section">
-      <div class="connection-card">
-        <span id="extension-connection-dot" class="connection-dot waiting" aria-hidden="true"></span>
-        <div class="connection-meta">
-          <div class="connection-title">Chrome Extension</div>
-          <div id="extension-connection-detail" class="connection-detail">Waiting for capture…</div>
-        </div>
-      </div>
-      <div class="connection-card">
-        <span id="cloud-connection-dot" class="connection-dot waiting" aria-hidden="true"></span>
-        <div class="connection-meta">
-          <div class="connection-title">Cloud Service</div>
-          <div id="cloud-connection-detail" class="connection-detail">Checking service…</div>
-        </div>
-      </div>
-      <div class="connection-card">
-        <span id="transfer-connection-dot" class="connection-dot idle" aria-hidden="true"></span>
-        <div class="connection-meta">
-          <div class="connection-title">Data Transfer</div>
-          <div id="transfer-connection-detail" class="connection-detail">Listening for captures…</div>
-        </div>
-      </div>
-    </div>
-    <div id="progress-section" class="progress-section hidden">
-      <div class="progress-bar"><div id="progress-fill" class="progress-fill"></div></div>
-      <div id="progress-text" class="progress-text">Processing...</div>
-    </div>
-    <div id="upload-section" class="upload-section">
-      <input type="file" id="file-input" class="file-input" accept=".json,.wtf">
-      <div class="upload-text">📁 Click to choose file</div>
-      <div class="upload-hint">JSON or .wtf format</div>
-      <div id="file-name" class="file-name hidden"></div>
-    </div>
-    <div class="import-actions">
-      <button id="import-btn" class="btn btn-primary" disabled>📸 Import to Figma</button>
-    </div>
-  </div>
-  <script>
-    let currentData = null;
-    let currentWTFFile = null;
-    const statusEl = document.getElementById('status');
-    const progressSection = document.getElementById('progress-section');
-    const progressFill = document.getElementById('progress-fill');
-    const progressText = document.getElementById('progress-text');
-    const uploadSection = document.getElementById('upload-section');
-    const fileInput = document.getElementById('file-input');
-    const fileNameEl = document.getElementById('file-name');
-    const importBtn = document.getElementById('import-btn');
-    const connectionIndicators = {
-      extension: {
-        dot: document.getElementById('extension-connection-dot'),
-        detail: document.getElementById('extension-connection-detail')
-      },
-      cloud: {
-        dot: document.getElementById('cloud-connection-dot'),
-        detail: document.getElementById('cloud-connection-detail')
-      },
-      transfer: {
-        dot: document.getElementById('transfer-connection-dot'),
-        detail: document.getElementById('transfer-connection-detail')
-      }
-    };
-    let transferState = 'idle';
-    let lastTelemetryTransferAt = null;
-
-    setConnectionState('extension', 'waiting', 'Waiting for capture…');
-    setConnectionState('cloud', 'waiting', 'Checking service…');
-    setTransferState('idle', 'Listening for captures…');
-    
-    function updateStatus(message, type = 'info') {
-      statusEl.textContent = message;
-      statusEl.className = \`status \${type}\`;
-    }
-    
-    function updateProgress(percent, message = '') {
-      if (percent > 0) {
-        progressSection.classList.remove('hidden');
-        progressFill.style.width = \`\${percent}%\`;
-        if (message) progressText.textContent = message;
-      } else {
-        progressSection.classList.add('hidden');
-      }
-    }
-    
-    uploadSection.addEventListener('click', () => { fileInput.click(); });
-    
-    fileInput.addEventListener('change', (e) => {
-      const file = e.target.files[0];
-      handleFile(file);
-    });
-
-    // Drag and Drop Support
-    uploadSection.addEventListener('dragover', (e) => {
-      e.preventDefault();
-      e.stopPropagation();
-      uploadSection.style.borderColor = '#6366f1';
-      uploadSection.style.background = '#f0fdf4';
-    });
-
-    uploadSection.addEventListener('dragleave', (e) => {
-      e.preventDefault();
-      e.stopPropagation();
-      uploadSection.style.borderColor = '#d1d5db';
-      uploadSection.style.background = '';
-    });
-
-    uploadSection.addEventListener('drop', (e) => {
-      e.preventDefault();
-      e.stopPropagation();
-      uploadSection.style.borderColor = '#d1d5db';
-      uploadSection.style.background = '';
-      
-      const file = e.dataTransfer.files[0];
-      handleFile(file);
-    });
-
-    function handleFile(file) {
-      if (!file) return;
-      const isWTFFile = file.name.toLowerCase().endsWith('.wtf');
-      uploadSection.classList.add('has-file');
-      fileNameEl.textContent = \`✓ \${file.name}\`;
-      fileNameEl.classList.remove('hidden');
-      
-      if (isWTFFile) {
-        const reader = new FileReader();
-        reader.onload = (event) => {
-          try {
-            currentWTFFile = event.target.result;
-            currentData = null;
-            importBtn.disabled = false;
-            updateStatus('✅ Ready to import .wtf file', 'success');
-          } catch (error) {
-            updateStatus('❌ Invalid .wtf file', 'error');
-          }
-        };
-        reader.readAsArrayBuffer(file);
-      } else {
-        const reader = new FileReader();
-        reader.onload = (event) => {
-          try {
-            currentData = JSON.parse(event.target.result);
-            currentWTFFile = null;
-            importBtn.disabled = false;
-            updateStatus('✅ Ready to import JSON', 'success');
-          } catch (error) {
-            updateStatus('❌ Invalid JSON file', 'error');
-          }
-        };
-        reader.readAsText(file);
-      }
-    }
-    
-    importBtn.addEventListener('click', () => {
-      if (!currentData && !currentWTFFile) return;
-      updateStatus('Starting import...', 'info');
-      updateProgress(10, 'Initializing...');
-      importBtn.disabled = true;
-      
-      if (currentWTFFile) {
-        parent.postMessage({ pluginMessage: { type: 'import-wtf', fileData: currentWTFFile, options: {} } }, '*');
-      } else {
-        parent.postMessage({ pluginMessage: { type: 'import-enhanced', data: currentData, options: {} } }, '*');
-      }
-    });
-    
-    onmessage = (event) => {
-      const msg = event.data.pluginMessage;
-      console.log('UI received message:', msg.type, msg);
-      
-      switch (msg.type) {
-        case 'auto-import-ready':
-          updateStatus('🔄 Checking for captures...', 'info');
-          setTransferState('idle', 'Listening for captures…');
-          break;
-        case 'auto-import-data':
-          currentData = msg.data;
-          currentWTFFile = null;
-          uploadSection.classList.add('has-file');
-          fileNameEl.textContent = '⚡ Auto-imported from Chrome Extension';
-          fileNameEl.classList.remove('hidden');
-          importBtn.disabled = false;
-          updateStatus('✅ Auto-import ready', 'success');
-          setTransferState('working', 'Auto-import queued…');
-          setTimeout(() => { importBtn.click(); }, 100);
-          break;
-        case 'handoff-status':
-          if (msg.status === 'waiting') {
-            setTransferState('idle', 'Awaiting new capture');
-          } else if (msg.status === 'job-ready') {
-            updateStatus('🚀 New capture detected!', 'success');
-            setTransferState('working', msg.detail || 'Importing capture…');
-          } else {
-            setTransferState('error', msg.detail || 'Handoff error');
-          }
-          break;
-        case 'handoff-telemetry':
-          handleTelemetry(msg.telemetry);
-          break;
-        case 'chrome-extension-connected':
-          setConnectionState('extension', 'connected', 'Extension online');
-          break;
-        case 'chrome-extension-disconnected':
-          setConnectionState('extension', 'waiting', 'Waiting for capture…');
-          break;
-        case 'server-connected':
-          setConnectionState('cloud', 'connected', 'Cloud service online');
-          break;
-        case 'server-disconnected':
-          setConnectionState('cloud', 'error', 'Cloud service offline');
-          break;
-        case 'progress':
-          updateProgress(msg.percent, msg.message);
-          setTransferState('working', msg.message || 'Importing…');
-          break;
-        case 'complete':
-          const elementCount = msg.stats?.elements || msg.stats?.nodes || 0;
-          updateStatus(\`✅ Imported \${elementCount} elements!\`, 'success');
-          updateProgress(100, 'Complete!');
-          importBtn.disabled = false;
-          setTransferState('delivered', 'Imported just now');
-          setTimeout(() => { updateProgress(0); }, 2000);
-          break;
-        case 'error':
-          updateStatus(\`❌ \${msg.message}\`, 'error');
-          updateProgress(0);
-          importBtn.disabled = false;
-          setTransferState('error', msg.message || 'Import error');
-          break;
-        case 'import-busy':
-          updateStatus('Import in progress...', 'info');
-          setTransferState('working', 'Import already running…');
-          break;
-        case 'transcode-webp': {
-          const { id, base64 } = msg;
-          try {
-            const img = new Image();
-            img.crossOrigin = 'anonymous';
-            img.onload = () => {
-              try {
-                const canvas = document.createElement('canvas');
-                canvas.width = img.width;
-                canvas.height = img.height;
-                const ctx = canvas.getContext('2d');
-                if (!ctx) throw new Error('Canvas context unavailable');
-                ctx.drawImage(img, 0, 0);
-                const pngBase64 = canvas.toDataURL('image/png');
-                parent.postMessage({ pluginMessage: { type: 'webp-transcoded', id, pngBase64 } }, '*');
-              } catch (error) {
-                parent.postMessage({ pluginMessage: { type: 'webp-transcoded', id, error: String(error) } }, '*');
-              }
-            };
-            img.onerror = (error) => {
-              parent.postMessage({ pluginMessage: { type: 'webp-transcoded', id, error: 'Image decode failed' } }, '*');
-            };
-            const src = base64.startsWith('data:') ? base64 : \`data:image/webp;base64,\${base64}\`;
-            img.src = src;
-          } catch (error) {
-            parent.postMessage({ pluginMessage: { type: 'webp-transcoded', id, error: String(error) } }, '*');
-          }
-          break;
-        }
-      }
-    };
-    
-    function setConnectionState(type, state, detail) {
-      const indicator = connectionIndicators[type];
-      if (!indicator || !indicator.dot || !indicator.detail) return;
-      indicator.dot.className = \`connection-dot \${state}\`;
-      indicator.detail.textContent = detail;
-    }
-
-    function setTransferState(state, detail) {
-      transferState = state;
-      let visualState = 'idle';
-      if (state === 'working') {
-        visualState = 'waiting';
-      } else if (state === 'delivered') {
-        visualState = 'connected';
-      } else if (state === 'error') {
-        visualState = 'error';
-      }
-      setConnectionState('transfer', visualState, detail);
-    }
-
-    function formatRelativeTime(timestamp) {
-      if (!timestamp) return 'no signal';
-      const diffSeconds = Math.round((Date.now() - timestamp) / 1000);
-      if (diffSeconds < 1) return 'just now';
-      if (diffSeconds < 60) return diffSeconds + 's ago';
-      const minutes = Math.floor(diffSeconds / 60);
-      if (minutes < 60) return minutes + 'm ago';
-      const hours = Math.floor(minutes / 60);
-      return hours + 'h ago';
-    }
-
-    function handleTelemetry(telemetry) {
-      if (!telemetry) {
-        setConnectionState('cloud', 'error', 'No telemetry data');
-        return;
-      }
-      const queueDetail = typeof telemetry.queueLength === 'number'
-        ? \`\${telemetry.queueLength} job\${telemetry.queueLength === 1 ? '' : 's'} queued\`
-        : 'Queue idle';
-      const extensionBeat = telemetry.lastExtensionPingAt
-        ? \` • Ext \${formatRelativeTime(telemetry.lastExtensionPingAt)}\`
-        : '';
-      setConnectionState('cloud', 'connected', \`\${queueDetail}\${extensionBeat}\`);
-
-      if (telemetry.lastExtensionPingAt) {
-        setConnectionState('extension', 'connected', \`Heartbeat \${formatRelativeTime(telemetry.lastExtensionPingAt)}\`);
-      }
-
-      if (telemetry.lastExtensionTransferAt && transferState !== 'working') {
-        if (lastTelemetryTransferAt !== telemetry.lastExtensionTransferAt) {
-          lastTelemetryTransferAt = telemetry.lastExtensionTransferAt;
-          setTransferState('delivered', \`Delivered \${formatRelativeTime(lastTelemetryTransferAt)}\`);
-        }
-      }
-    }
-
-    updateStatus('Ready to import');
-    console.log('Static Web to Figma plugin loaded');
-  </script>
-</body>
-</html>`;
+import uiHtml from "../ui/index-static.html";
 import { FigmaImporter, ImportOptions } from "./importer";
 import {
   EnhancedFigmaImporter,
@@ -400,6 +25,20 @@ interface HandoffHealthResponse {
   telemetry?: any;
   queueLength: number;
   ok: boolean;
+}
+
+interface HandoffHistoryItem {
+  id: string;
+  timestamp?: number;
+  deliveredAt?: number;
+  permalink?: string;
+  hasScreenshot?: boolean;
+  size?: number;
+}
+
+interface MissingFontReport {
+  family: string;
+  styles: string[];
 }
 
 figma.showUI(uiHtml, { width: 400, height: 600 });
@@ -438,14 +77,27 @@ let serverConnectionState: "connected" | "disconnected" = "disconnected";
 const CAPTURE_SERVICE_URL = null; // 'https://capture-service-sandy.vercel.app';
 const CAPTURE_SERVICE_API_KEY =
   "f7df13dd6f622998e79f8ec581cc2f4dc908331cadb426b74ac4b8879d186da2";
+const HANDOFF_API_KEY =
+  ((globalThis as any).__HANDOFF_API_KEY as string | undefined) || "";
 
 const HANDOFF_BASES = CAPTURE_SERVICE_URL
   ? [CAPTURE_SERVICE_URL]
-  : ["http://127.0.0.1:5511", "http://localhost:5511"];
-const HANDOFF_POLL_INTERVAL = 2500;
+  : [
+      (globalThis as any).__HANDOFF_SERVER_URL ?? "http://127.0.0.1:4411",
+      "http://localhost:4411",
+      "http://127.0.0.1:5511",
+      "http://localhost:5511",
+    ];
+const HANDOFF_POLL_INTERVAL = 10000;
 let handoffBaseIndex = 0;
 let handoffPollTimer: ReturnType<typeof setInterval> | null = null;
 let handoffPollInFlight = false;
+let handoffCooldownUntil = 0; // pause polling after errors (e.g., 429)
+let handoffBackoffMs = 0; // exponential backoff for rate limits
+let availableFontsCache: {
+  families: Set<string>;
+  variants: Set<string>;
+} | null = null;
 
 figma.on("run", (runEvent) => {
   if (runEvent.command === "auto-import") {
@@ -457,6 +109,14 @@ figma.on("run", (runEvent) => {
 figma.ui.onmessage = async (msg) => {
   if (msg.type === "handoff-telemetry") {
     handleTelemetryFromUi(msg.telemetry as HandoffTelemetry | null);
+    return;
+  }
+  if (msg.type === "fetch-history") {
+    await sendHandoffHistory();
+    return;
+  }
+  if (msg.type === "import-history-job") {
+    await importFromHistory(msg.jobId as string);
     return;
   }
   if (msg.type === "webp-transcoded") {
@@ -502,7 +162,15 @@ async function handleImportRequest(
   options: Partial<ImportOptions> | undefined,
   trigger: "import" | "auto-import" | "live-import"
 ): Promise<void> {
+  console.log("🔵 handleImportRequest called", {
+    hasData: !!data,
+    dataType: typeof data,
+    trigger,
+    isImporting,
+  });
+
   if (!data) {
+    console.error("❌ No data received");
     figma.ui.postMessage({
       type: "error",
       message: "No schema payload received.",
@@ -511,6 +179,7 @@ async function handleImportRequest(
   }
 
   if (isImporting) {
+    console.warn("⚠️ Import already in progress");
     figma.ui.postMessage({
       type: "import-busy",
       message: "An import is already running. Please wait for it to finish.",
@@ -519,6 +188,7 @@ async function handleImportRequest(
   }
 
   isImporting = true;
+  console.log("✅ Import started");
 
   // Unwrap rawSchemaJson if present (chunked transfer format from Chrome extension)
   let schema = data;
@@ -538,6 +208,136 @@ async function handleImportRequest(
       isImporting = false;
       return;
     }
+  }
+
+  // Unwrap multi-viewport format if present (checking for captures array is sufficient)
+  if (Array.isArray(schema.captures) && schema.captures.length > 0) {
+    console.log("🔓 Unwrapping multi-viewport capture format...");
+    let picked: any = null;
+    for (const cap of schema.captures) {
+      if (!cap) continue;
+      // Try common shapes
+      const candidate = cap.data?.tree
+        ? cap.data
+        : cap.data?.schema?.tree
+        ? cap.data.schema
+        : cap.data?.rawSchemaJson
+        ? JSON.parse(cap.data.rawSchemaJson)
+        : cap.data || cap.schema;
+      if (candidate?.tree) {
+        picked = candidate;
+        console.log(
+          `✅ Using viewport: ${cap.viewport || cap.name || "unnamed"}`
+        );
+        break;
+      }
+      if (cap?.rawSchemaJson && !picked) {
+        try {
+          const parsed = JSON.parse(cap.rawSchemaJson);
+          if (parsed?.tree) {
+            picked = parsed;
+            console.log(
+              `✅ Parsed rawSchemaJson for viewport: ${
+                cap.viewport || cap.name || "unnamed"
+              }`
+            );
+            break;
+          }
+        } catch {
+          // ignore parse error and continue
+        }
+      }
+    }
+    if (picked) {
+      schema = picked;
+    } else {
+      console.error(
+        "❌ Multi-viewport format detected but no valid capture data found"
+      );
+      figma.ui.postMessage({
+        type: "error",
+        message: "Multi-viewport format is invalid - no data in captures array",
+      });
+      isImporting = false;
+      return;
+    }
+  }
+
+  // Fallback: unwrap rawSchemaJson or nested schema if tree missing
+  if (!schema.tree) {
+    if (schema.rawSchemaJson && typeof schema.rawSchemaJson === "string") {
+      try {
+        const parsed = JSON.parse(schema.rawSchemaJson);
+        if (parsed?.tree) schema = parsed;
+      } catch {
+        // ignore parse error
+      }
+    } else if (schema.schema?.tree) {
+      schema = schema.schema;
+    }
+  }
+
+  // Final validation: ensure we have tree data
+  if (!schema.tree) {
+    // Deep search for any nested object that contains a tree
+    const visited = new Set<any>();
+    const findSchemaWithTree = (obj: any): any | null => {
+      if (!obj || typeof obj !== "object") return null;
+      if (visited.has(obj)) return null;
+      visited.add(obj);
+      if ((obj as any).tree) return obj;
+      for (const value of Object.values(obj)) {
+        if (value && typeof value === "object") {
+          const found = findSchemaWithTree(value);
+          if (found) return found;
+        }
+      }
+      return null;
+    };
+    const nested = findSchemaWithTree(schema);
+    if (nested) {
+      console.log("✅ Found nested schema with tree, using it");
+      schema = nested;
+    }
+  }
+
+  if (!schema.tree) {
+    console.error("❌ No tree data available for import. Data structure:", {
+      hasData: !!schema,
+      dataKeys: schema && typeof schema === "object" ? Object.keys(schema) : [],
+      dataType: typeof schema,
+      dataStringified:
+        typeof schema === "object"
+          ? JSON.stringify(schema).substring(0, 500)
+          : String(schema).substring(0, 500),
+    });
+    figma.ui.postMessage({
+      type: "error",
+      message:
+        "No tree data available for import. The schema may be in an unsupported format.",
+    });
+    isImporting = false;
+    return;
+  }
+
+  // ===== ENFORCED: Puppeteer Engine Validation =====
+  // All schemas must come from Puppeteer capture, not direct extension injection
+  const captureEngine = schema.meta?.captureEngine;
+  if (captureEngine && captureEngine !== "puppeteer") {
+    console.warn(`⚠️ Schema from non-Puppeteer engine: ${captureEngine}`);
+    // For now, log warning but allow - strict mode can be enabled later
+    // To enforce strictly, uncomment the block below:
+    /*
+    figma.ui.postMessage({
+      type: "error",
+      message: `Only Puppeteer captures are supported. Got: ${captureEngine}`,
+    });
+    isImporting = false;
+    return;
+    */
+  }
+  if (captureEngine === "puppeteer") {
+    console.log("✅ Schema verified: captureEngine=puppeteer");
   }
 
   const resolvedOptions: ImportOptions = {
@@ -560,6 +360,14 @@ async function handleImportRequest(
         ? `${schema.validation.issuesCount} issues`
         : "missing",
     });
+
+    // Report missing fonts before import
+    try {
+      const missingFonts = await findMissingFonts(schema);
+      figma.ui.postMessage({ type: "font-warnings", fonts: missingFonts });
+    } catch (e) {
+      console.warn("Font warning detection failed", e);
+    }
 
     figma.ui.postMessage({
       type: "progress",
@@ -652,10 +460,20 @@ async function handleImportRequest(
 
     postHandoffStatus("waiting");
   } catch (error) {
+    console.error("❌ IMPORT ERROR CAUGHT:", error);
+    console.error(
+      "Error stack:",
+      error instanceof Error ? error.stack : "No stack"
+    );
+    console.error(
+      "Error name:",
+      error instanceof Error ? error.name : "Unknown"
+    );
     const message =
       error instanceof Error
         ? error.message
         : "Import failed. See console for details.";
+    console.error("Error message:", message);
     figma.ui.postMessage({ type: "error", message });
     figma.notify(`✗ Import failed: ${message}`, { error: true });
     postHandoffStatus("error", message);
@@ -828,20 +646,170 @@ function rotateHandoffBase() {
   handoffBaseIndex = (handoffBaseIndex + 1) % HANDOFF_BASES.length;
 }
 
+function buildHandoffHeaders(
+  base: Record<string, string> = {}
+): Record<string, string> {
+  const headers = { ...base };
+  if (HANDOFF_API_KEY) headers["x-api-key"] = HANDOFF_API_KEY;
+  return headers;
+}
+
+async function loadAvailableFonts(): Promise<{
+  families: Set<string>;
+  variants: Set<string>;
+}> {
+  if (availableFontsCache) return availableFontsCache;
+  const fonts = await figma.listAvailableFontsAsync();
+  const families = new Set<string>();
+  const variants = new Set<string>();
+  for (const font of fonts) {
+    families.add(font.fontName.family);
+    variants.add(`${font.fontName.family}::${font.fontName.style}`);
+  }
+  availableFontsCache = { families, variants };
+  return availableFontsCache;
+}
+
+function weightToStyle(weight: number): string {
+  if (weight >= 900) return "Black";
+  if (weight >= 800) return "Extra Bold";
+  if (weight >= 700) return "Bold";
+  if (weight >= 600) return "Semi Bold";
+  if (weight >= 500) return "Medium";
+  if (weight >= 300) return "Light";
+  return "Regular";
+}
+
+async function findMissingFonts(schema: any): Promise<MissingFontReport[]> {
+  const missing: Map<string, Set<string>> = new Map();
+  const { families, variants } = await loadAvailableFonts();
+
+  const addMissing = (family: string, style: string) => {
+    if (!family) return;
+    const key = family;
+    if (!missing.has(key)) missing.set(key, new Set<string>());
+    missing.get(key)!.add(style);
+  };
+
+  // From metadata fonts
+  if (schema?.metadata?.fonts) {
+    for (const font of schema.metadata.fonts) {
+      const family = font.family;
+      const weights: number[] = font.weights || [400];
+      const styles = weights.map((w) => weightToStyle(w));
+      styles.forEach((style) => {
+        if (!variants.has(`${family}::${style}`)) {
+          addMissing(family, style);
+        }
+      });
+    }
+  }
+
+  // From assets.fonts (captured @font-face)
+  if (schema?.assets?.fonts) {
+    Object.values(schema.assets.fonts).forEach((f: any) => {
+      const family = f.family || "";
+      const style = f.style || weightToStyle(parseInt(f.weight || "400", 10));
+      if (!variants.has(`${family}::${style}`)) {
+        addMissing(family, style);
+      }
+    });
+  }
+
+  // If any text nodes carry explicit font styles, sample a small walk
+  const walkTextFonts = (node: any) => {
+    if (!node) return;
+    if (node.type === "TEXT" && node.textStyle) {
+      const family = node.textStyle.fontFamily;
+      const style = node.textStyle.fontStyle
+        ? node.textStyle.fontStyle
+        : weightToStyle(node.textStyle.fontWeight || 400);
+      if (!variants.has(`${family}::${style}`)) {
+        addMissing(family, style);
+      }
+    }
+    if (node.children) {
+      for (const child of node.children) walkTextFonts(child);
+    }
+  };
+  walkTextFonts(schema?.tree);
+
+  return Array.from(missing.entries()).map(([family, styles]) => ({
+    family,
+    styles: Array.from(styles),
+  }));
+}
+
+async function fetchHandoffHistory(): Promise<{
+  jobs: HandoffHistoryItem[];
+  telemetry?: HandoffTelemetry | null;
+}> {
+  const response = await fetch(`${currentHandoffBase()}/api/jobs/history`, {
+    headers: buildHandoffHeaders({ "cache-control": "no-cache" }),
+  });
+  if (!response.ok) {
+    throw new Error(`History request failed: HTTP ${response.status}`);
+  }
+  const body = (await response.json()) as {
+    jobs?: HandoffHistoryItem[];
+    telemetry?: HandoffTelemetry | null;
+  };
+  applyTelemetry(body?.telemetry || null);
+  return { jobs: body?.jobs || [], telemetry: body?.telemetry || null };
+}
+
+async function fetchHandoffJob(jobId: string): Promise<any> {
+  const response = await fetch(`${currentHandoffBase()}/api/jobs/${jobId}`, {
+    headers: buildHandoffHeaders({ "cache-control": "no-cache" }),
+  });
+  if (!response.ok) {
+    throw new Error(`Job fetch failed: HTTP ${response.status}`);
+  }
+  const body = (await response.json()) as {
+    job?: { id: string; payload?: any; permalink?: string };
+    telemetry?: HandoffTelemetry | null;
+  };
+  applyTelemetry(body?.telemetry || null);
+  const payload = decompressPayload(body?.job?.payload);
+  return { job: body?.job, payload };
+}
+
 async function pollHandoffJobs(): Promise<void> {
   handoffPollInFlight = true;
   try {
+    console.log("[POLL] Starting poll cycle", { isImporting });
+
+    // Respect cooldown to avoid hammering the server (e.g., after 429)
+    const now = Date.now();
+    if (handoffCooldownUntil && now < handoffCooldownUntil) {
+      postHandoffStatus(
+        "waiting",
+        `Cooling down… retrying in ${Math.ceil(
+          (handoffCooldownUntil - now) / 1000
+        )}s`
+      );
+      return;
+    }
+    // Reset cooldown/backoff when we're allowed to poll again
+    if (handoffCooldownUntil && now >= handoffCooldownUntil) {
+      handoffCooldownUntil = 0;
+    }
+
+    // Try a lightweight health ping each cycle to update connection lights
+    await pingHandoffHealth();
+
     if (isImporting) {
-      await pingHandoffHealth();
+      console.log("[POLL] Skipping job check - already importing");
       return;
     }
 
     const isCloudService = !!CAPTURE_SERVICE_URL;
     const endpoint = `${currentHandoffBase()}/api/jobs/next`;
+    console.log("[POLL] Fetching jobs from:", endpoint);
 
-    const headers: Record<string, string> = {
+    const headers: Record<string, string> = buildHandoffHeaders({
       "cache-control": "no-cache",
-    };
+    });
 
     if (CAPTURE_SERVICE_API_KEY) {
       headers["x-api-key"] = CAPTURE_SERVICE_API_KEY;
@@ -852,7 +820,24 @@ async function pollHandoffJobs(): Promise<void> {
       headers,
     });
 
+    console.log("[POLL] Response status:", response.status);
+
     if (!response.ok) {
+      if (response.status === 429) {
+        // Rate limited: back off polling for a bit
+        handoffBackoffMs = handoffBackoffMs
+          ? Math.min(handoffBackoffMs * 2, 120000)
+          : 15000;
+        handoffCooldownUntil = Date.now() + handoffBackoffMs;
+        postHandoffStatus(
+          "error",
+          `Server rate limited. Retrying in ${Math.ceil(
+            handoffBackoffMs / 1000
+          )}s`
+        );
+        updateServerConnection("disconnected");
+        return;
+      }
       if (response.status === 204) {
         // No jobs available (cloud service returns 204)
         updateServerConnection("connected");
@@ -862,6 +847,9 @@ async function pollHandoffJobs(): Promise<void> {
       throw new Error(`HTTP ${response.status}`);
     }
 
+    // Success; reset backoff
+    handoffBackoffMs = 0;
+    handoffCooldownUntil = 0;
     updateServerConnection("connected");
 
     if (isCloudService) {
@@ -890,17 +878,26 @@ async function pollHandoffJobs(): Promise<void> {
     } else {
       // Legacy localhost handoff format: { job: { id, payload }, telemetry }
       const body = (await response.json()) as HandoffJobResponse;
+      console.log("[POLL] Response body:", {
+        hasJob: !!body?.job,
+        hasPayload: !!body?.job?.payload,
+        hasTelemetry: !!body?.telemetry,
+      });
+
       applyTelemetry(body?.telemetry || null);
 
       if (body?.job?.payload) {
+        console.log("[POLL] Job found! Starting import...");
         const payload = decompressPayload(body.job.payload);
         postHandoffStatus("job-ready", `Importing job ${body.job.id}`);
         await handleImportRequest(payload, undefined, "auto-import");
       } else {
+        console.log("[POLL] No job in response");
         postHandoffStatus("waiting");
       }
     }
   } catch (error) {
+    console.error("[POLL] Error during poll:", error);
     const message = error instanceof Error ? error.message : String(error);
     postHandoffStatus("error", message);
     updateServerConnection("disconnected");
@@ -914,17 +911,67 @@ function decompressPayload(payload: any): any {
   if (payload && payload.compressed && typeof payload.data === "string") {
     console.log("📦 Decompressing payload...");
     try {
-      const compressedData = Uint8Array.from(atob(payload.data), (c) =>
-        c.charCodeAt(0)
-      );
-      const jsonString = pako.inflate(compressedData, { to: "string" });
-      return JSON.parse(jsonString);
+      const compressedData = safeBase64ToUint8(payload.data);
+      const jsonString =
+        typeof pako.inflate === "function"
+          ? pako.inflate(compressedData, { to: "string" })
+          : "";
+      const parsed = jsonString ? JSON.parse(jsonString) : null;
+      return parsed?.schema ?? parsed ?? payload;
     } catch (e) {
       console.error("Failed to decompress payload:", e);
-      throw new Error("Failed to decompress payload");
+      // Fallback: return original payload so we can still attempt import
+      return payload;
     }
   }
+  if (payload && payload.schema) {
+    // Handle zero-parse forwarding that wraps schema
+    return payload.schema;
+  }
   return payload;
+}
+
+function safeBase64ToUint8(base64: string): Uint8Array {
+  try {
+    if (typeof atob === "function") {
+      const binary = atob(base64);
+      const len = binary.length;
+      const bytes = new Uint8Array(len);
+      for (let i = 0; i < len; i++) {
+        bytes[i] = binary.charCodeAt(i);
+      }
+      return bytes;
+    }
+  } catch (err) {
+    console.warn("atob failed, falling back to manual decoder", err);
+  }
+
+  // Manual base64 decode
+  const chars =
+    "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+  const lookup: Record<string, number> = {};
+  for (let i = 0; i < chars.length; i++) lookup[chars[i]] = i;
+
+  const cleaned = base64.replace(/=+$/, "");
+  const bufferLength = (cleaned.length * 3) / 4;
+  const bytes = new Uint8Array(bufferLength | 0);
+
+  let p = 0;
+  for (let i = 0; i < cleaned.length; i += 4) {
+    const encoded1 = lookup[cleaned[i]] ?? 0;
+    const encoded2 = lookup[cleaned[i + 1]] ?? 0;
+    const encoded3 = lookup[cleaned[i + 2]] ?? 0;
+    const encoded4 = lookup[cleaned[i + 3]] ?? 0;
+
+    const triplet =
+      (encoded1 << 18) | (encoded2 << 12) | (encoded3 << 6) | encoded4;
+
+    if (p < bytes.length) bytes[p++] = (triplet >> 16) & 0xff;
+    if (p < bytes.length) bytes[p++] = (triplet >> 8) & 0xff;
+    if (p < bytes.length) bytes[p++] = triplet & 0xff;
+  }
+
+  return bytes;
 }
 
 async function pingHandoffHealth(): Promise<void> {
@@ -932,19 +979,37 @@ async function pingHandoffHealth(): Promise<void> {
     const response = await fetch(
       `${currentHandoffBase()}/api/health?source=plugin`,
       {
-        headers: { "cache-control": "no-cache" },
+        headers: buildHandoffHeaders({ "cache-control": "no-cache" }),
       }
     );
     if (!response.ok) {
-      throw new Error(`HTTP ${response.status}`);
+      const text = await response.text();
+      throw new Error(`HTTP ${response.status} ${text || ""}`.trim());
     }
     const body = (await response.json()) as HandoffHealthResponse;
     applyTelemetry(body?.telemetry || null);
+    console.log("[handoff] Health OK", {
+      base: currentHandoffBase(),
+      queueLength: body.queueLength,
+    });
+    figma.ui.postMessage({
+      type: "handoff-health",
+      base: currentHandoffBase(),
+      status: "ok",
+      queueLength: body.queueLength,
+    });
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     updateServerConnection("disconnected");
     postHandoffStatus("error", message);
     rotateHandoffBase();
+    console.warn("[handoff] Health check failed, rotating base", message);
+    figma.ui.postMessage({
+      type: "handoff-health",
+      base: currentHandoffBase(),
+      status: `error: ${message}`,
+      queueLength: null,
+    });
   }
 }
 
@@ -1097,6 +1162,117 @@ async function handleEnhancedImportV2(
       }
     }
 
+    // Unwrap multi-viewport format if present
+    if (Array.isArray(schema.captures) && schema.captures.length > 0) {
+      console.log("🔓 Unwrapping multi-viewport capture format (V2)...");
+      let picked: any = null;
+      for (const cap of schema.captures) {
+        if (!cap) continue;
+        const candidate = cap.data?.tree
+          ? cap.data
+          : cap.data?.schema?.tree
+          ? cap.data.schema
+          : cap.data?.rawSchemaJson
+          ? JSON.parse(cap.data.rawSchemaJson)
+          : cap.data || cap.schema;
+        if (candidate?.tree) {
+          picked = candidate;
+          console.log(
+            `✅ Using viewport: ${cap.viewport || cap.name || "unnamed"} (V2)`
+          );
+          break;
+        }
+        if (cap?.rawSchemaJson && !picked) {
+          try {
+            const parsed = JSON.parse(cap.rawSchemaJson);
+            if (parsed?.tree) {
+              picked = parsed;
+              console.log(
+                `✅ Parsed rawSchemaJson for viewport: ${
+                  cap.viewport || cap.name || "unnamed"
+                } (V2)`
+              );
+              break;
+            }
+          } catch {
+            // ignore parse error
+          }
+        }
+      }
+      if (picked) {
+        schema = picked;
+      } else {
+        console.error(
+          "❌ Multi-viewport format detected but no valid capture data found (V2)"
+        );
+        figma.ui.postMessage({
+          type: "error",
+          message: "Multi-viewport format is invalid - no data in captures",
+        });
+        isImporting = false;
+        return;
+      }
+    }
+
+    // Fallback: unwrap rawSchemaJson or nested schema if tree missing
+    if (!schema.tree) {
+      if (schema.rawSchemaJson && typeof schema.rawSchemaJson === "string") {
+        try {
+          const parsed = JSON.parse(schema.rawSchemaJson);
+          if (parsed?.tree) schema = parsed;
+        } catch {
+          // ignore
+        }
+      } else if (schema.schema?.tree) {
+        schema = schema.schema;
+      }
+    }
+
+    // Deep search for any nested object that contains a tree
+    if (!schema.tree) {
+      const visited = new Set<any>();
+      const findSchemaWithTree = (obj: any): any | null => {
+        if (!obj || typeof obj !== "object") return null;
+        if (visited.has(obj)) return null;
+        visited.add(obj);
+        if ((obj as any).tree) return obj;
+        for (const value of Object.values(obj)) {
+          if (value && typeof value === "object") {
+            const found = findSchemaWithTree(value);
+            if (found) return found;
+          }
+        }
+        return null;
+      };
+      const nested = findSchemaWithTree(schema);
+      if (nested) {
+        console.log("✅ Found nested schema with tree (V2), using it");
+        schema = nested;
+      }
+    }
+
+    // Final validation
+    if (!schema.tree) {
+      const preview =
+        typeof schema === "object"
+          ? JSON.stringify(schema).substring(0, 500)
+          : String(schema).substring(0, 500);
+      console.error("❌ No tree data available (V2). Data structure:", {
+        hasData: !!schema,
+        dataKeys:
+          schema && typeof schema === "object" ? Object.keys(schema) : [],
+        dataType: typeof schema,
+        dataStringified: preview,
+      });
+      figma.ui.postMessage({
+        type: "error",
+        message:
+          "No tree data available for import. The schema may be in an unsupported format.",
+      });
+      isImporting = false;
+      return;
+    }
+
     console.log("🚀 Starting enhanced import V2 with schema:", {
       version: schema.version,
       treeNodes: schema.tree ? "present" : "missing",
@@ -1201,6 +1377,47 @@ async function handleWTFParsing(fileData: ArrayBuffer): Promise<void> {
     figma.ui.postMessage({
       type: "wtf-parse-error",
       error: message,
+    });
+  }
+}
+
+async function sendHandoffHistory(): Promise<void> {
+  figma.ui.postMessage({ type: "history-loading" });
+  try {
+    const { jobs } = await fetchHandoffHistory();
+    figma.ui.postMessage({ type: "history", jobs });
+  } catch (error) {
+    const message =
+      error instanceof Error ? error.message : "Failed to load history";
+    figma.ui.postMessage({ type: "history-error", message });
+  }
+}
+
+async function importFromHistory(jobId: string): Promise<void> {
+  if (!jobId) {
+    figma.ui.postMessage({
+      type: "history-error",
+      message: "Missing job id",
+    });
+    return;
+  }
+
+  figma.ui.postMessage({
+    type: "history-loading",
+  });
+
+  try {
+    const { payload } = await fetchHandoffJob(jobId);
+    if (!payload) {
+      throw new Error("No payload found for this job");
+    }
+    await handleImportRequest(payload, undefined, "auto-import");
+  } catch (error) {
+    const message =
+      error instanceof Error ? error.message : "Failed to import from history";
+    figma.ui.postMessage({
+      type: "history-error",
+      message,
     });
   }
 }

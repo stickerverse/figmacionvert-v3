@@ -26,3 +26,5 @@ figma-plugin/dist/
 .vscode/
 .idea/
 
+handoff-jobs.json
+eng.traineddata

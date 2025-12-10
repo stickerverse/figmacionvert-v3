@@ -8,15 +8,70 @@ self.addEventListener("error", (event: ErrorEvent) => {
 
 self.addEventListener("unhandledrejection", (event: PromiseRejectionEvent) => {
   console.error("[UNHANDLED_REJECTION]", event.reason);
+  reportError("unhandledrejection", event.reason);
 });
 
+// ===== Centralized Error Reporting =====
+// Broadcasts errors to popup terminal via EXTENSION_ERROR message
+function reportError(
+  source: string,
+  err: unknown,
+  context: Record<string, unknown> = {}
+): void {
+  const message = err instanceof Error ? err.message : String(err);
+  const stack = err instanceof Error ? err.stack : null;
+
+  const payload = {
+    type: "EXTENSION_ERROR",
+    source,
+    message,
+    stack,
+    context,
+    timestamp: Date.now(),
+  };
+
+  // Log to background console
+  console.error(`[${source}]`, message, context);
+
+  // Broadcast to popup/side panel
+  try {
+    chrome.runtime.sendMessage(payload, () => {
+      // Ignore "no listeners" errors
+      void chrome.runtime.lastError;
+    });
+  } catch (e) {
+    console.warn("reportError sendMessage failed:", e);
+  }
+}
+
 console.log("Web to Figma extension loaded");
+
+// Ensure content script is dynamically registered (belt-and-suspenders)
+chrome.scripting
+  .registerContentScripts([
+    {
+      id: "auto-capture-content-script",
+      js: ["dist/content-script.js"],
+      matches: ["<all_urls>"],
+      runAt: "document_idle",
+      allFrames: true,
+    },
+  ])
+  .then(() => {
+    console.log("[background] Registered persistent content script");
+  })
+  .catch((err) => {
+    console.warn(
+      "[background] Failed to register persistent content script:",
+      err?.message || err
+    );
+  });
 
 // Handoff server endpoint - using local server for development
 // Allow overriding via a global for local testing; default to null so we try multiple bases
 const HANDOFF_SERVER_URL: string | null = ((globalThis as any)
   .__HANDOFF_SERVER_URL ?? null) as string | null;
-const HANDOFF_PORT = 5511; // non-conflicting local port for handoff server
+const HANDOFF_PORT = 4411; // default local port for handoff server
 const HANDOFF_BASE = HANDOFF_SERVER_URL || `http://localhost:${HANDOFF_PORT}`;
 const CLOUD_CAPTURE_URL = HANDOFF_SERVER_URL;
 const CLOUD_API_KEY =
@@ -24,11 +79,15 @@ const CLOUD_API_KEY =
 
 const HANDOFF_BASES = [
   ...(HANDOFF_SERVER_URL ? [HANDOFF_SERVER_URL.replace(/\/$/, "")] : []),
+  "http://127.0.0.1:4411",
+  "http://localhost:4411",
   "http://127.0.0.1:5511",
   "http://localhost:5511",
   "http://127.0.0.1:3000",
   "http://localhost:3000",
 ];
+const HANDOFF_API_KEY: string | null = ((globalThis as any).__HANDOFF_API_KEY ??
+  null) as string | null;
 let handoffBaseIndex = 0;
 
 function currentHandoffBase() {
@@ -66,6 +125,72 @@ function isCapturableUrl(url: string): boolean {
 }
 
 /**
+ * Ensure content script is injected into the tab and responsive
+ */
+async function ensureContentScript(tabId: number) {
+  try {
+    // Check if script is already injected and responsive
+    const checkReady = async (retries = 3, delayMs = 100): Promise<boolean> => {
+      for (let i = 0; i < retries; i++) {
+        try {
+          const response = await chrome.tabs.sendMessage(tabId, {
+            type: "PING",
+          });
+          if (response && response.pong) {
+            console.log(`[background] Content script ready on tab ${tabId}`);
+            return true;
+          }
+        } catch (e) {
+          // Script not ready, will retry
+          if (chrome.runtime.lastError) {
+            console.warn(
+              `[background] PING attempt ${i + 1} failed on tab ${tabId}:`,
+              chrome.runtime.lastError.message
+            );
+          }
+        }
+        if (i < retries - 1)
+          await new Promise((resolve) => setTimeout(resolve, delayMs));
+      }
+      return false;
+    };
+
+    // First check if already present
+    if (await checkReady(1)) {
+      return;
+    }
+
+    console.log(`[background] Injecting content script into tab ${tabId}`);
+    await chrome.scripting.executeScript({
+      target: { tabId, allFrames: true },
+      files: ["dist/content-script.js"],
+    });
+
+    // Wait for the script to be ready (retry up to 20 times over ~2 seconds)
+    if (!(await checkReady(20, 100))) {
+      console.warn(
+        `[background] Content script not responding on tab ${tabId} after injection; proceeding anyway`
+      );
+    }
+  } catch (error) {
+    console.error(
+      `[background] Failed to inject content script into tab ${tabId}:`,
+      error instanceof Error ? error.message : String(error)
+    );
+    chrome.runtime.sendMessage(
+      {
+        type: "CAPTURE_ERROR",
+        error:
+          error instanceof Error
+            ? error.message
+            : String(error) || "Unknown content-script injection error",
+      },
+      () => void chrome.runtime.lastError
+    );
+  }
+}
+
+/**
  * Get user-friendly URL type description for error messages
  */
 function getUrlType(url: string): string {
@@ -81,6 +206,14 @@ function getUrlType(url: string): string {
 
 function handoffEndpoint(path: string) {
   return `${currentHandoffBase()}${path}`;
+}
+
+function withHandoffAuthHeaders(
+  base: Record<string, string> = {}
+): Record<string, string> {
+  const headers = { ...base };
+  if (HANDOFF_API_KEY) headers["x-api-key"] = HANDOFF_API_KEY;
+  return headers;
 }
 
 function buildUnsupportedUrlError(url: string | undefined | null) {
@@ -255,6 +388,13 @@ let expectedChunks = 0;
 let receivedChunks = 0;
 
 chrome.action.onClicked.addListener(async (tab) => {
+  // Proactively inject content script if possible
+  if (tab.id) {
+    ensureContentScript(tab.id).catch((err) =>
+      console.error("Failed to pre-inject content script:", err)
+    );
+  }
+
   // Open the side panel for the current window
   if (tab.windowId) {
     try {
@@ -266,22 +406,23 @@ chrome.action.onClicked.addListener(async (tab) => {
   }
 });
 
-chrome.commands.onCommand.addListener((command) => {
+chrome.commands.onCommand.addListener(async (command) => {
   console.log(`Command "${command}" triggered`);
 
-  chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
-    const tab = tabs[0];
-    if (!tab || !tab.id) return;
+  const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
+  const tab = tabs[0];
+  if (!tab || !tab.id) return;
 
-    if (command === "capture-full-page") {
-      chrome.tabs.sendMessage(tab.id, {
-        type: "START_CAPTURE",
-        allowNavigation: false,
-      });
-    } else if (command === "capture-selection") {
-      chrome.tabs.sendMessage(tab.id, { type: "START_SELECTION_CAPTURE" });
-    }
-  });
+  await ensureContentScript(tab.id);
+
+  if (command === "capture-full-page") {
+    chrome.tabs.sendMessage(tab.id, {
+      type: "START_CAPTURE",
+      allowNavigation: false,
+    });
+  } else if (command === "capture-selection") {
+    chrome.tabs.sendMessage(tab.id, { type: "START_SELECTION_CAPTURE" });
+  }
 });
 
 chrome.windows.onRemoved.addListener((windowId) => {
@@ -337,7 +478,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     captureMode = message.mode;
     console.log(`[background] Capture mode set to: ${captureMode}`);
     sendResponse({ ok: true });
-    return true;
+    return false; // Synchronous response
   }
 
   if (message.type === "INJECT_IN_PAGE_SCRIPT") {
@@ -398,58 +539,124 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     return false;
   }
 
+  if (message.type === "EXTRACTION_PROGRESS") {
+    // Forward extraction progress from content script to other extension contexts (popup)
+    if (sender.tab?.id) {
+      chrome.runtime.sendMessage(message, () => void chrome.runtime.lastError);
+    }
+    sendResponse?.({ ok: true });
+    return false;
+  }
+
+  if (message.type === "CAPTURE_PROGRESS") {
+    // Relay capture progress (multi-viewport or step-level) to popup
+    chrome.runtime.sendMessage(message, () => void chrome.runtime.lastError);
+    sendResponse?.({ ok: true });
+    return false;
+  }
+
   if (message.type === "START_CAPTURE") {
     (async () => {
       try {
         const tabId = message.tabId;
         const allowNavigation = Boolean(message.allowNavigation);
-        const mode = message.mode || captureMode; // Use passed mode or fallback to global
+        const mode = message.mode || captureMode;
 
-        if (!tabId) {
-          throw new Error("No tab ID provided");
-        }
+        if (!tabId) throw new Error("No tab ID provided");
 
-        // Update global mode if passed explicitly
-        if (message.mode) captureMode = message.mode;
+        // Get tab URL
+        const tab = await chrome.tabs.get(tabId);
+        if (!tab.url) throw new Error("Cannot capture tab without URL");
 
-        console.log(
-          `[capture] Starting capture for tab ${tabId} in mode: ${mode}`
+        console.log(`[capture] Triggering server-side capture for ${tab.url}`);
+
+        // Notify popup that we're starting
+        chrome.runtime.sendMessage(
+          {
+            type: "CAPTURE_PROGRESS",
+            phase: "Starting Puppeteer Capture",
+            progress: 10,
+          },
+          () => void chrome.runtime.lastError
         );
 
-        // Inject the extraction script
-        await chrome.scripting.executeScript({
-          target: { tabId },
-          files: ["dist/injected-script.js"],
-          world: "MAIN", // Execute in page context
+        // Call Handoff Server API
+        const response = await fetch(`${currentHandoffBase()}/api/capture`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            url: tab.url,
+            options: {
+              mode,
+              allowNavigation,
+              viewport: message.viewports?.[0],
+            },
+          }),
         });
 
-        // Trigger extraction via message
-        // We use window.postMessage from content script to talk to injected script
-        // But here we can just execute a function that calls the global exposed by injected script
+        if (!response.ok) {
+          const errText = await response.text();
+          throw new Error(
+            `Server capture failed: ${response.status} ${errText}`
+          );
+        }
 
-        console.log("[capture] Triggering extraction...");
+        const result = await response.json();
+        if (!result.ok) throw new Error(result.error || "Capture failed");
 
-        // Wait for extraction to complete via message listener
-        // The injected script sends EXTRACTION_COMPLETE to content script,
-        // which should forward it to background.
-        // However, let's use a direct execution approach for simplicity if possible,
-        // or rely on the existing message passing architecture.
+        const captureData = result.data;
 
-        // Existing architecture:
-        // background -> content-script (START_CAPTURE) -> injected-script (START_EXTRACTION)
-        // injected-script -> content-script (EXTRACTION_COMPLETE) -> background (CAPTURE_COMPLETE)
+        // If mode is 'send', job is already queued by server via /api/capture
+        // No need to re-upload - server's Puppeteer worker handles everything
+        if (mode === "send") {
+          chrome.runtime.sendMessage(
+            {
+              type: "CAPTURE_PROGRESS",
+              phase: "Capture queued for Figma",
+              progress: 90,
+            },
+            () => void chrome.runtime.lastError
+          );
+          // NOTE: Do NOT call postToHandoffServer() here.
+          // The /api/capture endpoint creates the job and queues it for Figma plugin.
+          console.log(
+            "[capture] Job queued by server, Figma plugin will receive it via /api/jobs/next"
+          );
+        }
 
-        // Let's stick to the existing flow but ensure we don't use CDP
-        chrome.tabs.sendMessage(tabId, {
-          type: "START_CAPTURE",
-          allowNavigation,
-          mode,
-        });
+        // Send explicit job queued notification
+        chrome.runtime.sendMessage(
+          {
+            type: "CAPTURE_REMOTE_JOB_QUEUED",
+            jobId: result.jobId || "unknown",
+            url: tab.url,
+            mode,
+          },
+          () => void chrome.runtime.lastError
+        );
 
-        sendResponse({ ok: true });
+        // Notify completion (metadata only - full payload cached in background)
+        const captureSize = captureData
+          ? JSON.stringify(captureData).length
+          : 0;
+        chrome.runtime.sendMessage(
+          {
+            type: "CAPTURE_COMPLETE",
+            hasData: true,
+            dataSize: captureSize,
+            dataSizeKB: (captureSize / 1024).toFixed(1),
+            dataSizeMB: (captureSize / (1024 * 1024)).toFixed(2),
+          },
+          () => void chrome.runtime.lastError
+        );
+
+        // Success response to close the message channel
+        sendResponse?.({ ok: true });
       } catch (error) {
         const errorMessage =
           error instanceof Error ? error.message : "Unknown error";
+        // Use centralized error reporting
+        reportError("capture:send", error, {});
         chrome.runtime.sendMessage(
           {
             type: "CAPTURE_ERROR",
@@ -457,10 +664,37 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           },
           () => void chrome.runtime.lastError
         );
-        sendResponse({ ok: false, error: errorMessage });
+        sendResponse?.({ ok: false, error: errorMessage });
       }
     })();
     return true;
+  }
+
+  if (message.type === "CAPTURE_ERROR") {
+    console.error("[background] Received CAPTURE_ERROR:", message.error);
+    // Forward to popup/other extension contexts so UI can update
+    if (sender.tab?.id) {
+      chrome.runtime.sendMessage(message, () => void chrome.runtime.lastError);
+    }
+    chrome.notifications.create({
+      type: "basic",
+      iconUrl: "icons/icon128.png",
+      title: "Capture Failed",
+      message: message.error || "An unknown error occurred during capture.",
+      priority: 2,
+    });
+    return false;
+  }
+
+  if (message.type === "LOG_TO_SERVER") {
+    const { message: msg, data } = message;
+    // Send to handoff server
+    fetch(`${currentHandoffBase()}/api/log`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ message: msg, data }),
+    }).catch(() => {}); // Ignore errors
+    return false;
   }
 
   if (message.type === "REMOTE_CAPTURE_REQUEST") {
@@ -470,9 +704,9 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         if (!targetUrl) {
           throw new Error("Missing target URL");
         }
-        const captureHeaders: Record<string, string> = {
+        const captureHeaders: Record<string, string> = withHandoffAuthHeaders({
           "Content-Type": "application/json",
-        };
+        });
 
         // Add API key for cloud service
         if (CLOUD_CAPTURE_URL && CLOUD_API_KEY) {
@@ -492,18 +726,19 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           throw new Error(body?.error || "Capture service failed");
         }
         updateLastCapturedPayload(body.data);
+        const bodySize = JSON.stringify(body.data).length;
         chrome.runtime.sendMessage(
           {
             type: "CAPTURE_COMPLETE",
-            data: body.data,
+            hasData: true,
             validationReport: body.validationReport,
             previewWithOverlay: body.previewWithOverlay,
-            dataSize: JSON.stringify(body.data).length,
-            dataSizeKB: (JSON.stringify(body.data).length / 1024).toFixed(1),
+            dataSize: bodySize,
+            dataSizeKB: (bodySize / 1024).toFixed(1),
           },
           () => void chrome.runtime.lastError
         );
-        sendResponse({ ok: true, data: body.data });
+        sendResponse({ ok: true, hasData: true, dataSize: bodySize });
       } catch (error) {
         const message =
           error instanceof Error ? error.message : "Remote capture failed";
@@ -521,22 +756,31 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     }
 
     const shouldDownloadOnly = captureDeliveryMode === "download";
-    updateLastCapturedPayload(data);
+    // For chunked transfers, the real payload lives in lastCapturedPayload (reassembled),
+    // so use it preferentially to include full images.
+    const payload =
+      data && data.chunked && lastCapturedPayload ? lastCapturedPayload : data;
+
+    updateLastCapturedPayload(payload);
+
     if (shouldDownloadOnly) {
       captureDeliveryMode = "send";
       chrome.runtime.sendMessage(
         {
           type: "CAPTURE_DOWNLOAD_READY",
-          data,
-          dataSize: JSON.stringify(data).length,
-          dataSizeKB: (JSON.stringify(data).length / 1024).toFixed(1),
+          data: payload,
+          dataSize: JSON.stringify(payload).length,
+          dataSizeKB: (JSON.stringify(payload).length / 1024).toFixed(1),
         },
         () => void chrome.runtime.lastError
       );
       sendResponse?.({ ok: true, mode: "download" });
       return false;
     }
-    enqueueHandoffJob(data, "auto");
+
+    enqueueHandoffJob(payload, "auto");
+    // Kick the queue immediately to avoid idle service worker delaying upload
+    void processPendingJobs();
     captureDeliveryMode = "send";
     sendResponse?.({ ok: true, queued: pendingJobs.length });
     return false;
@@ -670,7 +914,24 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         // If we're using cached payload, make sure we update it if new data came in (though unlikely here)
         if (data) updateLastCapturedPayload(data);
 
-        enqueueHandoffJob(payload, "manual");
+        // If the payload is a raw JSON string wrapper, parse it before enqueueing
+        let parsedPayload = payload;
+        if (payload && typeof payload === "object" && payload.rawSchemaJson) {
+          try {
+            parsedPayload =
+              typeof payload.rawSchemaJson === "string"
+                ? JSON.parse(payload.rawSchemaJson)
+                : payload.rawSchemaJson;
+          } catch (e) {
+            console.error(
+              "❌ Failed to parse rawSchemaJson for handoff, using raw string",
+              e
+            );
+            parsedPayload = payload;
+          }
+        }
+
+        enqueueHandoffJob(parsedPayload, "manual");
         sendResponse({ ok: true, queued: pendingJobs.length });
       } catch (error) {
         const errorMessage =
@@ -853,9 +1114,9 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message.type === "HANDOFF_HEALTH_CHECK") {
     (async () => {
       try {
-        const healthHeaders: Record<string, string> = {
+        const healthHeaders: Record<string, string> = withHandoffAuthHeaders({
           "cache-control": "no-cache",
-        };
+        });
 
         // Add API key for cloud service
         if (CLOUD_CAPTURE_URL && CLOUD_API_KEY) {
@@ -948,30 +1209,32 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       console.log(`🧩 Reassembling ${totalChunks} chunks...`);
       const completeJsonString = chunkedDataBuffer.join("");
 
-      console.log(
-        `⚡ Zero-Parse Optimization: Skipping JSON.parse for ${totalChunks} chunks`
-      );
-      // Create a wrapper object to signal raw JSON handling
-      const reassembledData = { rawSchemaJson: completeJsonString };
+      // Parse once so downstream always has a proper object/schema and avoid sending huge messages to popup
+      let parsedData: any = null;
+      try {
+        parsedData = JSON.parse(completeJsonString);
+        updateLastCapturedPayload(parsedData);
+      } catch (parseErr) {
+        console.error("❌ Failed to parse reassembled payload", parseErr);
+        parsedData = null;
+        updateLastCapturedPayload({ rawSchemaJson: completeJsonString });
+      }
 
-      console.log(`✅ Successfully reassembled capture data (Raw String Mode)`);
-
-      // Notify any open extension UI (popup) that capture completed
+      // Notify UI with a lightweight message (no raw payload to avoid message size errors)
       chrome.runtime.sendMessage(
         {
           type: "CAPTURE_COMPLETE",
-          data: reassembledData,
+          data: null, // keep message small
           dataSize: completeJsonString.length,
           dataSizeKB: (completeJsonString.length / 1024).toFixed(1),
           chunked: true,
         },
         () => {
-          // ignore errors if popup isn't open
           void chrome.runtime.lastError;
         }
       );
 
-      // Clean up
+      // Clean up chunk buffers
       chunkedDataBuffer = [];
       expectedChunks = 0;
       receivedChunks = 0;
@@ -979,14 +1242,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       // Store and queue for handoff
       const shouldDownloadOnly = captureDeliveryMode === "download";
 
-      // For download mode, we might need to parse it if the UI expects an object,
-      // but for now let's assume send mode is the priority.
       if (shouldDownloadOnly) {
-        // If downloading, we MUST parse it because the UI expects an object to save as JSON file
-        console.log("💾 Parsing for download...");
-        const parsedData = JSON.parse(completeJsonString);
-        updateLastCapturedPayload(parsedData);
-
         captureDeliveryMode = "send";
         chrome.runtime.sendMessage(
           {
@@ -999,17 +1255,12 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           () => void chrome.runtime.lastError
         );
       } else {
-        console.log("🚀 Enqueuing raw job for handoff...");
-        lastCapturedPayload = reassembledData; // Store raw wrapper
+        console.log("🚀 Enqueuing parsed job for handoff...");
+        lastCapturedPayload = parsedData;
+        enqueueHandoffJob(parsedData, "auto");
 
-        // Don't await the upload here, just enqueue it.
-        // The queue processor will pick it up.
-        // We return success immediately so the content script doesn't time out waiting for the upload.
-        enqueueHandoffJob(reassembledData, "auto");
-
-        // Send response immediately
         sendResponse({ ok: true });
-        return false; // We already sent the response
+        return false;
       }
 
       sendResponse({
@@ -1046,10 +1297,10 @@ async function pingHandoffHealth() {
 
     const response = await fetch(heartbeatEndpoint, {
       method: "POST",
-      headers: {
+      headers: withHandoffAuthHeaders({
         "Content-Type": "application/json",
         "cache-control": "no-cache",
-      },
+      }),
       body: JSON.stringify({
         extensionId: chrome.runtime.id,
         version: chrome.runtime.getManifest().version,
@@ -1083,7 +1334,7 @@ async function pingHandoffHealth() {
 
 function scheduleHeartbeat() {
   console.log("[EXT_HEARTBEAT] Scheduling heartbeat alarm");
-  chrome.alarms.create(HEARTBEAT_ALARM, { periodInMinutes: 0.25 }); // ~15s cadence
+  chrome.alarms.create(HEARTBEAT_ALARM, { periodInMinutes: 0.1 }); // ~6s cadence to satisfy UI TTL
 }
 
 chrome.runtime.onInstalled.addListener(() => {
@@ -1119,7 +1370,7 @@ void pingHandoffHealth();
 setInterval(() => {
   console.log("[EXT_HEARTBEAT] Interval fired");
   void pingHandoffHealth();
-}, 15000);
+}, 5000);
 
 // Lightweight size estimator - avoids blocking JSON.stringify
 function estimatePayloadSize(payload: any): number {
@@ -1396,9 +1647,11 @@ async function postToHandoffServer(payload: any): Promise<void> {
   // use it directly to avoid expensive JSON.parse/stringify cycles.
   if (payload && typeof payload === "object" && payload.rawSchemaJson) {
     console.log("⚡ Using Zero-Parse forwarding for large payload");
-    // Construct the body manually: {"schema": <raw_json>, "screenshot": ""}
-    // We assume the raw JSON represents the schema.
-    jsonPayload = `{"schema":${payload.rawSchemaJson},"screenshot":""}`;
+    // Use the raw schema JSON directly (already stringified by the content script)
+    jsonPayload =
+      typeof payload.rawSchemaJson === "string"
+        ? payload.rawSchemaJson
+        : JSON.stringify(payload.rawSchemaJson);
     payloadSizeMB =
       new TextEncoder().encode(jsonPayload).length / (1024 * 1024);
   } else {
@@ -1488,10 +1741,10 @@ async function postToHandoffServer(payload: any): Promise<void> {
 
       console.log(`[capture] Download triggered: ${filename}`);
 
-      // Notify popup of success
+      // Notify popup of success (metadata only)
       chrome.runtime.sendMessage({
         type: "CAPTURE_COMPLETE",
-        data: JSON.parse(jsonString), // Parse back for stats if needed, or send raw string
+        hasData: true,
         dataSize: jsonString.length,
         dataSizeKB: (jsonString.length / 1024).toFixed(2),
       });
@@ -1516,7 +1769,7 @@ async function postToHandoffServer(payload: any): Promise<void> {
   const remoteLog = (msg: string, data?: any) => {
     fetch(handoffEndpoint("/api/log"), {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: withHandoffAuthHeaders({ "Content-Type": "application/json" }),
       body: JSON.stringify({ message: msg, data }),
     }).catch(() => {});
   };
@@ -1569,9 +1822,9 @@ async function postToHandoffServer(payload: any): Promise<void> {
     console.warn(`⚠️ Large payload detected: ${payloadSizeMB.toFixed(2)}MB`);
   }
 
-  const headers: Record<string, string> = {
+  const headers: Record<string, string> = withHandoffAuthHeaders({
     "Content-Type": "application/json",
-  };
+  });
 
   if (CLOUD_CAPTURE_URL && CLOUD_API_KEY) {
     headers["x-api-key"] = CLOUD_API_KEY;
@@ -1872,6 +2125,39 @@ async function processPendingJobs(): Promise<void> {
   } catch (error) {
     const message = error instanceof Error ? error.message : "Unknown error";
     console.error("❌ Handoff failed:", message);
+    // Surface error to any open UI
+    chrome.runtime.sendMessage(
+      { type: "CAPTURE_ERROR", error: `Handoff failed: ${message}` },
+      () => void chrome.runtime.lastError
+    );
+    // Log to server for diagnostics
+    try {
+      fetch(handoffEndpoint("/api/log"), {
+        method: "POST",
+        headers: withHandoffAuthHeaders({ "Content-Type": "application/json" }),
+        body: JSON.stringify({ message: "[handoff] failure", error: message }),
+      }).catch(() => {});
+    } catch {
+      // ignore
+    }
+    // Fallback: expose payload for manual download if upload fails
+    try {
+      updateLastCapturedPayload(readyJob.payload);
+      chrome.runtime.sendMessage(
+        {
+          type: "CAPTURE_DOWNLOAD_READY",
+          data: readyJob.payload,
+          dataSize: JSON.stringify(readyJob.payload).length,
+          dataSizeKB: (JSON.stringify(readyJob.payload).length / 1024).toFixed(
+            1
+          ),
+          fallback: true,
+        },
+        () => void chrome.runtime.lastError
+      );
+    } catch (e) {
+      console.warn("Failed to prepare fallback download:", e);
+    }
     readyJob.retries += 1;
     const delay = Math.min(30000, 2000 * readyJob.retries);
     readyJob.nextRetryAt = Date.now() + delay;

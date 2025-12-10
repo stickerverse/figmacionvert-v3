@@ -1,66 +1,121 @@
 import { DOMExtractor } from "./utils/dom-extractor";
 
-console.log("🎯 Direct DOM Extraction script loaded");
+console.log("🎯 Direct DOM Extraction script loaded (v2 - reloaded)");
 
-// Prevent duplicate injection - check if already loaded
-if ((window as any).__DOM_EXTRACTOR_LOADED__) {
-  console.warn(
-    "⚠️ [INJECT] Script already loaded, skipping duplicate registration"
+// Cleanup previous listener if exists to prevent duplicates
+if ((window as any).__DOM_EXTRACTOR_LISTENER__) {
+  try {
+    window.removeEventListener(
+      "message",
+      (window as any).__DOM_EXTRACTOR_LISTENER__
+    );
+    console.log("♻️ Removed previous message listener");
+  } catch (e) {
+    console.warn("Failed to remove previous listener:", e);
+  }
+}
+
+(window as any).__DOM_EXTRACTOR_LOADED__ = true;
+if (!(window as any).__EXTRACTION_COUNT__) {
+  (window as any).__EXTRACTION_COUNT__ = 0;
+}
+
+// Global error handlers
+// Global error handlers
+function shouldIgnoreGlobalError(message: any, source?: string): boolean {
+  const msg = String(message || "");
+
+  // Common benign ResizeObserver noise
+  if (
+    msg.includes("ResizeObserver loop completed with undelivered notifications")
+  ) {
+    return true;
+  }
+  if (msg.includes("ResizeObserver loop limit exceeded")) {
+    return true;
+  }
+
+  // You can also ignore stuff that clearly comes from YouTube, etc.
+  if (source && /youtube\.com/.test(source)) {
+    return true;
+  }
+
+  return false;
+}
+
+window.onerror = (message, source, lineno, colno, error) => {
+  if (shouldIgnoreGlobalError(message, source)) {
+    console.warn("[INJECTED_ERROR] Ignored benign global error:", message);
+    return; // Do NOT post EXTRACTION_ERROR
+  }
+
+  console.error("[INJECTED_ERROR] Global error:", message, error);
+  window.postMessage(
+    {
+      type: "EXTRACTION_ERROR",
+      error: `Global error: ${message} at ${source}:${lineno}:${colno}`,
+      details: error ? error.stack : undefined,
+    },
+    "*"
   );
-} else {
-  (window as any).__DOM_EXTRACTOR_LOADED__ = true;
-  (window as any).__EXTRACTION_COUNT__ = 0; // Track how many times extraction runs
+};
 
-  // Global error handlers
-  window.onerror = (message, source, lineno, colno, error) => {
-    console.error("[INJECTED_ERROR] Global error:", message, error);
+// Expose the extractor globally
+(window as any).extractPageToSchema = async function () {
+  const extractor = new DOMExtractor();
+  return await extractor.extractPageToSchema();
+};
+
+// Define listener
+const messageListener = async (event: MessageEvent) => {
+  if (event.data.type === "PING") {
+    window.postMessage({ type: "PONG" }, "*");
+    return;
+  }
+
+  if (event.data.type === "START_EXTRACTION") {
+    (window as any).__EXTRACTION_COUNT__++;
+    console.log(
+      `📨 [INJECT] START_EXTRACTION received! (run #${
+        (window as any).__EXTRACTION_COUNT__
+      })`
+    );
+    console.log("📨 [INJECT] Event data:", event.data);
+
+    // Send immediate acknowledgment
     window.postMessage(
       {
-        type: "EXTRACTION_ERROR",
-        error: `Global error: ${message} at ${source}:${lineno}:${colno}`,
-        details: error ? error.stack : undefined,
+        type: "EXTRACTION_PROGRESS",
+        phase: "starting",
+        message: "Extraction acknowledged, starting...",
+        percent: 28,
       },
       "*"
     );
-  };
 
-  // Expose the extractor globally
-  (window as any).extractPageToSchema = async function () {
-    const extractor = new DOMExtractor();
-    return await extractor.extractPageToSchema();
-  };
+    try {
+      console.log("🔍 [INJECT] Creating DOMExtractor instance...");
+      const extractor = new DOMExtractor();
 
-  // Listen for messages from content script
-  window.addEventListener("message", async (event) => {
-    if (event.data.type === "PING") {
-      window.postMessage({ type: "PONG" }, "*");
-      return;
-    }
-
-    if (event.data.type === "START_EXTRACTION") {
-      (window as any).__EXTRACTION_COUNT__++;
-      console.log(
-        `📨 [INJECT] START_EXTRACTION received! (run #${
-          (window as any).__EXTRACTION_COUNT__
-        })`
-      );
-      console.log("📨 [INJECT] Event data:", event.data);
-
-      // Send immediate acknowledgment
-      window.postMessage(
-        {
-          type: "EXTRACTION_PROGRESS",
-          phase: "starting",
-          message: "Extraction acknowledged, starting...",
-          percent: 28,
-        },
-        "*"
-      );
+      // Set up a heartbeat to keep the watchdog alive during long extractions
+      let heartbeatCount = 0;
+      const heartbeatInterval = setInterval(() => {
+        heartbeatCount++;
+        console.log(
+          `💓 [INJECT] Heartbeat ${heartbeatCount} - extraction still running...`
+        );
+        window.postMessage(
+          {
+            type: "EXTRACTION_PROGRESS",
+            phase: "processing",
+            message: `Still processing... (${heartbeatCount * 10}s)`,
+            percent: Math.min(30 + heartbeatCount * 5, 95),
+          },
+          "*"
+        );
+      }, 10000); // Send heartbeat every 10 seconds
 
       try {
-        console.log("🔍 [INJECT] Creating DOMExtractor instance...");
-        const extractor = new DOMExtractor();
-
         console.log("🔍 [INJECT] Calling extractPageToSchema()...");
         const schema = await extractor.extractPageToSchema();
         console.log("✅ [INJECT] extractPageToSchema() returned successfully");
@@ -78,22 +133,29 @@ if ((window as any).__DOM_EXTRACTOR_LOADED__) {
           "*"
         );
         console.log("✅ [INJECT] EXTRACTION_COMPLETE message posted!");
-      } catch (error) {
-        console.error("❌ [INJECT] Extraction failed:", error);
-        console.error(
-          "❌ [INJECT] Error stack:",
-          error instanceof Error ? error.stack : "No stack"
-        );
-        window.postMessage(
-          {
-            type: "EXTRACTION_ERROR",
-            error: error instanceof Error ? error.message : String(error),
-          },
-          "*"
-        );
+      } finally {
+        // Always clear the heartbeat interval
+        clearInterval(heartbeatInterval);
       }
+    } catch (error) {
+      console.error("❌ [INJECT] Extraction failed:", error);
+      console.error(
+        "❌ [INJECT] Error stack:",
+        error instanceof Error ? error.stack : "No stack"
+      );
+      window.postMessage(
+        {
+          type: "EXTRACTION_ERROR",
+          error: error instanceof Error ? error.message : String(error),
+        },
+        "*"
+      );
     }
-  });
+  }
+};
 
-  console.log("✅ [INJECT] Message listener installed for START_EXTRACTION");
-}
+// Store and register listener
+(window as any).__DOM_EXTRACTOR_LISTENER__ = messageListener;
+window.addEventListener("message", messageListener);
+
+console.log("✅ [INJECT] Message listener installed for START_EXTRACTION");

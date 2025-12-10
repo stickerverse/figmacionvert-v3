@@ -9,6 +9,11 @@ declare global {
   }
 }
 
+// Immediate execution test - if this doesn't log, script isn't running at all
+const LOAD_TIME = new Date().toISOString();
+console.log(`🚀🚀🚀 CONTENT SCRIPT LOADED AT ${LOAD_TIME} 🚀🚀🚀`);
+console.log("If you see this, content-script.js is executing!");
+
 (() => {
   console.log("🌐 Content script loaded");
 
@@ -104,16 +109,24 @@ declare global {
     // Users can choose which one to use by disabling the other
   }
 
-  // Set our own marker to prevent double-initialization
-  if (document.documentElement.hasAttribute("data-web-to-figma-installed")) {
-    console.log(
-      "📍 Content script already injected, skipping initialization..."
-    );
-    // Exit early to prevent double-injection
-    return;
+  // Allow multiple injections but ensure we only run init logic once per top frame
+  const isTopFrame = window.top === window;
+  if (isTopFrame) {
+    if (document.documentElement.hasAttribute("data-web-to-figma-installed")) {
+      console.log(
+        "📍 Content script already initialized in top frame, continuing (no-op init)..."
+      );
+    } else {
+      document.documentElement.setAttribute(
+        "data-web-to-figma-installed",
+        "true"
+      );
+    }
+    // Signal to automated tests that the content script is present
+    document.body?.setAttribute("data-extension-installed", "true");
+  } else {
+    console.log("📍 Running in iframe; will still register message listeners");
   }
-
-  document.documentElement.setAttribute("data-web-to-figma-installed", "true");
 
   // Content script loaded and ready
 
@@ -122,7 +135,24 @@ declare global {
   let isCapturing = false;
   let watchdogTimer: any = null;
   let cancelCurrentExtraction: (() => void) | null = null;
-  const WATCHDOG_TIMEOUT = 45000; // 45 seconds without progress = stall
+  const WATCHDOG_TIMEOUT = 90000; // 90 seconds without progress = stall (increased for complex sites)
+  let isScriptInjected = false; // Track if injection script has been loaded this session
+
+  function sendCaptureProgress(
+    phase: string,
+    percent?: number,
+    details?: Record<string, any>
+  ) {
+    chrome.runtime.sendMessage(
+      {
+        type: "CAPTURE_PROGRESS",
+        phase,
+        progress: percent,
+        details,
+      },
+      () => void chrome.runtime.lastError
+    );
+  }
 
   function resetWatchdog() {
     if (watchdogTimer) clearTimeout(watchdogTimer);
@@ -228,6 +258,9 @@ declare global {
       chunks.push(jsonString.slice(i, i + CHUNK_SIZE));
     }
 
+    // Attach a marker so downstream knows to use background cache for download/send
+    captureData.chunked = true;
+
     console.log(
       `📦 Large payload (${totalSizeKB}KB), chunking into ${chunks.length} parts`
     );
@@ -264,12 +297,35 @@ declare global {
     console.log("📨 [CONTENT SCRIPT] Received message:", message.type);
     console.log("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
 
-    if (message.type === "start-capture" || message.type === "START_CAPTURE") {
+    // Only allow capture orchestration from the top frame; sandboxed iframes (about:blank) should ignore
+    const isTopFrame = window.top === window;
+
+    if (
+      isTopFrame &&
+      (message.type === "start-capture" || message.type === "START_CAPTURE")
+    ) {
+      const currentUrl = window.location.href || "";
+      if (!isCapturablePageUrl(currentUrl)) {
+        const blockedType = describeUrlType(currentUrl);
+        const errorMessage = `Cannot capture this page. Chrome blocks debugger access to ${blockedType} URLs. Please capture a regular webpage (http:// or https://).`;
+        console.error("❌ Capture blocked:", errorMessage, { currentUrl });
+        overlay.update("❌ " + errorMessage);
+        chrome.runtime.sendMessage(
+          { type: "CAPTURE_ERROR", error: errorMessage },
+          () => void chrome.runtime.lastError
+        );
+        sendResponse({ started: false, error: errorMessage });
+        return true;
+      }
+
       document.body.setAttribute("data-debug-startcapture", "received");
       const startTime = Date.now();
       console.log("🚀 [CAPTURE START] Initiating capture process...");
       console.log("   ⏱️  Started at:", new Date().toLocaleTimeString());
       isCapturing = true;
+      sendCaptureProgress("Capture started", 20, {
+        allowNavigation: message.allowNavigation,
+      });
 
       // Notify test script if listening
       window.postMessage({ type: "CAPTURE_STARTED" }, "*");
@@ -294,6 +350,9 @@ declare global {
       viewports.forEach((vp, idx) => {
         console.log(`   ${idx + 1}. ${vp.name}: ${vp.width}x${vp.height}px`);
       });
+
+      // Send response IMMEDIATELY before async work to acknowledge message receipt
+      sendResponse({ started: true });
 
       handleMultiViewportCapture(viewports, allowNavigation)
         .then(() => {
@@ -330,7 +389,8 @@ declare global {
           isCapturing = false;
         });
 
-      sendResponse({ started: true });
+      // Return true to indicate we've handled the message (response already sent)
+      return true;
     }
 
     if (message.type === "START_SELECTION_CAPTURE") {
@@ -384,10 +444,17 @@ declare global {
       sendResponse({ started: true });
     }
 
+    if (message.type === "PING") {
+      sendResponse({ pong: true });
+      return false;
+    }
+
     return false;
   });
 
   // Listen for messages from the main page (for testing/automation)
+  let extractionDone = false;
+
   window.addEventListener("message", (event) => {
     // Only accept messages from ourselves
     if (event.source !== window) return;
@@ -395,6 +462,21 @@ declare global {
     // Reset watchdog on any valid message from injected script
     if (event.data.type && event.data.type.startsWith("EXTRACTION_")) {
       resetWatchdog();
+    }
+
+    if (event.data.type === "EXTRACTION_COMPLETE") {
+      extractionDone = true;
+    }
+
+    if (event.data.type === "EXTRACTION_ERROR") {
+      if (extractionDone) {
+        console.warn(
+          "[CAPTURE] EXTRACTION_ERROR ignored after completion:",
+          event.data.error
+        );
+        return;
+      }
+      // Continue with normal error handling...
     }
 
     if (event.data.type === "FETCH_IMAGE_PROXY") {
@@ -496,6 +578,9 @@ declare global {
         current: 0,
         total: viewports.length,
       });
+      sendCaptureProgress("Preparing capture script", 22, {
+        viewports: viewports.length,
+      });
 
       await injectScript();
       await wait(500);
@@ -519,6 +604,15 @@ declare global {
           total: viewports.length,
           viewport: viewport.name,
         });
+        sendCaptureProgress(
+          `Capturing ${viewport.name}`,
+          Math.min(25 + i * 5, 35),
+          {
+            viewport: viewport.name,
+            index: i + 1,
+            total: viewports.length,
+          }
+        );
 
         await wait(300);
 
@@ -560,6 +654,9 @@ declare global {
         captures,
       };
 
+      // Expose capture payload for automated tests/diagnostics
+      (window as any).lastCaptureData = captureData;
+
       // Check if this was a chunked transfer (for large pages like Amazon)
       const isChunkedCapture = captures.some((c) => c.data?.chunked === true);
 
@@ -586,22 +683,18 @@ declare global {
         return;
       }
 
-      // For non-chunked captures: calculate size and send to background
+      // Send to background (chunked if large to avoid message size limits)
+      await sendCaptureToBackground(captureData);
       let totalSize = 0;
       try {
         totalSize = JSON.stringify(captureData).length;
       } catch (e) {
-        console.warn("⚠️ Could not calculate size, using estimate");
-        totalSize = 1024 * 1024; // 1MB estimate
+        totalSize = 0;
       }
-      const totalSizeKB = (totalSize / 1024).toFixed(1);
-
-      // Send to background
-      await chrome.runtime.sendMessage({
-        type: "CAPTURE_COMPLETE",
-        data: captureData,
-        dataSize: totalSize,
-        dataSizeKB: totalSizeKB,
+      const totalSizeKB = totalSize ? (totalSize / 1024).toFixed(1) : "unknown";
+      sendCaptureProgress("Capture complete", 100, {
+        totalSizeKB,
+        captures: captures.length,
       });
 
       overlay.update(
@@ -656,6 +749,20 @@ declare global {
             " KB). Check console for details."
         );
       }
+
+      // Auto-queue handoff so the plugin can import without relying on the popup payload
+      try {
+        const payloadForHandoff = (captureData as any).chunked
+          ? null
+          : captureData;
+        await chrome.runtime.sendMessage({
+          type: "SEND_TO_HANDOFF",
+          data: payloadForHandoff,
+        });
+        console.log("🚀 Auto handoff enqueue requested");
+      } catch (e) {
+        console.warn("⚠️ Auto handoff enqueue failed", e);
+      }
     } finally {
       // Don't reset viewport - this was causing page refresh
       // The browser will naturally restore viewport when user navigates away
@@ -707,12 +814,14 @@ declare global {
       // Scroll page
       console.log("📍 Step 2: Scroll page");
       overlay.update("📜 Scrolling page...");
+      sendCaptureProgress("Scrolling page", 30);
       await scroller.scrollPage();
       await wait(200);
 
       // Capture interactive states (dropdowns, accordions, etc.)
       console.log("📍 Step 2b: Capturing interactive states...");
       overlay.update("🖱️ Expanding dropdowns & menus...");
+      sendCaptureProgress("Capturing interactive states", 32);
       await scroller.captureInteractiveStates();
       await wait(200);
 
@@ -729,14 +838,21 @@ declare global {
         console.log(
           `✅ Screenshot captured successfully (${sizeKB}KB, took ${screenshotTime}s)`
         );
+        sendCaptureProgress("Screenshot captured", 40, { sizeKB });
       } else {
         console.warn("⚠️  Screenshot capture failed or returned empty");
+        sendCaptureProgress("Screenshot capture failed", 40);
       }
+
+      // Reset watchdog after screenshot completes
+      resetWatchdog();
+
       // Wait longer to respect Chrome's MAX_CAPTURE_VISIBLE_TAB_CALLS_PER_SECOND quota (2 per second)
       await wait(600);
 
       // Extract DOM
       console.log("📍 [STEP 4/4] Extracting DOM structure...");
+      sendCaptureProgress("Starting DOM extraction", 45);
 
       const extractStart = Date.now();
       const result = await extractPage(
@@ -751,8 +867,15 @@ declare global {
         console.log(
           `✅ DOM extraction complete (${elementCount} elements, took ${extractTime}s)`
         );
+        sendCaptureProgress("DOM extraction complete", 70, {
+          elements: elementCount,
+          viewport:
+            viewport?.name ||
+            viewportConfig?.width + "x" + viewportConfig?.height,
+        });
       } else {
         console.error("❌ DOM extraction failed - no data returned");
+        sendCaptureProgress("DOM extraction failed", 70);
       }
 
       if (viewport?.name && result.data?.metadata) {
@@ -775,6 +898,12 @@ declare global {
   }
 
   function injectScript(): Promise<void> {
+    // If already injected this content script session, skip
+    if (isScriptInjected) {
+      console.log("💉 Script already injected in this session, reusing");
+      return Promise.resolve();
+    }
+
     return new Promise((resolve, reject) => {
       // Start the watchdog
       resetWatchdog();
@@ -790,6 +919,7 @@ declare global {
             console.log(
               `✅ Injected script loaded via scripting API from ${candidatePaths[0]}`
             );
+            isScriptInjected = true; // Mark as injected
             return resolve();
           }
 
@@ -806,6 +936,7 @@ declare global {
             script.onload = () => {
               console.log(`✅ Injected script loaded from ${path}`);
               script.remove();
+              isScriptInjected = true; // Mark as injected
               resolve();
             };
             script.onerror = (error) => {
@@ -849,11 +980,35 @@ declare global {
     console.log("📸 Starting Direct DOM extraction...");
 
     overlay.update("🔍 Extracting DOM structure... (25%)");
+    chrome.runtime.sendMessage(
+      {
+        type: "EXTRACTION_PROGRESS",
+        phase: "Extracting DOM",
+        message: "Extracting DOM structure...",
+        percent: 25,
+      },
+      () => void chrome.runtime.lastError
+    );
+    sendCaptureProgress("Extracting DOM structure", 25);
 
     return new Promise(async (resolve, reject) => {
       // Set up message listener for extraction results
       const messageListener = (event: MessageEvent) => {
-        if (event.source !== window) return;
+        // Relaxed check for extraction messages to ensure we catch them from Main World
+        const isExtractionMessage =
+          event.data?.type === "EXTRACTION_COMPLETE" ||
+          event.data?.type === "EXTRACTION_PROGRESS" ||
+          event.data?.type === "EXTRACTION_ERROR" ||
+          event.data?.type === "EXT_DEBUG_LOG";
+
+        if (event.source !== window && !isExtractionMessage) return;
+
+        if (isExtractionMessage && event.source !== window) {
+          console.log(
+            `📨 [DEBUG] Received ${event.data.type} from non-window source`,
+            event.source
+          );
+        }
 
         if (event.data.type === "EXTRACTION_COMPLETE") {
           console.log("✅ Extraction complete, received data");
@@ -878,6 +1033,21 @@ declare global {
           }
 
           overlay.update("✅ DOM extraction complete (50%)");
+          chrome.runtime.sendMessage(
+            {
+              type: "EXTRACTION_PROGRESS",
+              phase: "Extracting",
+              message: "DOM extraction complete",
+              percent: 50,
+              stats: {
+                elements: schema?.tree?.children?.length,
+                images: schema?.assets?.images
+                  ? Object.keys(schema.assets.images).length
+                  : undefined,
+              },
+            },
+            () => void chrome.runtime.lastError
+          );
 
           resolve({
             data: schema,
@@ -888,6 +1058,14 @@ declare global {
 
         if (event.data.type === "EXTRACTION_ERROR") {
           console.error("❌ Extraction error:", event.data.error);
+          chrome.runtime.sendMessage(
+            {
+              type: "CAPTURE_ERROR",
+              error: event.data.error,
+              details: event.data.details,
+            },
+            () => void chrome.runtime.lastError
+          );
           window.removeEventListener("message", messageListener);
           reject(new Error(event.data.error));
         }
@@ -897,6 +1075,32 @@ declare global {
             `📊 Progress: ${event.data.message} (${event.data.percent}%)`
           );
           overlay.update(`${event.data.message} (${event.data.percent}%)`);
+          sendCaptureProgress(
+            event.data.message || "Extracting",
+            event.data.percent,
+            event.data.stats || event.data.data
+          );
+          chrome.runtime.sendMessage(
+            {
+              type: "EXTRACTION_PROGRESS",
+              phase: event.data.phase || "Extracting",
+              message: event.data.message,
+              percent: event.data.percent,
+              current: event.data.current,
+              total: event.data.total,
+              stats: event.data.stats || event.data.data,
+            },
+            () => void chrome.runtime.lastError
+          );
+        }
+
+        if (event.data.type === "EXT_DEBUG_LOG") {
+          // Forward to background for server logging
+          chrome.runtime.sendMessage({
+            type: "LOG_TO_SERVER",
+            message: event.data.message,
+            data: event.data.data,
+          });
         }
       };
 
@@ -904,27 +1108,60 @@ declare global {
 
       // CRITICAL: Wait for injected script's event listener to be ready
       console.log("⏳ Waiting for injected script listener to register...");
+      chrome.runtime.sendMessage({
+        type: "LOG_TO_SERVER",
+        message: "Waiting for injected script...",
+      });
 
       const waitForInjectedScript = async () => {
-        let attempts = 0;
-        while (attempts < 20) {
-          // Try for 2 seconds (20 * 100ms)
-          let pongReceived = false;
+        console.log("⏳ Waiting for PONG...");
+        return new Promise<boolean>((resolve) => {
+          let resolved = false;
           const pongListener = (e: MessageEvent) => {
-            if (e.data.type === "PONG") pongReceived = true;
+            if (e.data.type === "PONG") {
+              console.log("✅ PONG received!");
+              resolved = true;
+              window.removeEventListener("message", pongListener);
+
+              chrome.runtime.sendMessage({
+                type: "LOG_TO_SERVER",
+                message: "Injected script ready!",
+              });
+
+              resolve(true);
+            }
           };
           window.addEventListener("message", pongListener);
-          window.postMessage({ type: "PING" }, "*");
-          await wait(100);
-          window.removeEventListener("message", pongListener);
 
-          if (pongReceived) {
-            console.log("✅ Injected script ready!");
-            return true;
-          }
-          attempts++;
-        }
-        return false;
+          // Send PINGs every 200ms for 5 seconds
+          let attempts = 0;
+          const interval = setInterval(() => {
+            if (resolved) {
+              clearInterval(interval);
+              return;
+            }
+            if (attempts >= 25) {
+              // 5 seconds
+              clearInterval(interval);
+              window.removeEventListener("message", pongListener);
+              console.warn("❌ PING timeout after 5s");
+
+              chrome.runtime.sendMessage({
+                type: "LOG_TO_SERVER",
+                message: "Injected script PING timeout",
+              });
+
+              resolve(false);
+              return;
+            }
+            console.log(`Ping attempt ${attempts + 1}`);
+            window.postMessage({ type: "PING" }, "*");
+            attempts++;
+          }, 200);
+
+          // Send first one immediately
+          window.postMessage({ type: "PING" }, "*");
+        });
       };
 
       const isReady = await waitForInjectedScript();
@@ -932,15 +1169,21 @@ declare global {
         console.warn(
           "⚠️ Injected script did not respond to PING. Attempting to proceed anyway..."
         );
+        chrome.runtime.sendMessage({
+          type: "LOG_TO_SERVER",
+          message: "Proceeding despite PING failure",
+        });
       }
 
       // Trigger extraction by posting message to injected script
       console.log("📤 Posting START_EXTRACTION message to injected script");
+      chrome.runtime.sendMessage({
+        type: "LOG_TO_SERVER",
+        message: "Posting START_EXTRACTION",
+      });
       window.postMessage(
         {
           type: "START_EXTRACTION",
-          screenshot: screenshot,
-          viewport: viewport,
           allowNavigation: allowNavigation,
         },
         "*"
@@ -1757,4 +2000,10 @@ ${suggestions.map((s: string, i: number) => `${i + 1}. ${s}`).join("\\n")}
       }
     }
   }
+
+  // Reset injection flag when page is about to unload
+  window.addEventListener("beforeunload", () => {
+    isScriptInjected = false;
+    console.log("🔄 Page unloading, reset injection flag");
+  });
 })();

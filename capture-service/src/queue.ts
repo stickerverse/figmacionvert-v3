@@ -1,14 +1,14 @@
-import { Queue, QueueEvents } from 'bullmq';
-import Redis from 'ioredis';
-import logger from './logger';
-import { JobData, JobState, CaptureWorkerResult, JobResult } from './types';
+import { Queue, QueueEvents } from "bullmq";
+import Redis from "ioredis";
+import logger from "./logger";
+import { JobData, JobState, CaptureWorkerResult, JobResult } from "./types";
 
 const redisConfig = {
-  host: process.env.REDIS_HOST || 'localhost',
-  port: parseInt(process.env.REDIS_PORT || '6379', 10),
+  host: process.env.REDIS_HOST || "localhost",
+  port: parseInt(process.env.REDIS_PORT || "6379", 10),
   password: process.env.REDIS_PASSWORD || undefined,
   maxRetriesPerRequest: null,
-  ...(process.env.REDIS_TLS === 'true' && {
+  ...(process.env.REDIS_TLS === "true" && {
     tls: {},
   }),
 };
@@ -18,20 +18,20 @@ const connection = new Redis(redisConfig);
 /**
  * Job queue for capture requests
  */
-export const captureQueue = new Queue<JobData, CaptureWorkerResult>('capture', {
+export const captureQueue = new Queue<JobData, CaptureWorkerResult>("capture", {
   connection,
   defaultJobOptions: {
-    attempts: parseInt(process.env.JOB_MAX_ATTEMPTS || '3', 10),
+    attempts: parseInt(process.env.JOB_MAX_ATTEMPTS || "3", 10),
     backoff: {
-      type: 'exponential',
+      type: "exponential",
       delay: 5000,
     },
     removeOnComplete: {
-      age: parseInt(process.env.JOB_RETENTION_DAYS || '7', 10) * 86400, // seconds
+      age: parseInt(process.env.JOB_RETENTION_DAYS || "7", 10) * 86400, // seconds
       count: 1000,
     },
     removeOnFail: {
-      age: parseInt(process.env.JOB_RETENTION_DAYS || '7', 10) * 86400,
+      age: parseInt(process.env.JOB_RETENTION_DAYS || "7", 10) * 86400,
     },
   },
 });
@@ -39,38 +39,44 @@ export const captureQueue = new Queue<JobData, CaptureWorkerResult>('capture', {
 /**
  * Queue events for monitoring
  */
-export const queueEvents = new QueueEvents('capture', { connection });
+export const queueEvents = new QueueEvents("capture", { connection });
 
-queueEvents.on('waiting', ({ jobId }) => {
-  logger.debug({ jobId }, 'Job waiting in queue');
+queueEvents.on("waiting", ({ jobId }) => {
+  logger.debug({ jobId }, "Job waiting in queue");
 });
 
-queueEvents.on('active', ({ jobId }) => {
-  logger.info({ jobId }, 'Job started processing');
+queueEvents.on("active", ({ jobId }) => {
+  logger.info({ jobId }, "Job started processing");
 });
 
-queueEvents.on('completed', ({ jobId, returnvalue }) => {
-  const result = typeof returnvalue === 'string' ? null : (returnvalue as CaptureWorkerResult);
-  logger.info({ jobId, metadata: result?.metadata }, 'Job completed successfully');
+queueEvents.on("completed", ({ jobId, returnvalue }) => {
+  const result =
+    typeof returnvalue === "string"
+      ? null
+      : (returnvalue as CaptureWorkerResult);
+  logger.info(
+    { jobId, metadata: result?.metadata },
+    "Job completed successfully"
+  );
 });
 
-queueEvents.on('failed', ({ jobId, failedReason }) => {
-  logger.error({ jobId, error: failedReason }, 'Job failed');
+queueEvents.on("failed", ({ jobId, failedReason }) => {
+  logger.error({ jobId, error: failedReason }, "Job failed");
 });
 
-queueEvents.on('progress', ({ jobId, data }) => {
-  logger.debug({ jobId, progress: data }, 'Job progress updated');
+queueEvents.on("progress", ({ jobId, data }) => {
+  logger.debug({ jobId, progress: data }, "Job progress updated");
 });
 
 /**
  * Add a new capture job to the queue
  */
 export async function addCaptureJob(data: JobData): Promise<string> {
-  const job = await captureQueue.add('capture', data, {
+  const job = await captureQueue.add("capture", data, {
     jobId: data.jobId,
   });
 
-  logger.info({ jobId: job.id, url: data.url }, 'Capture job added to queue');
+  logger.info({ jobId: job.id, url: data.url }, "Capture job added to queue");
   return job.id!;
 }
 
@@ -85,26 +91,26 @@ export async function getJobResult(jobId: string): Promise<JobResult | null> {
   }
 
   const state = await job.getState();
-  const progress = job.progress as number || 0;
+  const progress = (job.progress as number) || 0;
 
   // Map BullMQ states to our JobState enum
   let jobState: JobState;
   switch (state) {
-    case 'waiting':
-    case 'delayed':
+    case "waiting":
+    case "delayed":
       jobState = JobState.QUEUED;
       break;
-    case 'active':
+    case "active":
       // Use progress to determine sub-state
       if (progress < 25) jobState = JobState.RENDERING;
       else if (progress < 50) jobState = JobState.EXTRACTING;
       else if (progress < 75) jobState = JobState.PACKAGING;
       else jobState = JobState.UPLOADING;
       break;
-    case 'completed':
+    case "completed":
       jobState = JobState.COMPLETED;
       break;
-    case 'failed':
+    case "failed":
       jobState = JobState.FAILED;
       break;
     default:
@@ -118,8 +124,12 @@ export async function getJobResult(jobId: string): Promise<JobResult | null> {
     createdAt: new Date(job.timestamp).toISOString(),
   };
 
-  if (state === 'completed' && job.returnvalue) {
-    const workerResult = job.returnvalue as CaptureWorkerResult & { schemaUrl?: string; screenshotUrl?: string; expiresAt?: string };
+  if (state === "completed" && job.returnvalue) {
+    const workerResult = job.returnvalue as CaptureWorkerResult & {
+      schemaUrl?: string;
+      screenshotUrl?: string;
+      expiresAt?: string;
+    };
     result.completedAt = new Date(job.finishedOn!).toISOString();
     result.schemaUrl = workerResult.schemaUrl;
     result.screenshotUrl = workerResult.screenshotUrl;
@@ -132,10 +142,10 @@ export async function getJobResult(jobId: string): Promise<JobResult | null> {
     };
   }
 
-  if (state === 'failed' && job.failedReason) {
+  if (state === "failed" && job.failedReason) {
     result.error = {
       message: job.failedReason,
-      code: 'CAPTURE_FAILED',
+      code: "CAPTURE_FAILED",
       details: job.stacktrace,
     };
   }
@@ -165,6 +175,28 @@ export async function getNextCompletedJob(): Promise<JobResult | null> {
 }
 
 /**
+ * Get job history (completed jobs)
+ */
+export async function getJobHistory(
+  limit: number = 20,
+  offset: number = 0
+): Promise<JobResult[]> {
+  const completed = await captureQueue.getCompleted(
+    offset,
+    offset + limit - 1,
+    true
+  ); // true = desc order (newest first)
+
+  const results = await Promise.all(
+    completed.map(async (job) => {
+      return getJobResult(job.id!);
+    })
+  );
+
+  return results.filter((r): r is JobResult => r !== null);
+}
+
+/**
  * Get queue metrics for health checks
  */
 export async function getQueueMetrics() {
@@ -181,13 +213,17 @@ export async function getQueueMetrics() {
  * Clean up old jobs
  */
 export async function cleanOldJobs() {
-  const retentionSeconds = parseInt(process.env.JOB_RETENTION_DAYS || '7', 10) * 86400;
-  await captureQueue.clean(retentionSeconds * 1000, 100, 'completed');
-  await captureQueue.clean(retentionSeconds * 1000, 100, 'failed');
-  logger.info('Old jobs cleaned from queue');
+  const retentionSeconds =
+    parseInt(process.env.JOB_RETENTION_DAYS || "7", 10) * 86400;
+  await captureQueue.clean(retentionSeconds * 1000, 100, "completed");
+  await captureQueue.clean(retentionSeconds * 1000, 100, "failed");
+  logger.info("Old jobs cleaned from queue");
 }
 
 // Clean old jobs every hour
 setInterval(cleanOldJobs, 3600000);
 
-logger.info({ redisHost: redisConfig.host, redisPort: redisConfig.port }, 'Queue initialized');
+logger.info(
+  { redisHost: redisConfig.host, redisPort: redisConfig.port },
+  "Queue initialized"
+);

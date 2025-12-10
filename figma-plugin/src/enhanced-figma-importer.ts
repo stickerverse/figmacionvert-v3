@@ -375,8 +375,11 @@ export class EnhancedFigmaImporter {
     const finalHeight = scrollHeight;
 
     frame.resize(finalWidth, finalHeight);
-    frame.x = 0;
-    frame.y = 0;
+
+    // Position this import to the right of existing frames so new runs never overlap
+    const nextPos = this.getNextImportPosition(finalWidth, finalHeight);
+    frame.x = nextPos.x;
+    frame.y = nextPos.y;
 
     // Set background to white for clarity
     frame.fills = [
@@ -400,6 +403,36 @@ export class EnhancedFigmaImporter {
     }
 
     return frame;
+  }
+
+  /**
+   * Compute where to place the next imported frame so it does not overlap
+   * previous imports. We lay frames out in a single row to the right with spacing.
+   */
+  private getNextImportPosition(
+    width: number,
+    height: number
+  ): { x: number; y: number } {
+    const page = figma.currentPage;
+    const siblings = page.children.filter(
+      (n) =>
+        n.type === "FRAME" || n.type === "COMPONENT" || n.type === "INSTANCE"
+    ) as Array<FrameNode | ComponentNode | InstanceNode>;
+
+    if (!siblings.length) {
+      return { x: 0, y: 0 };
+    }
+
+    let maxRight = 0;
+    let minY = 0;
+    siblings.forEach((n) => {
+      const right = n.x + n.width;
+      if (right > maxRight) maxRight = right;
+      if (n.y < minY) minY = n.y;
+    });
+
+    const padding = 200; // space between imports
+    return { x: maxRight + padding, y: minY };
   }
 
   /**
@@ -779,53 +812,38 @@ export class EnhancedFigmaImporter {
           "fills" in figmaNode ? (figmaNode as any).fills?.length || 0 : "N/A",
       });
 
-      // Store absolute position for children to use
+      // Determine absolute position of this node
+      let absX = 0;
+      let absY = 0;
+
       if (nodeData.absoluteLayout) {
-        this.safeSetPluginData(
-          figmaNode,
-          "absoluteX",
-          String(nodeData.absoluteLayout.left)
-        );
-        this.safeSetPluginData(
-          figmaNode,
-          "absoluteY",
-          String(nodeData.absoluteLayout.top)
-        );
-      } else if (parent.getPluginData("absoluteX")) {
-        // Inherit from parent if not available (fallback)
-        this.safeSetPluginData(
-          figmaNode,
-          "absoluteX",
-          parent.getPluginData("absoluteX")
-        );
-        this.safeSetPluginData(
-          figmaNode,
-          "absoluteY",
-          parent.getPluginData("absoluteY")
-        );
+        absX = nodeData.absoluteLayout.left;
+        absY = nodeData.absoluteLayout.top;
+      } else if (nodeData.layout) {
+        // dom-extractor puts absolute coords in layout.x/y
+        absX = nodeData.layout.x;
+        absY = nodeData.layout.y;
       }
 
-      // SIMPLIFIED FIX: Trust the relative layout from the schema.
-      // The DOM extractor has already calculated x/y relative to the parent.
-      // Recalculating from absolute coordinates is redundant and error-prone.
-      if (nodeData.layout) {
-        figmaNode.x = (nodeData.layout.x || 0) * this.scaleFactor;
-        figmaNode.y = (nodeData.layout.y || 0) * this.scaleFactor;
-      } else if (nodeData.absoluteLayout && parent.getPluginData("absoluteX")) {
-        // Fallback: Calculate relative position if only absolute is available
-        const parentAbsX = parseFloat(parent.getPluginData("absoluteX") || "0");
-        const parentAbsY = parseFloat(parent.getPluginData("absoluteY") || "0");
+      // Store absolute position for children to use
+      this.safeSetPluginData(figmaNode, "absoluteX", String(absX));
+      this.safeSetPluginData(figmaNode, "absoluteY", String(absY));
 
-        const childAbsX = nodeData.absoluteLayout.left;
-        const childAbsY = nodeData.absoluteLayout.top;
+      // Calculate relative position for Figma
+      // If parent has absolute position, subtract it to get relative
+      const parentAbsXStr = parent.getPluginData("absoluteX");
+      const parentAbsYStr = parent.getPluginData("absoluteY");
 
-        const relX = (childAbsX - parentAbsX) * this.scaleFactor;
-        const relY = (childAbsY - parentAbsY) * this.scaleFactor;
+      if (parentAbsXStr && parentAbsYStr) {
+        const parentAbsX = parseFloat(parentAbsXStr);
+        const parentAbsY = parseFloat(parentAbsYStr);
 
-        if (!isNaN(relX) && !isNaN(relY)) {
-          figmaNode.x = relX;
-          figmaNode.y = relY;
-        }
+        figmaNode.x = (absX - parentAbsX) * this.scaleFactor;
+        figmaNode.y = (absY - parentAbsY) * this.scaleFactor;
+      } else {
+        // Root level or parent has no position data - use absolute as relative
+        figmaNode.x = absX * this.scaleFactor;
+        figmaNode.y = absY * this.scaleFactor;
       }
 
       // Apply size from layout

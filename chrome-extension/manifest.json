@@ -12,7 +12,8 @@
     "webNavigation",
     "webRequest",
     "alarms",
-    "sidePanel"
+    "sidePanel",
+    "notifications"
   ],
   "host_permissions": [
     "<all_urls>"
@@ -52,7 +53,8 @@
     {
       "matches": ["<all_urls>"],
       "js": ["dist/content-script.js"],
-      "run_at": "document_idle"
+      "run_at": "document_idle",
+      "all_frames": true
     }
   ],
   "web_accessible_resources": [

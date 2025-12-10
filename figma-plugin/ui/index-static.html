@@ -203,6 +203,96 @@
       border-style: solid;
     }
 
+    .history-section {
+      margin: 16px;
+      padding: 16px;
+      border-radius: 12px;
+      background: #f8fafc;
+      border: 1px solid #e2e8f0;
+    }
+
+    .history-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 8px;
+      font-weight: 600;
+      color: #1f2937;
+    }
+
+    .history-actions {
+      display: flex;
+      gap: 8px;
+    }
+
+    .history-list {
+      list-style: none;
+      margin: 0;
+      padding: 0;
+      max-height: 180px;
+      overflow-y: auto;
+      display: grid;
+      gap: 8px;
+    }
+
+    .history-item {
+      padding: 10px 12px;
+      border-radius: 10px;
+      background: white;
+      border: 1px solid #e5e7eb;
+      display: grid;
+      grid-template-columns: 1fr auto;
+      gap: 8px;
+      align-items: center;
+    }
+
+    .history-meta {
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+      font-size: 12px;
+      color: #4b5563;
+    }
+
+    .history-meta strong {
+      color: #111827;
+      font-weight: 600;
+    }
+
+    .history-empty {
+      padding: 12px;
+      border-radius: 10px;
+      background: #f1f5f9;
+      color: #475569;
+      text-align: center;
+      font-size: 13px;
+    }
+
+    .font-warnings {
+      margin: 16px;
+      padding: 12px;
+      border-radius: 10px;
+      background: #fff7ed;
+      border: 1px solid #fed7aa;
+      color: #7c2d12;
+      display: none;
+      gap: 8px;
+    }
+
+    .font-warnings.visible {
+      display: block;
+    }
+
+    .font-warnings ul {
+      margin: 8px 0 0;
+      padding-left: 16px;
+    }
+
+    .font-warnings li {
+      font-size: 12px;
+      line-height: 1.4;
+    }
+
     .upload-text {
       font-size: 14px;
       color: #6b7280;
@@ -266,20 +356,18 @@
 
     .connection-panel {
       border-top: 1px solid #e5e7eb;
-      padding: 16px 24px;
-      background: #f9fafb;
+      padding: 16px 20px;
+      background: #f8fafc;
     }
 
     .connection-panel-header {
       display: flex;
       justify-content: space-between;
       align-items: center;
-      margin-bottom: 12px;
-      font-weight: 600;
-      color: #374151;
-      font-size: 12px;
-      text-transform: uppercase;
-      letter-spacing: 0.5px;
+      margin-bottom: 10px;
+      font-weight: 700;
+      color: #1f2937;
+      font-size: 13px;
     }
 
     .connection-state-label {
@@ -289,21 +377,21 @@
 
     .connection-lights {
       display: flex;
-      gap: 12px;
+      gap: 8px;
+      flex-wrap: wrap;
     }
 
     .connection-light {
-      flex: 1;
-      display: flex;
+      display: inline-flex;
       align-items: center;
       gap: 8px;
-      padding: 10px;
-      border-radius: 8px;
+      padding: 8px 12px;
+      border-radius: 999px;
       border: 1px solid #e5e7eb;
       font-size: 12px;
-      color: #6b7280;
+      color: #374151;
       background: white;
-      font-weight: 500;
+      font-weight: 600;
     }
 
     .connection-light .light-dot {
@@ -312,11 +400,12 @@
       border-radius: 50%;
       background: #d1d5db;
       transition: all 0.3s ease;
+      box-shadow: 0 0 0 4px rgba(229, 231, 235, 0.6);
     }
 
     .connection-light.active .light-dot {
       background: #34d399;
-      box-shadow: 0 0 8px rgba(52, 211, 153, 0.6);
+      box-shadow: 0 0 0 4px rgba(52, 211, 153, 0.25);
       animation: pulse-dot 2s ease-in-out infinite;
     }
 
@@ -336,6 +425,25 @@
       margin-top: 12px;
     }
 
+    .debug-health {
+      margin-top: 12px;
+      font-size: 11px;
+      color: #6b7280;
+      background: #f9fafb;
+      border: 1px dashed #e5e7eb;
+      border-radius: 8px;
+      padding: 10px;
+      display: grid;
+      gap: 6px;
+    }
+
+    .debug-health code {
+      font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
+      background: #eef2f7;
+      padding: 2px 4px;
+      border-radius: 4px;
+    }
+
     .hidden {
       display: none !important;
     }
@@ -344,14 +452,14 @@
 <body>
   <div class="container">
     <!-- Header matching extension -->
-    <div class="header">
-      <div class="header-brand">
-        <span class="brand-html">HTML</span>
-        <span class="brand-figma">Figma</span>
+      <div class="header">
+        <div class="header-brand">
+          <span class="brand-html">Web to</span>
+          <span class="brand-figma">Figma</span>
+        </div>
       </div>
-    </div>
-    
-    <div id="status" class="status info">Ready to import</div>
+      
+      <div id="status" class="status info">Ready to import</div>
 
     <!-- Progress Section with Circular Ring -->
     <div id="progress-section" class="progress-section hidden">
@@ -391,6 +499,11 @@
       <div id="connection-message" class="connection-message hidden">
         Waiting for Extension...
       </div>
+      <div class="debug-health" id="debug-health">
+        <div><strong>Handoff Base:</strong> <code id="debug-base">n/a</code></div>
+        <div><strong>Health Status:</strong> <span id="debug-health-status">n/a</span></div>
+        <div><strong>Queue:</strong> <span id="debug-queue">n/a</span></div>
+      </div>
     </div>
 
     <!-- File Upload (no animations) -->
@@ -399,6 +512,24 @@
       <div class="upload-text">📁 Click to choose file</div>
       <div class="upload-hint">JSON or .wtf format</div>
       <div id="file-name" class="file-name hidden"></div>
+    </div>
+
+    <!-- History -->
+    <div class="history-section">
+      <div class="history-header">
+        <span>Recent Captures</span>
+        <div class="history-actions">
+          <button id="refresh-history" class="btn btn-ghost">Refresh</button>
+        </div>
+      </div>
+      <ul id="history-list" class="history-list">
+        <li class="history-empty">No captures yet</li>
+      </ul>
+    </div>
+
+    <div id="font-warnings" class="font-warnings">
+      <strong>Missing fonts detected:</strong>
+      <ul id="font-warnings-list"></ul>
     </div>
 
     <!-- Import Actions (no animations) -->
@@ -426,6 +557,13 @@
     const extensionLight = document.getElementById('connection-extension');
     const serverLight = document.getElementById('connection-server');
     const connectionMessage = document.getElementById('connection-message');
+    const debugBase = document.getElementById('debug-base');
+    const debugHealthStatus = document.getElementById('debug-health-status');
+    const debugQueue = document.getElementById('debug-queue');
+    const historyList = document.getElementById('history-list');
+    const refreshHistoryBtn = document.getElementById('refresh-history');
+    const fontWarnings = document.getElementById('font-warnings');
+    const fontWarningsList = document.getElementById('font-warnings-list');
 
     // Track last-seen timestamps so transient gaps don't immediately clear lights
     let lastExtensionSeen = 0;
@@ -474,12 +612,30 @@
     function setConnectionState(type, connected) {
       markConnection(type, connected);
     }
+
+    // Debug health display
+    function updateDebugHealth({ base, status, queue }) {
+      if (debugBase) debugBase.textContent = base || 'n/a';
+      if (debugHealthStatus) debugHealthStatus.textContent = status || 'n/a';
+      if (debugQueue) debugQueue.textContent = typeof queue === 'number' ? queue : 'n/a';
+    }
+
     
     // Update status display
     function updateStatus(message, type = 'info') {
       statusEl.textContent = message;
       statusEl.className = `status ${type}`;
+      // Also surface in connection message area for visibility
+      if (connectionMessage) {
+        if (type === 'error') {
+          connectionMessage.textContent = message;
+          connectionMessage.classList.remove('hidden');
+        } else {
+          connectionMessage.classList.add('hidden');
+        }
+      }
     }
+
 
     // Update progress with circular ring
     function updateProgress(percent, message = '') {
@@ -550,6 +706,73 @@
         reader.readAsText(file);
       }
     });
+
+    function renderHistory(jobs = []) {
+      if (!historyList) return;
+      historyList.innerHTML = '';
+      if (!jobs.length) {
+        const empty = document.createElement('li');
+        empty.className = 'history-empty';
+        empty.textContent = 'No captures yet';
+        historyList.appendChild(empty);
+        return;
+      }
+
+      jobs.forEach((job) => {
+        const li = document.createElement('li');
+        li.className = 'history-item';
+
+        const meta = document.createElement('div');
+        meta.className = 'history-meta';
+        const ts = job.deliveredAt || job.timestamp || Date.now();
+        const date = new Date(ts).toLocaleString();
+        meta.innerHTML = `<strong>${job.id}</strong><span>${date}</span>`;
+        if (job.size) {
+          const kb = (job.size / 1024).toFixed(1);
+          const size = document.createElement('span');
+          size.textContent = `${kb} KB`;
+          meta.appendChild(size);
+        }
+
+        const btn = document.createElement('button');
+        btn.className = 'btn btn-ghost';
+        btn.textContent = 'Import';
+        btn.onclick = () => {
+          updateStatus('Fetching capture...', 'info');
+          parent.postMessage({
+            pluginMessage: { type: 'import-history-job', jobId: job.id }
+          }, '*');
+        };
+
+        li.appendChild(meta);
+        li.appendChild(btn);
+        historyList.appendChild(li);
+      });
+    }
+
+    function requestHistory() {
+      updateStatus('Loading history...', 'info');
+      parent.postMessage({ pluginMessage: { type: 'fetch-history' } }, '*');
+    }
+
+    function showFontWarnings(fonts = []) {
+      if (!fontWarnings || !fontWarningsList) return;
+      fontWarningsList.innerHTML = '';
+      if (!fonts.length) {
+        fontWarnings.classList.remove('visible');
+        return;
+      }
+      fonts.forEach((font) => {
+        const li = document.createElement('li');
+        li.textContent = `${font.family} (requested styles: ${font.styles.join(', ')})`;
+        fontWarningsList.appendChild(li);
+      });
+      fontWarnings.classList.add('visible');
+    }
+
+    if (refreshHistoryBtn) {
+      refreshHistoryBtn.addEventListener('click', () => requestHistory());
+    }
 
     // Import button handling
     importBtn.addEventListener('click', () => {
@@ -680,6 +903,18 @@
 
         case 'progress':
           updateProgress(msg.percent, msg.message);
+          if (connectionMessage && msg.message) {
+            connectionMessage.textContent = msg.message;
+            connectionMessage.classList.remove('hidden');
+          }
+          break;
+
+        case 'handoff-health':
+          updateDebugHealth({
+            base: msg.base,
+            status: msg.status,
+            queue: msg.queueLength
+          });
           break;
 
         case 'complete':
@@ -693,15 +928,75 @@
           }, 2000);
           break;
 
+        case 'history':
+          renderHistory(msg.jobs || []);
+          updateStatus('History loaded', 'success');
+          break;
+
+        case 'history-error':
+          updateStatus(`❌ ${msg.message}`, 'error');
+          renderHistory([]);
+          break;
+
+        case 'font-warnings':
+          showFontWarnings(msg.fonts || []);
+          break;
+
+        case 'history-loading':
+          updateStatus('Loading history...', 'info');
+          break;
+
         case 'error':
           updateStatus(`❌ ${msg.message}`, 'error');
           updateProgress(0);
           importBtn.disabled = false;
           break;
 
+        case 'CAPTURE_ERROR':
+          updateStatus(`❌ ${msg.error || 'Capture failed'}`, 'error');
+          updateProgress(0);
+          setConnectionState('extension', false);
+          setConnectionState('server', false);
+          break;
+
+        case 'CAPTURE_DOWNLOAD_READY':
+          updateStatus('⚠️ Upload failed. Download payload from extension popup.', 'error');
+          updateProgress(0);
+          break;
+
         case 'import-busy':
           updateStatus('Import in progress...', 'info');
           break;
+
+        case 'transcode-webp': {
+          const { id, base64 } = msg;
+          try {
+            const img = new Image();
+            img.crossOrigin = 'anonymous';
+            img.onload = () => {
+              try {
+                const canvas = document.createElement('canvas');
+                canvas.width = img.width;
+                canvas.height = img.height;
+                const ctx = canvas.getContext('2d');
+                if (!ctx) throw new Error('Canvas context unavailable');
+                ctx.drawImage(img, 0, 0);
+                const pngBase64 = canvas.toDataURL('image/png');
+                parent.postMessage({ pluginMessage: { type: 'webp-transcoded', id, pngBase64 } }, '*');
+              } catch (error) {
+                parent.postMessage({ pluginMessage: { type: 'webp-transcoded', id, error: String(error) } }, '*');
+              }
+            };
+            img.onerror = (error) => {
+              parent.postMessage({ pluginMessage: { type: 'webp-transcoded', id, error: 'Image decode failed' } }, '*');
+            };
+            const src = base64.startsWith('data:') ? base64 : `data:image/webp;base64,${base64}`;
+            img.src = src;
+          } catch (error) {
+            parent.postMessage({ pluginMessage: { type: 'webp-transcoded', id, error: String(error) } }, '*');
+          }
+          break;
+        }
       }
     };
 
@@ -742,6 +1037,7 @@
     
     // Notify backend that UI is ready to receive messages
     parent.postMessage({ pluginMessage: { type: 'ui-ready' } }, '*');
+    requestHistory();
 
     // DEBUG: Override onmessage to show what we receive
     const originalOnMessage = onmessage;
