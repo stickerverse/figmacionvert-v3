@@ -934,6 +934,28 @@ export class EnhancedFigmaImporter {
         }
       }
 
+      // === Apply flex child properties (layoutGrow, layoutAlign) ===
+      // These are applied to the node itself when it's a child of an Auto Layout frame
+      if ("layoutGrow" in figmaNode) {
+        // layoutGrow: 0 = fixed, 1 = fill container
+        const layoutGrow = nodeData.layoutGrow;
+        if (layoutGrow !== undefined && layoutGrow > 0) {
+          (figmaNode as FrameNode).layoutGrow = layoutGrow;
+        }
+      }
+
+      if ("layoutAlign" in figmaNode) {
+        // layoutAlign: override parent's counterAxisAlignItems for this child
+        const layoutAlign = nodeData.layoutAlign;
+        if (layoutAlign && layoutAlign !== "INHERIT") {
+          (figmaNode as FrameNode).layoutAlign = layoutAlign as
+            | "MIN"
+            | "CENTER"
+            | "MAX"
+            | "STRETCH";
+        }
+      }
+
       // Append to parent frame
       // CRITICAL: Text nodes cannot have children in Figma, so we must handle them carefully
       // If the parent is a TextNode (which shouldn't happen with our logic), we can't append

@@ -396,6 +396,8 @@ export class DOMExtractor {
       if (alignItems.includes("center")) node.counterAxisAlignItems = "CENTER";
       else if (alignItems.includes("flex-end") || alignItems.includes("bottom"))
         node.counterAxisAlignItems = "MAX";
+      else if (alignItems.includes("baseline"))
+        node.counterAxisAlignItems = "BASELINE";
       else node.counterAxisAlignItems = "MIN";
 
       // Wrapping
@@ -404,6 +406,43 @@ export class DOMExtractor {
         computed.flexWrap === "wrap-reverse"
       ) {
         node.layoutWrap = "WRAP";
+        // Counter axis spacing for wrapped items (row-gap)
+        const rowGap = parseFloat(computed.rowGap);
+        if (!isNaN(rowGap)) {
+          node.counterAxisSpacing = rowGap;
+        }
+      }
+
+      // === NEW: Sizing Mode Detection ===
+      // Detect if container has explicit dimensions (FIXED) vs content-based (AUTO)
+      const width = computed.width;
+      const height = computed.height;
+      const isRowLayout = node.layoutMode === "HORIZONTAL";
+
+      // Primary axis sizing: FIXED if explicit dimension, AUTO if min-content/max-content/fit-content/auto
+      const primaryDimension = isRowLayout ? width : height;
+      const counterDimension = isRowLayout ? height : width;
+
+      if (
+        primaryDimension &&
+        !primaryDimension.includes("auto") &&
+        !primaryDimension.includes("content") &&
+        primaryDimension !== "0px"
+      ) {
+        node.primaryAxisSizingMode = "FIXED";
+      } else {
+        node.primaryAxisSizingMode = "AUTO";
+      }
+
+      if (
+        counterDimension &&
+        !counterDimension.includes("auto") &&
+        !counterDimension.includes("content") &&
+        counterDimension !== "0px"
+      ) {
+        node.counterAxisSizingMode = "FIXED";
+      } else {
+        node.counterAxisSizingMode = "AUTO";
       }
     } else if (
       computed.display === "grid" ||
@@ -427,6 +466,41 @@ export class DOMExtractor {
         bottom: computed.bottom !== "auto" ? parseFloat(computed.bottom) : null,
         left: computed.left !== "auto" ? parseFloat(computed.left) : null,
       };
+    }
+
+    // === Flex Child Properties (for elements inside flex containers) ===
+    // flex-grow → layoutGrow (0 = fixed size, 1 = fill available space)
+    const flexGrow = parseFloat(computed.flexGrow);
+    if (!isNaN(flexGrow) && flexGrow > 0) {
+      node.layoutGrow = flexGrow;
+    }
+
+    // flex-shrink (for reference, not directly used in Figma)
+    const flexShrink = parseFloat(computed.flexShrink);
+    if (!isNaN(flexShrink) && flexShrink !== 1) {
+      node.flexShrink = flexShrink;
+    }
+
+    // align-self → layoutAlign (override parent's counterAxisAlignItems)
+    const alignSelf = computed.alignSelf;
+    if (alignSelf && alignSelf !== "auto") {
+      if (alignSelf === "flex-start" || alignSelf === "start") {
+        node.layoutAlign = "MIN";
+      } else if (alignSelf === "flex-end" || alignSelf === "end") {
+        node.layoutAlign = "MAX";
+      } else if (alignSelf === "center") {
+        node.layoutAlign = "CENTER";
+      } else if (alignSelf === "stretch") {
+        node.layoutAlign = "STRETCH";
+      } else if (alignSelf === "baseline") {
+        node.layoutAlign = "BASELINE";
+      }
+    }
+
+    // flex-basis (for reference)
+    const flexBasis = computed.flexBasis;
+    if (flexBasis && flexBasis !== "auto" && flexBasis !== "0px") {
+      node.flexBasis = flexBasis;
     }
 
     // Z-Index
