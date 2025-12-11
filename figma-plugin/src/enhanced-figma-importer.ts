@@ -17,6 +17,7 @@ import { ImportOptions } from "./importer";
 import { ScreenshotOverlay } from "./screenshot-overlay";
 import { DesignTokensManager } from "./design-tokens-manager";
 import { requestWebpTranscode } from "./ui-bridge";
+import { createHoverVariants } from "./hover-variant-mapper";
 
 export interface EnhancedImportOptions {
   createMainFrame: boolean;
@@ -225,6 +226,19 @@ export class EnhancedFigmaImporter {
 
       // Step 4: Process nodes with batch optimization
       await this.processNodesWithBatching(mainFrame);
+
+      // Step 4.5: Create hover variants if hoverStates data exists
+      if (this.data.hoverStates && this.data.hoverStates.length > 0) {
+        figma.ui.postMessage({
+          type: "progress",
+          message: `Creating ${this.data.hoverStates.length} hover variants...`,
+          percent: 82,
+        });
+        await createHoverVariants(this.data.hoverStates, this.createdNodes);
+        console.log(
+          `✅ Hover variants processed: ${this.data.hoverStates.length}`
+        );
+      }
 
       // Step 4: Verify positions if enabled
       // DISABLED: Verification causes 98% stall on large pages
