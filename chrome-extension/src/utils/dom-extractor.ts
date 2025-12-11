@@ -224,6 +224,10 @@ export class DOMExtractor {
       effects: {},
     };
 
+    // Create full DesignTokensRegistry for Figma Variables API
+    (schema as any).designTokensRegistry =
+      this.buildDesignTokensRegistry(designTokens);
+
     console.log("✅ Extraction complete!", {
       totalNodes: this.nodeId,
       images: this.assets.images.size,
@@ -1630,5 +1634,160 @@ export class DOMExtractor {
       animation: Object.keys(animation).length ? animation : null,
       transition: Object.keys(transition).length ? transition : null,
     };
+  }
+
+  /**
+   * Build DesignTokensRegistry for Figma Variables API
+   */
+  private buildDesignTokensRegistry(designTokens: {
+    colors: Map<string, { value: string; count: number }>;
+    spacing: Map<string, { value: number; count: number }>;
+    typography: Map<string, { value: string; count: number }>;
+  }): any {
+    const variables: Record<string, any> = {};
+    const collections: Record<string, any> = {};
+    const aliases: Record<string, any> = {};
+
+    // Create color collection
+    const colorCollectionId = "colors";
+    const colorVariables: string[] = [];
+
+    let colorIndex = 0;
+    for (const [name, data] of designTokens.colors.entries()) {
+      if (colorIndex >= 20) break; // Limit to top 20 colors
+
+      const tokenId = `color-${colorIndex}`;
+      const cleanName = name.replace(/[^a-zA-Z0-9-_]/g, "-").slice(0, 30);
+
+      variables[tokenId] = {
+        id: tokenId,
+        name: `Color/${cleanName}`,
+        type: "COLOR",
+        collection: colorCollectionId,
+        scopes: ["ALL_FILLS", "STROKE_COLOR"],
+        value: { type: "SOLID", value: this.parseColorToRgba(data.value) },
+        description: `Used ${data.count} times`,
+        references: [],
+      };
+      colorVariables.push(tokenId);
+      colorIndex++;
+    }
+
+    // Create spacing collection
+    const spacingCollectionId = "spacing";
+    const spacingVariables: string[] = [];
+
+    let spacingIndex = 0;
+    for (const [name, data] of designTokens.spacing.entries()) {
+      if (spacingIndex >= 10) break; // Limit to top 10 spacing values
+
+      const tokenId = `spacing-${spacingIndex}`;
+
+      variables[tokenId] = {
+        id: tokenId,
+        name: `Spacing/${data.value}px`,
+        type: "FLOAT",
+        collection: spacingCollectionId,
+        scopes: ["GAP", "WIDTH_HEIGHT"],
+        value: { type: "SOLID", value: data.value },
+        description: `Used ${data.count} times`,
+        references: [],
+      };
+      spacingVariables.push(tokenId);
+      spacingIndex++;
+    }
+
+    // Create typography collection
+    const typographyCollectionId = "typography";
+    const typographyVariables: string[] = [];
+
+    let typographyIndex = 0;
+    for (const [name, data] of designTokens.typography.entries()) {
+      if (typographyIndex >= 10) break;
+
+      const tokenId = `typography-${typographyIndex}`;
+      const cleanName = name.replace(/[^a-zA-Z0-9-_]/g, "-").slice(0, 30);
+
+      variables[tokenId] = {
+        id: tokenId,
+        name: `Typography/${cleanName}`,
+        type: "STRING",
+        collection: typographyCollectionId,
+        scopes: ["TEXT_CONTENT"],
+        value: { type: "SOLID", value: data.value },
+        description: `Used ${data.count} times`,
+        references: [],
+      };
+      typographyVariables.push(tokenId);
+      typographyIndex++;
+    }
+
+    // Build collections
+    collections[colorCollectionId] = {
+      id: colorCollectionId,
+      name: "Colors",
+      variables: colorVariables,
+      description: "Extracted color tokens from page",
+    };
+
+    collections[spacingCollectionId] = {
+      id: spacingCollectionId,
+      name: "Spacing",
+      variables: spacingVariables,
+      description: "Extracted spacing tokens from page",
+    };
+
+    collections[typographyCollectionId] = {
+      id: typographyCollectionId,
+      name: "Typography",
+      variables: typographyVariables,
+      description: "Extracted typography tokens from page",
+    };
+
+    console.log(
+      `🎨 Built designTokensRegistry: ${
+        Object.keys(variables).length
+      } variables in ${Object.keys(collections).length} collections`
+    );
+
+    return { variables, collections, aliases };
+  }
+
+  /**
+   * Parse color string to RGBA object
+   */
+  private parseColorToRgba(color: string): {
+    r: number;
+    g: number;
+    b: number;
+    a: number;
+  } {
+    // Handle rgba
+    const rgbaMatch = color.match(
+      /rgba?\((\d+),\s*(\d+),\s*(\d+)(?:,\s*([\d.]+))?\)/
+    );
+    if (rgbaMatch) {
+      return {
+        r: parseInt(rgbaMatch[1]) / 255,
+        g: parseInt(rgbaMatch[2]) / 255,
+        b: parseInt(rgbaMatch[3]) / 255,
+        a: rgbaMatch[4] ? parseFloat(rgbaMatch[4]) : 1,
+      };
+    }
+
+    // Handle hex
+    const hexMatch = color.match(/^#([0-9a-f]{6})$/i);
+    if (hexMatch) {
+      const hex = hexMatch[1];
+      return {
+        r: parseInt(hex.slice(0, 2), 16) / 255,
+        g: parseInt(hex.slice(2, 4), 16) / 255,
+        b: parseInt(hex.slice(4, 6), 16) / 255,
+        a: 1,
+      };
+    }
+
+    // Fallback
+    return { r: 0, g: 0, b: 0, a: 1 };
   }
 }

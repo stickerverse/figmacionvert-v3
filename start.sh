@@ -69,6 +69,10 @@ trap cleanup SIGINT SIGTERM
 
 # Start Handoff Server
 echo -e "${BLUE}🚀 Starting Handoff Server on port 4411...${NC}"
+
+# Kill any existing handoff server to prevent port conflicts
+pkill -f "node handoff-server" 2>/dev/null && echo -e "${YELLOW}♻️  Killed existing handoff server${NC}" && sleep 1
+
 node handoff-server.cjs &
 HANDOFF_PID=$!
 echo -e "${GREEN}✅ Handoff Server started (PID: $HANDOFF_PID)${NC}"
