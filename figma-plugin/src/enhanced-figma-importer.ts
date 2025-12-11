@@ -856,40 +856,67 @@ export class EnhancedFigmaImporter {
       }
 
       // Apply Auto Layout if present
-      if (nodeData.autoLayout && "layoutMode" in figmaNode) {
-        const al = nodeData.autoLayout;
+      // Check both autoLayout object (legacy) and top-level properties (from dom-extractor)
+      const hasAutoLayoutData =
+        nodeData.autoLayout ||
+        (nodeData.layoutMode &&
+          nodeData.layoutMode !== "NONE" &&
+          nodeData.layoutMode !== "GRID");
+
+      if (hasAutoLayoutData && "layoutMode" in figmaNode) {
         const frame = figmaNode as FrameNode;
 
-        if (al.layoutMode !== "NONE") {
-          frame.layoutMode = al.layoutMode as "HORIZONTAL" | "VERTICAL";
-          frame.primaryAxisSizingMode = al.primaryAxisSizingMode as
-            | "FIXED"
-            | "AUTO";
-          frame.counterAxisSizingMode = al.counterAxisSizingMode as
-            | "FIXED"
-            | "AUTO";
+        // Read from autoLayout object or top-level properties
+        const layoutMode =
+          nodeData.autoLayout?.layoutMode || nodeData.layoutMode;
 
-          frame.primaryAxisAlignItems = al.primaryAxisAlignItems as
-            | "MIN"
-            | "MAX"
-            | "CENTER"
-            | "SPACE_BETWEEN";
-          frame.counterAxisAlignItems = al.counterAxisAlignItems as
-            | "MIN"
-            | "MAX"
-            | "CENTER"
-            | "BASELINE";
+        if (layoutMode && layoutMode !== "NONE" && layoutMode !== "GRID") {
+          frame.layoutMode = layoutMode as "HORIZONTAL" | "VERTICAL";
 
-          frame.itemSpacing = al.itemSpacing;
-          frame.paddingLeft = al.paddingLeft;
-          frame.paddingRight = al.paddingRight;
-          frame.paddingTop = al.paddingTop;
-          frame.paddingBottom = al.paddingBottom;
+          // Sizing modes
+          frame.primaryAxisSizingMode = (nodeData.autoLayout
+            ?.primaryAxisSizingMode ||
+            nodeData.primaryAxisSizingMode ||
+            "AUTO") as "FIXED" | "AUTO";
+          frame.counterAxisSizingMode = (nodeData.autoLayout
+            ?.counterAxisSizingMode ||
+            nodeData.counterAxisSizingMode ||
+            "AUTO") as "FIXED" | "AUTO";
 
-          if (al.layoutWrap === "WRAP") {
+          // Alignment
+          frame.primaryAxisAlignItems = (nodeData.autoLayout
+            ?.primaryAxisAlignItems ||
+            nodeData.primaryAxisAlignItems ||
+            "MIN") as "MIN" | "MAX" | "CENTER" | "SPACE_BETWEEN";
+          frame.counterAxisAlignItems = (nodeData.autoLayout
+            ?.counterAxisAlignItems ||
+            nodeData.counterAxisAlignItems ||
+            "MIN") as "MIN" | "MAX" | "CENTER" | "BASELINE";
+
+          // Spacing
+          frame.itemSpacing =
+            nodeData.autoLayout?.itemSpacing ?? nodeData.itemSpacing ?? 0;
+          frame.paddingLeft =
+            nodeData.autoLayout?.paddingLeft ?? nodeData.paddingLeft ?? 0;
+          frame.paddingRight =
+            nodeData.autoLayout?.paddingRight ?? nodeData.paddingRight ?? 0;
+          frame.paddingTop =
+            nodeData.autoLayout?.paddingTop ?? nodeData.paddingTop ?? 0;
+          frame.paddingBottom =
+            nodeData.autoLayout?.paddingBottom ?? nodeData.paddingBottom ?? 0;
+
+          // Wrap mode
+          const layoutWrap =
+            nodeData.autoLayout?.layoutWrap || nodeData.layoutWrap;
+          if (layoutWrap === "WRAP") {
             frame.layoutWrap = "WRAP";
-            frame.counterAxisSpacing = al.counterAxisSpacing || 0;
+            frame.counterAxisSpacing =
+              nodeData.autoLayout?.counterAxisSpacing ??
+              nodeData.counterAxisSpacing ??
+              0;
           }
+
+          console.log(`✅ Auto Layout applied to ${frame.name}: ${layoutMode}`);
         }
       }
 

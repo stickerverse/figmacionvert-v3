@@ -6,7 +6,7 @@ interface ElementNodeData {
     height?: number;
   };
   autoLayout?: {
-    layoutMode?: 'VERTICAL' | 'HORIZONTAL' | 'NONE';
+    layoutMode?: "VERTICAL" | "HORIZONTAL" | "NONE";
     itemSpacing?: number;
   };
   children?: ElementNodeData[];
@@ -37,24 +37,34 @@ function traverseNode(node: ElementNodeData | undefined | null): void {
 }
 
 function shouldAttemptAutoLayout(node: ElementNodeData): boolean {
+  // Enable Auto Layout for nodes that have layoutMode from extraction
+  // This is set when CSS display:flex or display:grid is detected
+  const layoutMode = (node as any).layoutMode;
+  if (layoutMode === "HORIZONTAL" || layoutMode === "VERTICAL") {
+    return true;
+  }
+  // Also check autoLayout.layoutMode for backward compatibility
+  if (node.autoLayout?.layoutMode && node.autoLayout.layoutMode !== "NONE") {
+    return true;
+  }
   return false;
 }
 
 function canUseAutoLayout(node: ElementNodeData): boolean {
   if (!node.children || node.children.length <= 1) return true;
-  const axis = node.autoLayout?.layoutMode || 'NONE';
+  const axis = node.autoLayout?.layoutMode || "NONE";
   const positions = node.children.map((child, index) => ({
     index,
     x: child.layout?.x ?? 0,
-    y: child.layout?.y ?? 0
+    y: child.layout?.y ?? 0,
   }));
 
-  if (axis === 'VERTICAL') {
-    return isMonotonic(positions, 'y') && isAligned(positions, 'x');
+  if (axis === "VERTICAL") {
+    return isMonotonic(positions, "y") && isAligned(positions, "x");
   }
 
-  if (axis === 'HORIZONTAL') {
-    return isMonotonic(positions, 'x') && isAligned(positions, 'y');
+  if (axis === "HORIZONTAL") {
+    return isMonotonic(positions, "x") && isAligned(positions, "y");
   }
 
   return false;
@@ -62,7 +72,7 @@ function canUseAutoLayout(node: ElementNodeData): boolean {
 
 function isMonotonic(
   positions: Array<{ index: number; x: number; y: number }>,
-  axis: 'x' | 'y'
+  axis: "x" | "y"
 ): boolean {
   const sorted = [...positions].sort((a, b) => a[axis] - b[axis]);
   for (let i = 0; i < positions.length; i++) {
@@ -82,16 +92,18 @@ function isMonotonic(
 
 function isAligned(
   positions: Array<{ index: number; x: number; y: number }>,
-  axis: 'x' | 'y'
+  axis: "x" | "y"
 ): boolean {
   if (positions.length <= 1) return true;
   const baseline = positions[0][axis];
-  return positions.every((pos) => Math.abs(pos[axis] - baseline) <= POSITION_TOLERANCE);
+  return positions.every(
+    (pos) => Math.abs(pos[axis] - baseline) <= POSITION_TOLERANCE
+  );
 }
 
 function disableAutoLayout(node: ElementNodeData): void {
   if (!node.autoLayout) return;
-  node.autoLayout.layoutMode = 'NONE';
+  node.autoLayout.layoutMode = "NONE";
 }
 
 function resetChildOffsets(node: ElementNodeData): void {
