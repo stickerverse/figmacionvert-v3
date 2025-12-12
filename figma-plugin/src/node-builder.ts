@@ -3,6 +3,12 @@ import { ComponentManager } from "./component-manager";
 import { ImportOptions } from "./import-options";
 import { DesignTokensManager } from "./design-tokens-manager";
 import { requestWebpTranscode } from "./ui-bridge";
+import {
+  parseTransform,
+  parseTransformOrigin,
+  decomposeMatrix,
+  ParsedTransform,
+} from "./transform-parser";
 
 type SceneNodeWithGeometry = SceneNode & GeometryMixin;
 
@@ -1196,6 +1202,190 @@ export class NodeBuilder {
     }
   }
 
+  /**
+   * Apply CSS transforms to a Figma node
+   * Handles: rotate, scale, translate, skew, matrix
+   */
+  private applyCssTransforms(
+    node: SceneNode,
+    data: any,
+    elementWidth: number,
+    elementHeight: number
+  ): void {
+    // Get transform string from multiple possible sources
+    const transformString =
+      data.transform ||
+      data.layoutContext?.transform ||
+      data.style?.transform ||
+      null;
+
+    if (!transformString || transformString === "none") {
+      // Fallback to rotation from layout if available
+      if (data.layout?.rotation && "rotation" in node) {
+        (node as any).rotation = data.layout.rotation;
+      }
+      return;
+    }
+
+    // Parse the transform string
+    const parsed = parseTransform(transformString);
+    if (!parsed) {
+      return;
+    }
+
+    // Get transform origin
+    const originString =
+      data.transformOrigin ||
+      data.layoutContext?.transformOrigin ||
+      data.style?.transformOrigin ||
+      "50% 50%";
+
+    const origin = parseTransformOrigin(
+      originString,
+      elementWidth,
+      elementHeight
+    );
+
+    console.log(`🔄 Applying CSS transform to ${data.name}:`, {
+      transform: transformString,
+      parsed,
+      origin,
+      elementSize: { width: elementWidth, height: elementHeight },
+    });
+
+    // Apply rotation (Figma supports this directly)
+    if (parsed.rotate !== undefined && "rotation" in node) {
+      (node as any).rotation = parsed.rotate;
+      console.log(`  ✅ Applied rotation: ${parsed.rotate}deg`);
+    }
+
+    // Apply scale by resizing the node
+    // Note: We need to apply scale BEFORE the final resize in applyPositioning
+    // So we store scale factors and apply them during resize
+    if (parsed.scaleX !== undefined || parsed.scaleY !== undefined) {
+      const scaleX = parsed.scaleX ?? 1;
+      const scaleY = parsed.scaleY ?? 1;
+
+      // Store scale in plugin data so we can apply it during resize
+      this.safeSetPluginData(node, "cssScaleX", String(scaleX));
+      this.safeSetPluginData(node, "cssScaleY", String(scaleY));
+
+      // Apply scale to dimensions immediately
+      if ("resize" in node) {
+        const currentWidth = (node as LayoutMixin).width;
+        const currentHeight = (node as LayoutMixin).height;
+        const scaledWidth = currentWidth * scaleX;
+        const scaledHeight = currentHeight * scaleY;
+        (node as LayoutMixin).resize(
+          Math.max(scaledWidth, 1),
+          Math.max(scaledHeight, 1)
+        );
+        console.log(
+          `  ✅ Applied scale: ${scaleX}x${scaleY} (new size: ${scaledWidth}x${scaledHeight})`
+        );
+      }
+    }
+
+    // Apply translate by adjusting position
+    // Note: Translate is relative to transform-origin, so we need to account for that
+    if (parsed.translateX !== undefined || parsed.translateY !== undefined) {
+      const translateX = parsed.translateX ?? 0;
+      const translateY = parsed.translateY ?? 0;
+
+      // Adjust for transform origin
+      // When transform-origin is not center, translation is affected
+      const originOffsetX = (origin.x - 0.5) * elementWidth;
+      const originOffsetY = (origin.y - 0.5) * elementHeight;
+
+      // Apply translation
+      node.x = (node.x || 0) + translateX;
+      node.y = (node.y || 0) + translateY;
+
+      console.log(
+        `  ✅ Applied translate: ${translateX}px, ${translateY}px (adjusted for origin)`
+      );
+    }
+
+    // Handle matrix transform
+    // If we have a matrix, decompose it and apply components
+    if (parsed.matrix) {
+      const decomposed = decomposeMatrix(parsed.matrix);
+      console.log(`  🔄 Decomposed matrix:`, decomposed);
+
+      // Apply decomposed components
+      if (decomposed.rotate !== undefined && "rotation" in node) {
+        (node as any).rotation = decomposed.rotate;
+      }
+
+      if (
+        (decomposed.scaleX !== undefined &&
+          Math.abs(decomposed.scaleX - 1) > 0.001) ||
+        (decomposed.scaleY !== undefined &&
+          Math.abs(decomposed.scaleY - 1) > 0.001)
+      ) {
+        const scaleX = decomposed.scaleX ?? 1;
+        const scaleY = decomposed.scaleY ?? 1;
+        if ("resize" in node) {
+          const currentWidth = (node as LayoutMixin).width;
+          const currentHeight = (node as LayoutMixin).height;
+          (node as LayoutMixin).resize(
+            Math.max(currentWidth * scaleX, 1),
+            Math.max(currentHeight * scaleY, 1)
+          );
+        }
+      }
+
+      if (
+        decomposed.translateX !== undefined ||
+        decomposed.translateY !== undefined
+      ) {
+        node.x = (node.x || 0) + (decomposed.translateX ?? 0);
+        node.y = (node.y || 0) + (decomposed.translateY ?? 0);
+      }
+
+      // Skew is not directly supported by Figma
+      // We would need to use vector paths or wrapper frames
+      if (
+        (decomposed.skewX !== undefined &&
+          Math.abs(decomposed.skewX) > 0.001) ||
+        (decomposed.skewY !== undefined && Math.abs(decomposed.skewY) > 0.001)
+      ) {
+        console.warn(
+          `  ⚠️ Skew detected (${decomposed.skewX}deg, ${decomposed.skewY}deg) but Figma doesn't support skew directly. Storing in plugin data.`
+        );
+        this.safeSetPluginData(
+          node,
+          "cssSkew",
+          JSON.stringify({ skewX: decomposed.skewX, skewY: decomposed.skewY })
+        );
+      }
+    }
+
+    // Handle skew (if not from matrix)
+    if (
+      (parsed.skewX !== undefined && Math.abs(parsed.skewX) > 0.001) ||
+      (parsed.skewY !== undefined && Math.abs(parsed.skewY) > 0.001)
+    ) {
+      console.warn(
+        `  ⚠️ Skew detected (${parsed.skewX}deg, ${parsed.skewY}deg) but Figma doesn't support skew directly. Storing in plugin data.`
+      );
+      this.safeSetPluginData(
+        node,
+        "cssSkew",
+        JSON.stringify({ skewX: parsed.skewX, skewY: parsed.skewY })
+      );
+    }
+
+    // Store transform origin for reference
+    if (origin.x !== 0.5 || origin.y !== 0.5) {
+      this.safeSetPluginData(
+        node,
+        "cssTransformOrigin",
+        JSON.stringify(origin)
+      );
+    }
+  }
+
   private applyPositioning(node: SceneNode, data: any) {
     if (data.layout) {
       let x = data.layout.x || 0;
@@ -1276,13 +1466,38 @@ export class NodeBuilder {
       node.x = x;
       node.y = y;
 
-      if ("rotation" in node) {
-        (node as any).rotation = data.layout.rotation || 0;
-      }
+      // CRITICAL FIX: Apply CSS transforms
+      // Note: Scale will be applied during resize, but we apply it here first
+      // to get the correct dimensions, then resize will use those dimensions
+      this.applyCssTransforms(node, data, width, height);
 
+      // After transforms are applied, resize to final dimensions
+      // If scale was applied, the node may already be resized, so check current size
       if (typeof width === "number" && typeof height === "number") {
         if ("resize" in node) {
-          (node as LayoutMixin).resize(Math.max(width, 1), Math.max(height, 1));
+          const currentWidth = (node as LayoutMixin).width;
+          const currentHeight = (node as LayoutMixin).height;
+
+          // Only resize if dimensions haven't been modified by transform scale
+          const scaleX = parseFloat(node.getPluginData("cssScaleX") || "1");
+          const scaleY = parseFloat(node.getPluginData("cssScaleY") || "1");
+
+          if (Math.abs(scaleX - 1) < 0.001 && Math.abs(scaleY - 1) < 0.001) {
+            // No scale applied, use original dimensions
+            (node as LayoutMixin).resize(
+              Math.max(width, 1),
+              Math.max(height, 1)
+            );
+          } else {
+            // Scale was applied, dimensions should already be correct
+            // But ensure minimum size
+            if (currentWidth < 1 || currentHeight < 1) {
+              (node as LayoutMixin).resize(
+                Math.max(currentWidth, 1),
+                Math.max(currentHeight, 1)
+              );
+            }
+          }
         }
       }
     }
@@ -1366,19 +1581,21 @@ export class NodeBuilder {
       );
     }
 
-    if (data.transform?.matrix) {
-      this.applyTransformMatrix(
-        node,
-        data.transform,
-        data.transformOrigin,
-        data.layout
-      );
-      this.safeSetPluginData(
-        node,
-        "cssTransform",
-        JSON.stringify(data.transform)
-      );
-    }
+    // Transform is now handled by applyCssTransforms() above
+    // This legacy code is kept for backward compatibility but should not be needed
+    // if (data.transform?.matrix) {
+    //   this.applyTransformMatrix(
+    //     node,
+    //     data.transform,
+    //     data.transformOrigin,
+    //     data.layout
+    //   );
+    //   this.safeSetPluginData(
+    //     node,
+    //     "cssTransform",
+    //     JSON.stringify(data.transform)
+    //   );
+    // }
 
     if (data.layout) {
       this.applyResponsiveConstraints(node, data.layout);

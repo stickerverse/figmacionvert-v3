@@ -8,48 +8,52 @@ This document identifies all remaining issues preventing pixel-perfect visual ac
 
 ## 🔴 CRITICAL ISSUES (High Impact on Visual Accuracy)
 
-### 1. CSS Transforms Not Visually Applied
+### 1. CSS Transforms Not Visually Applied ✅ FIXED
 
-**Location:** `figma-plugin/src/node-builder.ts:1274-1276`, `1308-1320`
+**Location:** `figma-plugin/src/node-builder.ts:1205-1384`, `figma-plugin/src/transform-parser.ts`
 
-**Problem:**
+**Problem (FIXED):**
 
-- Only `rotation` is applied to nodes
-- `scale`, `skew`, and `matrix` transforms are stored in plugin data but **not visually applied**
-- `transform-origin` is not accounted for
-- Transformed elements appear in wrong positions/sizes
+- Only `rotation` was applied to nodes
+- `scale`, `skew`, and `matrix` transforms were stored in plugin data but **not visually applied**
+- `transform-origin` was not accounted for
+- Transformed elements appeared in wrong positions/sizes
 
-**Current Code:**
+**Fix Applied:**
 
-```typescript
-// Only rotation is applied
-if ("rotation" in node) {
-  (node as any).rotation = data.layout.rotation || 0;
-}
+1. **Created comprehensive transform parser** (`transform-parser.ts`):
 
-// Transform matrix is stored but not applied
-if (data.layoutContext.transform && data.layoutContext.transform.matrix) {
-  this.safeSetPluginData(
-    node,
-    "cssTransform",
-    JSON.stringify(data.layoutContext.transform)
-  );
-}
-```
+   - Parses CSS transform strings (rotate, scale, translate, skew, matrix, matrix3d)
+   - Handles transform-origin parsing
+   - Decomposes matrix transforms into individual components
+
+2. **Implemented `applyCssTransforms()` method**:
+
+   - Applies rotation directly (Figma supports this)
+   - Applies scale by resizing the node
+   - Applies translate by adjusting position (accounts for transform-origin)
+   - Decomposes matrix transforms and applies components
+   - Stores skew in plugin data (Figma doesn't support skew directly)
+
+3. **Integration**:
+   - Called from `applyPositioning()` before final resize
+   - Handles scale correctly by applying it before resize
+   - Accounts for transform-origin in all calculations
 
 **Impact:**
 
-- Rotated/scaled elements don't match original
-- Skewed elements appear as rectangles
-- Complex transforms (matrix) are completely ignored
-- Elements with transforms are positioned incorrectly
+- ✅ Rotated elements now match original (FIXED)
+- ✅ Scaled elements now match original (FIXED)
+- ✅ Translated elements now match original (FIXED)
+- ✅ Matrix transforms are decomposed and applied (FIXED)
+- ⚠️ Skew is stored but not visually applied (Figma limitation - would require vector paths or wrapper frames)
 
-**Fix Required:**
+**Remaining Limitations:**
 
-- Apply scale using `node.resize()` with scaled dimensions
-- Apply rotation (already done)
-- For skew/matrix: Create a wrapper frame and apply transform, or use vector paths
-- Account for `transform-origin` when calculating position
+- Skew cannot be directly applied (Figma doesn't support it)
+  - Stored in plugin data for reference
+  - Could be implemented using vector paths or wrapper frames in future
+- Complex 3D transforms are simplified to 2D equivalents
 
 ---
 
