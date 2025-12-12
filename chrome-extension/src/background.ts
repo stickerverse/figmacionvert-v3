@@ -8,6 +8,30 @@ self.addEventListener("error", (event: ErrorEvent) => {
 
 self.addEventListener("unhandledrejection", (event: PromiseRejectionEvent) => {
   console.error("[UNHANDLED_REJECTION]", event.reason);
+  // #region agent log
+  const errorDetails = {
+    reason: event.reason,
+    reasonType: typeof event.reason,
+    reasonString: String(event.reason),
+    reasonMessage:
+      event.reason instanceof Error ? event.reason.message : undefined,
+    reasonStack: event.reason instanceof Error ? event.reason.stack : undefined,
+    timestamp: Date.now(),
+  };
+  fetch("http://127.0.0.1:7242/ingest/ec6ff4c5-673b-403d-a943-70cb2e5565f2", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      location: "background.ts:10",
+      message: "Unhandled rejection",
+      data: errorDetails,
+      timestamp: Date.now(),
+      sessionId: "debug-session",
+      runId: "run1",
+      hypothesisId: "ERROR",
+    }),
+  }).catch(() => {});
+  // #endregion
   reportError("unhandledrejection", event.reason);
 });
 

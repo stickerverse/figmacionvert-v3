@@ -1,13 +1,14 @@
 /**
- * Enhanced Figma Importer
+ * Production-Grade Enhanced Figma Importer v2.0
  *
- * Implements best practices for pixel-perfect Figma reconstruction:
- * - Proper image creation using figma.createImage() with Uint8Array
- * - Coordinate verification system for position accuracy
- * - Batch processing for large image sets
- * - Robust error handling and recovery
- * - Font loading with figma.loadFontAsync()
- * - Position verification after import
+ * Implements pixel-perfect reconstruction with enterprise-grade reliability:
+ * - Comprehensive runtime type validation
+ * - Robust text node validation and font fallback
+ * - NaN/Infinity guards for all numeric operations
+ * - Enhanced error reporting with failed node tracking
+ * - Memory management and cleanup
+ * - Performance monitoring and telemetry
+ * - Defensive programming patterns throughout
  */
 
 import { NodeBuilder } from "./node-builder";
@@ -18,6 +19,10 @@ import { ScreenshotOverlay } from "./screenshot-overlay";
 import { DesignTokensManager } from "./design-tokens-manager";
 import { requestWebpTranscode } from "./ui-bridge";
 import { createHoverVariants } from "./hover-variant-mapper";
+
+// ============================================================================
+// TYPE DEFINITIONS WITH STRICT VALIDATION
+// ============================================================================
 
 export interface EnhancedImportOptions {
   createMainFrame: boolean;
@@ -33,6 +38,9 @@ export interface EnhancedImportOptions {
   showValidationMarkers?: boolean;
   applyAutoLayout?: boolean;
   createStyles?: boolean;
+  maxImportDuration?: number; // Timeout in ms
+  enableMemoryCleanup?: boolean;
+  validateTextNodes?: boolean;
 }
 
 export interface ImageCreationResult {
@@ -41,6 +49,7 @@ export interface ImageCreationResult {
   error?: string;
   retryAttempts: number;
   processingTime: number;
+  originalHash: string;
 }
 
 export interface PositionVerificationResult {
@@ -51,8 +60,28 @@ export interface PositionVerificationResult {
   withinTolerance: boolean;
 }
 
+export interface TextValidationResult {
+  elementId: string;
+  success: boolean;
+  fontLoaded: boolean;
+  contentMatches: boolean;
+  boundsReasonable: boolean;
+  errors: string[];
+}
+
+export interface FailedNodeReport {
+  id: string;
+  type: string;
+  error: string;
+  stack?: string;
+  nodeData: any;
+  timestamp: number;
+}
+
 export interface ImportVerificationReport {
   totalElements: number;
+  successfulElements: number;
+  failedElements: number;
   positionsVerified: number;
   positionsWithinTolerance: number;
   positionsOutsideTolerance: number;
@@ -63,125 +92,210 @@ export interface ImportVerificationReport {
   imagesSuccessful: number;
   imagesFailed: number;
   totalProcessingTime: number;
+  textNodesValidated: number;
+  textValidationFailures: number;
+  failedNodes: FailedNodeReport[];
+  memoryUsage?: {
+    imageCache: number;
+    nodeCache: number;
+    verificationData: number;
+  };
 }
+
+interface LayoutData {
+  x?: number;
+  y?: number;
+  width?: number;
+  height?: number;
+  left?: number;
+  top?: number;
+  right?: number;
+  bottom?: number;
+}
+
+interface ValidatedNodeData {
+  id: string;
+  type: string;
+  htmlTag?: string;
+  name?: string;
+  layout?: LayoutData;
+  absoluteLayout?: LayoutData;
+  fills?: any[];
+  backgrounds?: any[];
+  imageHash?: string;
+  children?: any[];
+  characters?: string;
+  fontFamily?: string;
+  fontSize?: number;
+  fontWeight?: number;
+  lineHeight?: number;
+  letterSpacing?: number;
+  textAlign?: string;
+  autoLayout?: any;
+  layoutMode?: string;
+  position?: string;
+  zIndex?: number;
+  pseudoElements?: any;
+  isShadowHost?: boolean;
+  mlUIType?: string;
+  mlConfidence?: number;
+  suggestedAutoLayout?: boolean;
+  suggestedLayoutMode?: string;
+  layoutGrow?: number;
+  layoutAlign?: string;
+  strokeWeight?: number;
+  [key: string]: any;
+}
+
+// ============================================================================
+// VALIDATION UTILITIES
+// ============================================================================
+
+class ValidationUtils {
+  static isValidNumber(value: unknown): value is number {
+    return typeof value === "number" && Number.isFinite(value);
+  }
+
+  static safeParseFloat(value: unknown, fallback: number = 0): number {
+    if (typeof value === "number") {
+      return Number.isFinite(value) ? value : fallback;
+    }
+    if (typeof value === "string") {
+      const parsed = parseFloat(value);
+      return Number.isFinite(parsed) ? parsed : fallback;
+    }
+    return fallback;
+  }
+
+  static clampNumber(value: number, min: number, max: number): number {
+    return Math.max(min, Math.min(max, value));
+  }
+
+  static validateNodeData(data: unknown): ValidatedNodeData | null {
+    if (!data || typeof data !== "object") {
+      console.warn("⚠️ Invalid node data: not an object");
+      return null;
+    }
+
+    const node = data as any;
+
+    // Required fields
+    if (!node.id || typeof node.id !== "string") {
+      console.warn("⚠️ Invalid node data: missing or invalid id");
+      return null;
+    }
+
+    if (!node.type || typeof node.type !== "string") {
+      console.warn(`⚠️ Node ${node.id}: missing or invalid type`);
+      return null;
+    }
+
+    // Validate layout if present
+    if (node.layout && typeof node.layout === "object") {
+      const layout = node.layout;
+      if (layout.width !== undefined && !this.isValidNumber(layout.width)) {
+        console.warn(`⚠️ Node ${node.id}: invalid layout.width`);
+        layout.width = 0;
+      }
+      if (layout.height !== undefined && !this.isValidNumber(layout.height)) {
+        console.warn(`⚠️ Node ${node.id}: invalid layout.height`);
+        layout.height = 0;
+      }
+    }
+
+    return node as ValidatedNodeData;
+  }
+
+  static validateBase64(data: string): boolean {
+    if (!data || typeof data !== "string") return false;
+
+    // Remove data URL prefix if present
+    const base64Data = data.includes(",") ? data.split(",")[1] : data;
+
+    // Check length and valid base64 characters
+    if (base64Data.length === 0) return false;
+    if (base64Data.length % 4 !== 0) return false;
+
+    const base64Regex = /^[A-Za-z0-9+/]+={0,2}$/;
+    return base64Regex.test(base64Data.replace(/\s/g, ""));
+  }
+
+  static isWebP(base64: string): boolean {
+    try {
+      const clean = base64.includes(",") ? base64.split(",")[1] : base64;
+      // WebP magic number in base64: "UklGR" (RIFF) followed by WebP signature
+      return clean.startsWith("UklGR") && clean.substring(16, 20) === "V0VC";
+    } catch {
+      return false;
+    }
+  }
+
+  static sanitizeText(text: string): string {
+    if (!text || typeof text !== "string") return "";
+
+    // Remove null bytes and control characters except newlines/tabs
+    return text.replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g, "").trim();
+  }
+
+  static validateFontName(fontName: unknown): fontName is FontName {
+    if (!fontName || typeof fontName !== "object") return false;
+    const font = fontName as any;
+    return (
+      typeof font.family === "string" &&
+      font.family.length > 0 &&
+      typeof font.style === "string" &&
+      font.style.length > 0
+    );
+  }
+}
+
+// ============================================================================
+// MAIN IMPORTER CLASS
+// ============================================================================
 
 export class EnhancedFigmaImporter {
   private options: EnhancedImportOptions;
   private nodeBuilder: NodeBuilder;
   private styleManager: StyleManager;
   private designTokensManager?: DesignTokensManager;
-  private imageCreationCache = new Map<string, string>(); // hash -> figmaImageHash
-  private createdNodes = new Map<string, SceneNode>(); // elementId -> figmaNode
+  private imageCreationCache = new Map<string, string>();
+  private createdNodes = new Map<string, SceneNode>();
+  private failedNodes: FailedNodeReport[] = [];
+  private textValidationResults: TextValidationResult[] = [];
   private verificationData: Array<{
     elementId: string;
-    originalData: any;
+    originalData: ValidatedNodeData;
     figmaNode: SceneNode;
   }> = [];
   private scaleFactor: number = 1;
-  private clampPadding(value: number | undefined | null): number {
-    if (value === undefined || value === null || Number.isNaN(value)) return 0;
-    return Math.max(0, value);
-  }
+  private importStartTime: number = 0;
+  private processedNodeCount: number = 0;
+  private loadedFonts = new Set<string>();
 
   constructor(private data: any, options: Partial<EnhancedImportOptions> = {}) {
     this.options = {
       createMainFrame: true,
       enableBatchProcessing: true,
-      verifyPositions: true,
+      verifyPositions: false, // Disabled by default for performance
       maxBatchSize: 10,
-      coordinateTolerance: 2, // 2px tolerance
+      coordinateTolerance: 2,
       enableDebugMode: false,
       retryFailedImages: true,
       enableProgressiveLoading: false,
+      maxImportDuration: 300000, // 5 minutes
+      enableMemoryCleanup: true,
+      validateTextNodes: true,
       ...options,
     };
 
-    // Enhanced diagnostics for data validation
-    console.log("🔍 Enhanced Figma importer constructor - data validation:", {
-      hasData: !!data,
-      dataType: typeof data,
-      dataKeys: data ? Object.keys(data) : [],
-      hasTree: !!data?.tree,
-      hasAssets: !!data?.assets,
-      hasStyles: !!data?.styles,
-      version: data?.version,
-      treeNodeCount: data?.tree
-        ? Array.isArray(data.tree.children)
-          ? data.tree.children.length
-          : "no children"
-        : "no tree",
-    });
-
-    // #region agent log
-    fetch("http://127.0.0.1:7242/ingest/ec6ff4c5-673b-403d-a943-70cb2e5565f2", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        location: "enhanced-figma-importer.ts:constructor",
-        message: "Importer constructed (version stamp + basic payload shape)",
-        data: {
-          importerVersionStamp: "2025-12-11T_fix_fills_images_v1",
-          payloadKeys: data ? Object.keys(data) : [],
-          hasTree: !!data?.tree,
-          hasAssets: !!data?.assets,
-          hasStyles: !!data?.styles,
-          meta: {
-            captureEngine: data?.metadata?.captureEngine,
-            url: data?.metadata?.url,
-            viewport: data?.metadata?.viewport,
-            viewportHeight: data?.metadata?.viewportHeight,
-          },
-          root: {
-            id: data?.tree?.id,
-            name: data?.tree?.name,
-            layout: data?.tree?.layout,
-            fillsCount: Array.isArray(data?.tree?.fills)
-              ? data.tree.fills.length
-              : 0,
-          },
-          assets: {
-            images: data?.assets?.images
-              ? Object.keys(data.assets.images).length
-              : 0,
-            fonts: data?.assets?.fonts
-              ? Object.keys(data.assets.fonts).length
-              : 0,
-          },
-        },
-        timestamp: Date.now(),
-        sessionId: "debug-session",
-        runId: "fills-images",
-        hypothesisId: "A",
-      }),
-    }).catch(() => {});
-    // #endregion
-
-    // Detailed asset logging for debugging images
-    if (data?.assets) {
-      const imageKeys = data.assets.images
-        ? Object.keys(data.assets.images)
-        : [];
-      console.log("🖼️ Asset details:", {
-        hasImages: !!data.assets.images,
-        imageCount: imageKeys.length,
-        firstFiveHashes: imageKeys.slice(0, 5),
-        sampleImage: imageKeys[0]
-          ? {
-              hash: imageKeys[0],
-              hasData: !!data.assets.images[imageKeys[0]]?.data,
-              hasBase64: !!data.assets.images[imageKeys[0]]?.base64,
-              dataLength: (
-                data.assets.images[imageKeys[0]]?.data ||
-                data.assets.images[imageKeys[0]]?.base64 ||
-                ""
-              ).length,
-            }
-          : "no images",
-      });
-    } else {
-      console.warn("⚠️ No assets found in data!");
+    // Validate data structure
+    if (!this.validateDataStructure(data)) {
+      throw new Error("Invalid data structure provided to importer");
     }
 
+    this.logImporterInit();
+
+    // Initialize managers
     this.styleManager = new StyleManager(data.styles);
 
     const builderImportOptions: ImportOptions = {
@@ -201,491 +315,514 @@ export class EnhancedFigmaImporter {
       new ComponentManager(data.components),
       builderImportOptions,
       data.assets,
-      undefined // designTokensManager will be passed later after initialization
+      undefined
     );
 
-    if (this.options.enableDebugMode || true) {
-      // Always log for debugging
-      console.log("🎯 Enhanced Figma importer initialized:", this.options);
+    console.log("🎯 Production-grade importer initialized:", this.options);
+  }
+
+  // ============================================================================
+  // VALIDATION & INITIALIZATION
+  // ============================================================================
+
+  private validateDataStructure(data: any): boolean {
+    if (!data || typeof data !== "object") {
+      console.error("❌ Data is not an object");
+      return false;
+    }
+
+    if (!data.tree) {
+      console.error("❌ Missing tree data");
+      return false;
+    }
+
+    if (!data.tree.id || !data.tree.type) {
+      console.error("❌ Invalid tree root - missing id or type");
+      return false;
+    }
+
+    console.log("✅ Data structure validation passed");
+    return true;
+  }
+
+  private logImporterInit(): void {
+    const diagnostics = {
+      hasData: !!this.data,
+      hasTree: !!this.data?.tree,
+      hasAssets: !!this.data?.assets,
+      hasStyles: !!this.data?.styles,
+      treeNodeCount: Array.isArray(this.data?.tree?.children)
+        ? this.data.tree.children.length
+        : 0,
+      imageCount: this.data?.assets?.images
+        ? Object.keys(this.data.assets.images).length
+        : 0,
+    };
+
+    console.log("🔍 Importer initialization diagnostics:", diagnostics);
+
+    // Agent logging
+    this.sendAgentLog("importer-initialized", {
+      importerVersion: "2.0.0-production",
+      ...diagnostics,
+    });
+  }
+
+  private sendAgentLog(location: string, data: any): void {
+    try {
+      fetch(
+        "http://127.0.0.1:7242/ingest/ec6ff4c5-673b-403d-a943-70cb2e5565f2",
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            location,
+            message: "Production importer event",
+            data,
+            timestamp: Date.now(),
+            sessionId: "prod-session",
+            runId: "prod-run",
+            hypothesisId: "production",
+          }),
+        }
+      ).catch(() => {});
+    } catch {
+      // Silent fail for logging
     }
   }
 
-  /**
-   * Main import method with enhanced error handling and verification
-   */
+  // ============================================================================
+  // MAIN IMPORT ORCHESTRATION
+  // ============================================================================
+
   async runImport(): Promise<ImportVerificationReport> {
-    const startTime = Date.now();
+    this.importStartTime = Date.now();
 
     try {
-      figma.ui.postMessage({
-        type: "progress",
-        message: "Starting enhanced import...",
-        percent: 0,
-      });
+      // Check timeout
+      this.checkTimeout();
 
-      // Step 1: Load all required fonts
-      await this.loadAllFonts();
+      this.postProgress("Starting production-grade import...", 0);
 
-      // Step 1.5: Create Figma Styles (Text, Color, Effects)
+      // Step 1: Load fonts with validation
+      await this.loadAllFontsRobust();
+      this.checkTimeout();
+
+      // Step 2: Create Figma styles
       if (this.options.createStyles) {
-        figma.ui.postMessage({
-          type: "progress",
-          message: "Creating local styles...",
-          percent: 8,
-        });
-
+        this.postProgress("Creating local styles...", 8);
         await this.styleManager.createFigmaStyles();
 
-        // Step 1.5.1: Enhance styles with AI-extracted color palette and typography
-        if (this.data.colorPalette && this.data.colorPalette.palette) {
-          console.log(
-            "🎨 Integrating AI-extracted color palette into styles..."
-          );
+        if (this.data.colorPalette?.palette) {
           await this.integrateColorPalette(this.data.colorPalette);
         }
 
-        if (this.data.typography && this.data.typography.tokens) {
-          console.log("📝 Integrating AI-extracted typography into styles...");
+        if (this.data.typography?.tokens) {
           await this.integrateTypographyAnalysis(this.data.typography);
         }
       }
+      this.checkTimeout();
 
-      // Step 1.6: Create Figma Variables from design tokens if available
-      if (
-        this.data.designTokensRegistry &&
-        Object.keys(this.data.designTokensRegistry.variables || {}).length > 0
-      ) {
-        figma.ui.postMessage({
-          type: "progress",
-          message: "Creating design tokens as Figma Variables...",
-          percent: 10,
-        });
+      // Step 3: Create design tokens
+      if (this.data.designTokensRegistry?.variables) {
+        this.postProgress("Creating design tokens...", 10);
         this.designTokensManager = new DesignTokensManager(
           this.data.designTokensRegistry
         );
         await this.designTokensManager.createFigmaVariables();
-        const stats = this.designTokensManager.getStatistics();
-        console.log("✅ Design tokens created:", stats);
       }
+      this.checkTimeout();
 
-      // Step 2: Create main container frame
-      const mainFrame = await this.createMainFrame();
+      // Step 4: Create main frame
+      const mainFrame = await this.createMainFrameRobust();
+      this.checkTimeout();
 
-      // Step 3: Create screenshot overlay if requested
+      // Step 5: Screenshot base layer
       if (this.data.screenshot) {
-        // Always create screenshot base layer if available (as requested)
-        // We can make this optional later if needed, but for now it's a requested feature
         await this.createScreenshotBaseLayer(mainFrame, this.data.screenshot);
-
-        // Also create the overlay if specifically requested via options (legacy behavior)
-        if (this.options.createScreenshotOverlay) {
-          // ... existing overlay logic if needed, or maybe the base layer replaces it?
-          // The user asked for "Screenshot base layer" mode.
-          // Let's keep the existing overlay logic as "reference overlay" if enabled,
-          // but add the base layer as a standard feature.
-        }
       }
+      this.checkTimeout();
 
-      // Step 4: Process nodes with batch optimization
-      await this.processNodesWithBatching(mainFrame);
+      // Step 6: Process all nodes with batching
+      await this.processNodesWithBatchingRobust(mainFrame);
+      this.checkTimeout();
 
-      // Step 4.5: Create hover variants if hoverStates data exists
-      if (this.data.hoverStates && this.data.hoverStates.length > 0) {
-        figma.ui.postMessage({
-          type: "progress",
-          message: `Creating ${this.data.hoverStates.length} hover variants...`,
-          percent: 82,
-        });
-        await createHoverVariants(this.data.hoverStates, this.createdNodes);
-        console.log(
-          `✅ Hover variants processed: ${this.data.hoverStates.length}`
+      // Step 7: Create hover variants
+      if (this.data.hoverStates?.length > 0) {
+        this.postProgress(
+          `Creating ${this.data.hoverStates.length} hover variants...`,
+          82
         );
+        await createHoverVariants(this.data.hoverStates, this.createdNodes);
+      }
+      this.checkTimeout();
+
+      // Step 8: Validate text nodes if enabled
+      if (this.options.validateTextNodes) {
+        await this.validateAllTextNodes();
       }
 
-      // Step 4: Verify positions if enabled
-      // DISABLED: Verification causes 98% stall on large pages
-      // let verificationReport: ImportVerificationReport | null = null;
-      // if (this.options.verifyPositions) {
-      //   verificationReport = await this.verifyImportAccuracy();
-      // }
-      const verificationReport: ImportVerificationReport | null = null;
+      // Step 9: Position verification (optional)
+      let verificationReport: ImportVerificationReport | null = null;
+      if (this.options.verifyPositions) {
+        verificationReport = await this.verifyImportAccuracyRobust();
+      }
 
-      // Step 5: Focus on imported content
+      // Step 10: Focus viewport
       figma.viewport.scrollAndZoomIntoView([mainFrame]);
       figma.currentPage.selection = [mainFrame];
 
-      const totalTime = Date.now() - startTime;
-      const report: ImportVerificationReport = verificationReport || {
-        totalElements: this.createdNodes.size,
-        positionsVerified: 0,
-        positionsWithinTolerance: 0,
-        positionsOutsideTolerance: 0,
-        maxDeviation: 0,
-        averageDeviation: 0,
-        problematicElements: [],
-        imagesProcessed: this.imageCreationCache.size,
-        imagesSuccessful: this.imageCreationCache.size,
-        imagesFailed: 0,
-        totalProcessingTime: totalTime,
-      };
+      // Generate final report
+      const totalTime = Date.now() - this.importStartTime;
+      const report = this.generateFinalReport(totalTime, verificationReport);
 
-      figma.ui.postMessage({
-        type: "complete",
-        stats: { elements: this.createdNodes.size },
-        verification: report,
-      });
-
-      if (this.options.enableDebugMode) {
-        console.log("✅ Enhanced import complete:", report);
+      // Cleanup
+      if (this.options.enableMemoryCleanup) {
+        this.performMemoryCleanup();
       }
 
+      this.postComplete(report);
+
+      console.log("✅ Production import complete:", report);
       return report;
     } catch (error) {
       const errorMessage =
         error instanceof Error ? error.message : "Unknown error";
-      figma.ui.postMessage({ type: "error", message: errorMessage });
+      const stackTrace = error instanceof Error ? error.stack : undefined;
 
-      if (this.options.enableDebugMode) {
-        console.error("❌ Enhanced import failed:", error);
-      }
+      console.error("❌ Production import failed:", error);
+
+      figma.ui.postMessage({
+        type: "error",
+        message: errorMessage,
+        details: stackTrace,
+      });
 
       throw error;
     }
   }
 
-  /**
-   * Load all fonts required for the import with proper error handling
-   */
-  private async loadAllFonts(): Promise<void> {
-    figma.ui.postMessage({
-      type: "progress",
-      message: "Loading fonts...",
-      percent: 5,
-    });
+  private checkTimeout(): void {
+    if (!this.options.maxImportDuration) return;
 
-    const requiredFonts = this.extractRequiredFonts();
-    const loadPromises: Promise<void>[] = [];
-
-    for (const fontName of requiredFonts) {
-      loadPromises.push(
-        this.loadFontSafely(fontName).catch((error) => {
-          console.warn(`⚠️ Failed to load font ${fontName.family}:`, error);
-          // Continue with default font
-        })
-      );
-    }
-
-    await Promise.all(loadPromises);
-
-    if (this.options.enableDebugMode) {
-      console.log(
-        `✅ Font loading complete. Attempted to load ${requiredFonts.length} fonts.`
+    const elapsed = Date.now() - this.importStartTime;
+    if (elapsed > this.options.maxImportDuration) {
+      throw new Error(
+        `Import timeout exceeded: ${elapsed}ms > ${this.options.maxImportDuration}ms`
       );
     }
   }
 
-  /**
-   * Safely load a font with fallback to default
-   */
-  private async loadFontSafely(fontName: FontName): Promise<void> {
+  // ============================================================================
+  // FONT LOADING WITH ROBUST FALLBACKS
+  // ============================================================================
+
+  private async loadAllFontsRobust(): Promise<void> {
+    this.postProgress("Loading fonts with validation...", 5);
+
+    const requiredFonts = this.extractRequiredFontsRobust();
+    console.log(`📝 Attempting to load ${requiredFonts.length} fonts`);
+
+    const results = await Promise.allSettled(
+      requiredFonts.map((font) => this.loadFontWithValidation(font))
+    );
+
+    const successful = results.filter((r) => r.status === "fulfilled").length;
+    const failed = results.filter((r) => r.status === "rejected").length;
+
+    console.log(
+      `✅ Font loading complete: ${successful} succeeded, ${failed} failed`
+    );
+
+    // Always ensure fallback font is loaded
+    await this.ensureFallbackFont();
+  }
+
+  private async loadFontWithValidation(fontName: FontName): Promise<void> {
+    if (!ValidationUtils.validateFontName(fontName)) {
+      throw new Error(`Invalid font name: ${JSON.stringify(fontName)}`);
+    }
+
+    const fontKey = `${fontName.family}-${fontName.style}`;
+
+    if (this.loadedFonts.has(fontKey)) {
+      return; // Already loaded
+    }
+
     try {
       await figma.loadFontAsync(fontName);
+      this.loadedFonts.add(fontKey);
+      console.log(`✅ Loaded font: ${fontKey}`);
     } catch (error) {
-      // Fallback to Inter Regular if the specific font fails
-      try {
-        await figma.loadFontAsync({ family: "Inter", style: "Regular" });
-      } catch (fallbackError) {
-        console.warn("Failed to load fallback font Inter:", fallbackError);
-      }
+      console.warn(`⚠️ Failed to load font ${fontKey}:`, error);
+      throw error;
     }
   }
 
-  /**
-   * Extract all required fonts from the data
-   */
-  private extractRequiredFonts(): FontName[] {
+  private async ensureFallbackFont(): Promise<void> {
+    const fallbackFonts: FontName[] = [
+      { family: "Inter", style: "Regular" },
+      { family: "Roboto", style: "Regular" },
+      { family: "Arial", style: "Regular" },
+    ];
+
+    for (const font of fallbackFonts) {
+      try {
+        await this.loadFontWithValidation(font);
+        console.log(`✅ Fallback font loaded: ${font.family}`);
+        return;
+      } catch {
+        continue;
+      }
+    }
+
+    console.error("❌ Failed to load any fallback font!");
+  }
+
+  private extractRequiredFontsRobust(): FontName[] {
     const fonts = new Set<string>();
 
-    // Extract from metadata fonts
+    // Extract from metadata
     if (this.data.metadata?.fonts) {
       Object.values(this.data.metadata.fonts).forEach((font: any) => {
-        if (font.family) {
-          fonts.add(`${font.family}-Regular`);
-          if (font.weights) {
+        if (font.family && typeof font.family === "string") {
+          fonts.add(`${font.family}|Regular`);
+
+          if (Array.isArray(font.weights)) {
             font.weights.forEach((weight: number) => {
-              const style = this.weightToStyle(weight);
-              fonts.add(`${font.family}-${style}`);
+              if (ValidationUtils.isValidNumber(weight)) {
+                const style = this.weightToStyle(weight);
+                fonts.add(`${font.family}|${style}`);
+              }
             });
           }
         }
       });
     }
 
-    // Convert to FontName format
-    return Array.from(fonts).map((fontStr) => {
-      const [family, style] = fontStr.split("-");
-      return { family, style: style || "Regular" };
+    // Extract from text nodes in tree
+    this.extractFontsFromTree(this.data.tree, fonts);
+
+    // Convert to FontName format with validation
+    const result: FontName[] = [];
+    fonts.forEach((fontStr) => {
+      const [family, style] = fontStr.split("|");
+      if (family && style) {
+        result.push({ family, style });
+      }
     });
+
+    return result;
   }
 
-  /**
-   * Create the main container frame with proper sizing
-   */
-  private async createMainFrame(): Promise<FrameNode> {
+  private extractFontsFromTree(node: any, fonts: Set<string>): void {
+    if (!node) return;
+
+    if (node.type === "TEXT" && node.fontFamily) {
+      const family = node.fontFamily;
+      const weight = node.fontWeight || 400;
+      const style = this.weightToStyle(weight);
+      fonts.add(`${family}|${style}`);
+    }
+
+    if (Array.isArray(node.children)) {
+      node.children.forEach((child: any) =>
+        this.extractFontsFromTree(child, fonts)
+      );
+    }
+  }
+
+  private weightToStyle(weight: number): string {
+    if (weight >= 700) return "Bold";
+    if (weight >= 600) return "SemiBold";
+    if (weight >= 500) return "Medium";
+    if (weight >= 300) return "Light";
+    if (weight >= 100) return "Thin";
+    return "Regular";
+  }
+
+  // ============================================================================
+  // FRAME CREATION WITH VALIDATION
+  // ============================================================================
+
+  private async createMainFrameRobust(): Promise<FrameNode> {
     const frame = figma.createFrame();
-    frame.name = `Imported Page - ${new Date().toLocaleTimeString()}`;
+    frame.name = `Import ${new Date().toLocaleTimeString()}`;
 
-    // Set frame size based on page metadata using a 1:1 mapping from schema coordinates.
-    // The schema already encodes coordinates in CSS pixels, so additional scaling based
-    // on screenshotScale causes text and layout to be mis-sized. We now ignore
-    // screenshotScale for positioning/sizing and keep scaleFactor at 1.
+    // Calculate dimensions with validation
     const viewport = this.data.metadata?.viewport || {};
-    // Width: prefer explicit viewportWidth if present, then viewport width, then root tree width
-    const layoutWidth =
-      (this.data as any).metadata?.viewportWidth ||
-      (viewport as any).layoutViewportWidth ||
-      (viewport as any).width ||
-      this.data.tree?.layout?.width ||
-      1440;
 
-    // Height: prefer explicit scroll height fields if present (puppeteer capture emits viewportHeight),
-    // then viewport height, then derive from root tree.
-    const viewportHeightHint =
-      (this.data as any).metadata?.viewportHeight ||
-      (this.data as any).metadata?.scrollHeight ||
-      (viewport as any).scrollHeight ||
-      (viewport as any).layoutViewportHeight ||
-      (viewport as any).height ||
-      900;
+    const layoutWidth = ValidationUtils.safeParseFloat(
+      this.data.metadata?.viewportWidth ||
+        viewport.layoutViewportWidth ||
+        viewport.width ||
+        this.data.tree?.layout?.width,
+      1440
+    );
 
-    const treeHeightHint =
-      this.data.tree?.layout?.height && this.data.tree.layout.height > 1
-        ? this.data.tree.layout.height
-        : undefined;
+    const viewportHeight = ValidationUtils.safeParseFloat(
+      this.data.metadata?.viewportHeight ||
+        this.data.metadata?.scrollHeight ||
+        viewport.scrollHeight ||
+        viewport.layoutViewportHeight ||
+        viewport.height,
+      900
+    );
 
-    const scrollHeight = Math.max(viewportHeightHint, treeHeightHint || 0);
+    const treeHeight = ValidationUtils.safeParseFloat(
+      this.data.tree?.layout?.height,
+      0
+    );
 
-    this.scaleFactor = 1;
+    const scrollHeight = Math.max(viewportHeight, treeHeight);
 
-    const finalWidth = Math.max(1, layoutWidth);
-    const finalHeight = Math.max(1, scrollHeight);
+    // Clamp to reasonable bounds
+    const finalWidth = ValidationUtils.clampNumber(layoutWidth, 1, 16000);
+    const finalHeight = ValidationUtils.clampNumber(scrollHeight, 1, 16000);
 
     frame.resize(finalWidth, finalHeight);
 
-    // Position this import to the right of existing frames so new runs never overlap
+    // Position to avoid overlap
     const nextPos = this.getNextImportPosition(finalWidth, finalHeight);
     frame.x = nextPos.x;
     frame.y = nextPos.y;
 
-    // Set background to white for clarity
-    frame.fills = [
-      {
-        type: "SOLID",
-        color: { r: 1, g: 1, b: 1 },
-      },
-    ];
+    // White background
+    frame.fills = [{ type: "SOLID", color: { r: 1, g: 1, b: 1 } }];
 
     figma.currentPage.appendChild(frame);
 
-    // Initialize absolute coordinates for the root frame
-    // This is required for the relative positioning logic of children
-    frame.setPluginData("absoluteX", "0");
-    frame.setPluginData("absoluteY", "0");
+    // Store absolute coordinates
+    this.safeSetPluginData(frame, "absoluteX", "0");
+    this.safeSetPluginData(frame, "absoluteY", "0");
 
-    if (this.options.enableDebugMode) {
-      console.log(
-        `📐 Created main frame: ${finalWidth}×${finalHeight} (Scale: ${this.scaleFactor})`
-      );
-    }
-
+    console.log(`📐 Main frame created: ${finalWidth}×${finalHeight}`);
     return frame;
   }
 
-  /**
-   * Compute where to place the next imported frame so it does not overlap
-   * previous imports. We lay frames out in a single row to the right with spacing.
-   */
   private getNextImportPosition(
     width: number,
     height: number
   ): { x: number; y: number } {
-    const page = figma.currentPage;
-    const siblings = page.children.filter(
+    const siblings = figma.currentPage.children.filter(
       (n) =>
         n.type === "FRAME" || n.type === "COMPONENT" || n.type === "INSTANCE"
     ) as Array<FrameNode | ComponentNode | InstanceNode>;
 
-    if (!siblings.length) {
+    if (siblings.length === 0) {
       return { x: 0, y: 0 };
     }
 
     let maxRight = 0;
     let minY = 0;
+
     siblings.forEach((n) => {
       const right = n.x + n.width;
       if (right > maxRight) maxRight = right;
       if (n.y < minY) minY = n.y;
     });
 
-    const padding = 200; // space between imports
-    return { x: maxRight + padding, y: minY };
+    return { x: maxRight + 200, y: minY };
   }
 
-  /**
-   * Process all nodes with batch optimization for images
-   */
-  private async processNodesWithBatching(
+  // ============================================================================
+  // NODE PROCESSING WITH ROBUST ERROR HANDLING
+  // ============================================================================
+
+  private async processNodesWithBatchingRobust(
     parentFrame: FrameNode
   ): Promise<void> {
-    console.log("🔍 Enhanced importer: Checking data structure:", {
-      hasData: !!this.data,
-      hasTree: !!this.data?.tree,
-      dataKeys: this.data ? Object.keys(this.data) : [],
-      treeType: this.data?.tree ? typeof this.data.tree : "undefined",
-      dataVersion: this.data?.version,
-      schemaStructure: {
-        version: !!this.data?.version,
-        metadata: !!this.data?.metadata,
-        tree: !!this.data?.tree,
-        assets: !!this.data?.assets,
-        styles: !!this.data?.styles,
-      },
-    });
-
     if (!this.data.tree) {
-      const errorDetails = {
-        hasData: !!this.data,
-        dataKeys: this.data ? Object.keys(this.data) : [],
-        dataType: typeof this.data,
-        treeValue: this.data?.tree,
-        dataStringified: this.data
-          ? JSON.stringify(this.data).substring(0, 500) + "..."
-          : "null",
-      };
-      console.error(
-        "❌ Enhanced importer: Missing tree data - diagnostic info:",
-        errorDetails
-      );
-      throw new Error(
-        `No tree data available for import. Data structure: ${JSON.stringify(
-          errorDetails,
-          null,
-          2
-        )}`
-      );
+      throw new Error("No tree data available");
     }
 
-    // Collect all nodes and images via recursive traversal for batching and progress
     const { totalNodes, imageNodes } = this.traverseAndCollect(this.data.tree);
+    console.log(
+      `🌳 Processing ${totalNodes} nodes (${imageNodes.length} images)`
+    );
 
-    console.log("🌳 Enhanced importer: tree analysis", {
-      totalNodes,
-      imageNodesCount: imageNodes.length,
-      rootId: this.data.tree.id,
-    });
+    this.postProgress(`Processing ${totalNodes} elements...`, 10);
 
-    figma.ui.postMessage({
-      type: "progress",
-      message: `Processing ${totalNodes} elements (${imageNodes.length} images)...`,
-      percent: 10,
-    });
-
-    // Step 1: Batch process images first
+    // Batch process images
     if (this.options.enableBatchProcessing && imageNodes.length > 0) {
-      await this.batchProcessImages(imageNodes);
+      await this.batchProcessImagesRobust(imageNodes);
     }
 
-    // Step 2: Create nodes while preserving hierarchy
-    let processedCount = 0;
+    // Build node hierarchy with error tracking
+    this.processedNodeCount = 0;
 
     const buildHierarchy = async (
       nodeData: any,
       parent: FrameNode | SceneNode
     ): Promise<SceneNode | null> => {
+      // Validate node data
+      const validated = ValidationUtils.validateNodeData(nodeData);
+      if (!validated) {
+        this.recordFailedNode(nodeData, "Validation failed", null);
+        return null;
+      }
+
       try {
-        const figmaNode = await this.createSingleNode(
-          nodeData,
+        const figmaNode = await this.createSingleNodeRobust(
+          validated,
           parent as FrameNode
         );
+
         if (!figmaNode) {
+          this.recordFailedNode(validated, "Node creation returned null", null);
           return null;
         }
 
-        this.createdNodes.set(nodeData.id, figmaNode);
+        this.createdNodes.set(validated.id, figmaNode);
         this.verificationData.push({
-          elementId: nodeData.id,
-          originalData: nodeData,
+          elementId: validated.id,
+          originalData: validated,
           figmaNode,
         });
 
-        processedCount++;
-        const progress = 10 + (processedCount / totalNodes) * 70;
-        figma.ui.postMessage({
-          type: "progress",
-          message: `Created ${processedCount}/${totalNodes} elements...`,
-          percent: progress,
-        });
+        this.processedNodeCount++;
+        const progress = 10 + (this.processedNodeCount / totalNodes) * 70;
 
-        // Sort children by z-index to ensure correct stacking order
-        // In Figma, the last child in the list is visually on top
-        // Stacking order:
-        // 1. Negative z-index (positioned)
-        // 2. Static elements (non-positioned)
-        // 3. Positioned elements with z-index 0/auto
-        // 4. Positive z-index (positioned)
-        if (nodeData.children && Array.isArray(nodeData.children)) {
-          const sortedChildren = [...nodeData.children].sort((a, b) => {
-            const zIndexA = a.zIndex || 0;
-            const zIndexB = b.zIndex || 0;
+        if (this.processedNodeCount % 50 === 0) {
+          this.postProgress(
+            `Created ${this.processedNodeCount}/${totalNodes} elements...`,
+            progress
+          );
+        }
 
-            const isPositionedA = a.position && a.position !== "static";
-            const isPositionedB = b.position && b.position !== "static";
-
-            const getWeight = (
-              zIndex: number,
-              isPositioned: boolean | undefined
-            ) => {
-              if (zIndex < 0) return zIndex; // Negative values stay negative
-              if (zIndex > 0) return zIndex; // Positive values stay positive
-              // zIndex is 0 or undefined
-              if (isPositioned) return 0.1; // Positioned elements with z=0 sit above static
-              return 0; // Static elements sit at 0
-            };
-
-            const weightA = getWeight(zIndexA, isPositionedA);
-            const weightB = getWeight(zIndexB, isPositionedB);
-
-            return weightA - weightB;
-          });
+        // Process children with z-index sorting
+        if (validated.children && Array.isArray(validated.children)) {
+          const sortedChildren = this.sortChildrenByZIndex(validated.children);
 
           for (const child of sortedChildren) {
             await buildHierarchy(child, figmaNode);
           }
         }
 
-        // Handle pseudo-elements (::before, ::after)
-        if (nodeData.pseudoElements) {
-          if (nodeData.pseudoElements.before) {
-            await buildHierarchy(nodeData.pseudoElements.before, figmaNode);
+        // Process pseudo-elements
+        if (validated.pseudoElements) {
+          if (validated.pseudoElements.before) {
+            await buildHierarchy(validated.pseudoElements.before, figmaNode);
           }
-          if (nodeData.pseudoElements.after) {
-            await buildHierarchy(nodeData.pseudoElements.after, figmaNode);
+          if (validated.pseudoElements.after) {
+            await buildHierarchy(validated.pseudoElements.after, figmaNode);
           }
         }
 
         return figmaNode;
       } catch (error) {
-        console.warn(`⚠️ Failed to create node ${nodeData.id}:`, error);
+        this.recordFailedNode(
+          validated,
+          error instanceof Error ? error.message : "Unknown error",
+          error instanceof Error ? error.stack : undefined
+        );
         return null;
       }
     };
 
-    // CRITICAL FIX: If root tree is body, skip body node and process children directly
-    // This prevents body background from overriding main frame background
+    // Handle body node properly
     if (this.data.tree.htmlTag === "body" && this.data.tree.children) {
-      console.log(
-        "🔄 [BODY] Root is body node, processing children directly to avoid background override"
-      );
+      console.log("🔄 Processing body children directly");
       for (const child of this.data.tree.children) {
         await buildHierarchy(child, parentFrame);
       }
@@ -693,114 +830,442 @@ export class EnhancedFigmaImporter {
       await buildHierarchy(this.data.tree, parentFrame);
     }
 
-    if (this.options.enableDebugMode) {
-      console.log(
-        `✅ Node processing complete: ${processedCount}/${totalNodes} nodes created`
+    console.log(
+      `✅ Node processing complete: ${this.processedNodeCount} created, ${this.failedNodes.length} failed`
+    );
+  }
+
+  private sortChildrenByZIndex(children: any[]): any[] {
+    return [...children].sort((a, b) => {
+      const zIndexA = ValidationUtils.safeParseFloat(a.zIndex, 0);
+      const zIndexB = ValidationUtils.safeParseFloat(b.zIndex, 0);
+
+      const isPositionedA = a.position && a.position !== "static";
+      const isPositionedB = b.position && b.position !== "static";
+
+      const getWeight = (zIndex: number, isPositioned: boolean) => {
+        if (zIndex < 0) return zIndex;
+        if (zIndex > 0) return zIndex;
+        return isPositioned ? 0.1 : 0;
+      };
+
+      return (
+        getWeight(zIndexA, isPositionedA) - getWeight(zIndexB, isPositionedB)
       );
+    });
+  }
+
+  // ============================================================================
+  // ROBUST NODE CREATION
+  // ============================================================================
+
+  private async createSingleNodeRobust(
+    nodeData: ValidatedNodeData,
+    parent: FrameNode
+  ): Promise<SceneNode | null> {
+    // Create node via NodeBuilder
+    const figmaNode = await this.nodeBuilder.createNode(nodeData);
+
+    if (!figmaNode) {
+      console.warn(`⚠️ NodeBuilder returned null for ${nodeData.id}`);
+      return null;
+    }
+
+    // Clear body/html backgrounds
+    if (
+      (nodeData.htmlTag === "body" || nodeData.htmlTag === "html") &&
+      "fills" in figmaNode
+    ) {
+      const bodyFills = (figmaNode as any).fills;
+      if (Array.isArray(bodyFills) && bodyFills.length > 0) {
+        const hasNonWhiteFill = bodyFills.some((fill: any) => {
+          if (fill.type === "SOLID" && fill.color) {
+            const isWhite =
+              fill.color.r > 0.95 && fill.color.g > 0.95 && fill.color.b > 0.95;
+            const isTransparent = fill.opacity === 0;
+            return !isWhite && !isTransparent;
+          }
+          return false;
+        });
+
+        if (hasNonWhiteFill) {
+          (figmaNode as any).fills = [];
+        }
+      }
+    }
+
+    // Apply metadata
+    this.applyNodeMetadata(figmaNode, nodeData);
+
+    // Calculate and apply position
+    const position = this.calculateNodePosition(nodeData, parent);
+    const parentHasAutoLayout =
+      "layoutMode" in parent && parent.layoutMode !== "NONE";
+
+    if (!parentHasAutoLayout) {
+      figmaNode.x = position.x;
+      figmaNode.y = position.y;
+    } else {
+      this.safeSetPluginData(
+        figmaNode,
+        "originalX",
+        String(position.absoluteX)
+      );
+      this.safeSetPluginData(
+        figmaNode,
+        "originalY",
+        String(position.absoluteY)
+      );
+    }
+
+    // Apply size
+    if ("resize" in figmaNode && nodeData.layout) {
+      const width = ValidationUtils.safeParseFloat(nodeData.layout.width, 0);
+      const height = ValidationUtils.safeParseFloat(nodeData.layout.height, 0);
+
+      const w = Math.max(0, width * this.scaleFactor);
+      const h = Math.max(0, height * this.scaleFactor);
+
+      (figmaNode as LayoutMixin).resize(w, h);
+    }
+
+    // Apply Auto Layout
+    await this.applyAutoLayoutRobust(figmaNode, nodeData);
+
+    // Apply flex child properties
+    this.applyFlexChildProperties(figmaNode, nodeData);
+
+    // Append to parent
+    if ((parent as SceneNode).type !== "TEXT") {
+      parent.appendChild(figmaNode);
+    }
+
+    return figmaNode;
+  }
+
+  private calculateNodePosition(
+    nodeData: ValidatedNodeData,
+    parent: FrameNode
+  ): { x: number; y: number; absoluteX: number; absoluteY: number } {
+    // Get absolute position
+    let absX = 0;
+    let absY = 0;
+
+    if (nodeData.absoluteLayout) {
+      absX = ValidationUtils.safeParseFloat(nodeData.absoluteLayout.left, 0);
+      absY = ValidationUtils.safeParseFloat(nodeData.absoluteLayout.top, 0);
+    } else if (nodeData.layout) {
+      absX = ValidationUtils.safeParseFloat(nodeData.layout.x, 0);
+      absY = ValidationUtils.safeParseFloat(nodeData.layout.y, 0);
+    }
+
+    // Get parent absolute position
+    const parentAbsXStr = parent.getPluginData("absoluteX");
+    const parentAbsYStr = parent.getPluginData("absoluteY");
+
+    let relativeX = absX * this.scaleFactor;
+    let relativeY = absY * this.scaleFactor;
+
+    if (parentAbsXStr && parentAbsYStr) {
+      const parentAbsX = ValidationUtils.safeParseFloat(parentAbsXStr, 0);
+      const parentAbsY = ValidationUtils.safeParseFloat(parentAbsYStr, 0);
+
+      relativeX = (absX - parentAbsX) * this.scaleFactor;
+      relativeY = (absY - parentAbsY) * this.scaleFactor;
+    }
+
+    return {
+      x: relativeX,
+      y: relativeY,
+      absoluteX: absX,
+      absoluteY: absY,
+    };
+  }
+
+  private applyNodeMetadata(
+    node: SceneNode,
+    nodeData: ValidatedNodeData
+  ): void {
+    // Store absolute coordinates
+    const absX = nodeData.absoluteLayout?.left ?? nodeData.layout?.x ?? 0;
+    const absY = nodeData.absoluteLayout?.top ?? nodeData.layout?.y ?? 0;
+
+    this.safeSetPluginData(node, "absoluteX", String(absX));
+    this.safeSetPluginData(node, "absoluteY", String(absY));
+
+    // Shadow host
+    if (nodeData.isShadowHost) {
+      node.name = `${node.name} (Shadow Host)`;
+      this.safeSetPluginData(node, "isShadowHost", "true");
+    }
+
+    // ML classification
+    if (
+      nodeData.mlUIType &&
+      nodeData.mlConfidence &&
+      nodeData.mlConfidence > 0.7
+    ) {
+      this.safeSetPluginData(node, "mlClassification", nodeData.mlUIType);
+      this.safeSetPluginData(
+        node,
+        "mlConfidence",
+        String(nodeData.mlConfidence)
+      );
+
+      if (
+        node.name === "Frame" ||
+        node.name === "Rectangle" ||
+        node.name === nodeData.htmlTag
+      ) {
+        node.name = `${nodeData.mlUIType} - ${node.name}`;
+      }
+
+      if (
+        (nodeData.mlUIType === "BUTTON" || nodeData.mlUIType === "INPUT") &&
+        nodeData.mlConfidence > 0.9
+      ) {
+        this.safeSetPluginData(
+          node,
+          "suggestedComponentType",
+          nodeData.mlUIType
+        );
+      }
     }
   }
 
-  /**
-   * Batch process images for optimal performance
-   */
-  private async batchProcessImages(imageNodes: any[]): Promise<void> {
+  private async applyAutoLayoutRobust(
+    node: SceneNode,
+    nodeData: ValidatedNodeData
+  ): Promise<void> {
+    if (!("layoutMode" in node)) return;
+
+    const hasAutoLayout =
+      nodeData.autoLayout ||
+      (nodeData.layoutMode &&
+        nodeData.layoutMode !== "NONE" &&
+        nodeData.layoutMode !== "GRID") ||
+      (nodeData.suggestedAutoLayout && nodeData.suggestedLayoutMode);
+
+    if (!hasAutoLayout) return;
+
+    const frame = node as FrameNode;
+    // Get raw layoutMode value (can be HORIZONTAL, VERTICAL, NONE, GRID, or undefined)
+    const rawLayoutMode =
+      nodeData.autoLayout?.layoutMode ||
+      nodeData.layoutMode ||
+      nodeData.suggestedLayoutMode;
+
+    // Filter out invalid values before type assertion
+    if (!rawLayoutMode || rawLayoutMode === "NONE" || rawLayoutMode === "GRID")
+      return;
+
+    // Now safely cast to valid Auto Layout mode
+    const layoutMode = rawLayoutMode as "HORIZONTAL" | "VERTICAL";
+
+    try {
+      frame.layoutMode = layoutMode;
+
+      // Sizing modes
+      frame.primaryAxisSizingMode = (nodeData.autoLayout
+        ?.primaryAxisSizingMode ||
+        nodeData.primaryAxisSizingMode ||
+        "AUTO") as "FIXED" | "AUTO";
+
+      frame.counterAxisSizingMode = (nodeData.autoLayout
+        ?.counterAxisSizingMode ||
+        nodeData.counterAxisSizingMode ||
+        "AUTO") as "FIXED" | "AUTO";
+
+      // Alignment
+      frame.primaryAxisAlignItems = (nodeData.autoLayout
+        ?.primaryAxisAlignItems ||
+        nodeData.primaryAxisAlignItems ||
+        "MIN") as "MIN" | "MAX" | "CENTER" | "SPACE_BETWEEN";
+
+      frame.counterAxisAlignItems = (nodeData.autoLayout
+        ?.counterAxisAlignItems ||
+        nodeData.counterAxisAlignItems ||
+        "MIN") as "MIN" | "MAX" | "CENTER" | "BASELINE";
+
+      // Spacing
+      const itemSpacing = ValidationUtils.safeParseFloat(
+        nodeData.autoLayout?.itemSpacing ?? nodeData.itemSpacing,
+        0
+      );
+      frame.itemSpacing = Math.max(0, itemSpacing);
+
+      // Padding
+      frame.paddingLeft = this.clampPadding(
+        nodeData.autoLayout?.paddingLeft ?? nodeData.paddingLeft
+      );
+      frame.paddingRight = this.clampPadding(
+        nodeData.autoLayout?.paddingRight ?? nodeData.paddingRight
+      );
+      frame.paddingTop = this.clampPadding(
+        nodeData.autoLayout?.paddingTop ?? nodeData.paddingTop
+      );
+      frame.paddingBottom = this.clampPadding(
+        nodeData.autoLayout?.paddingBottom ?? nodeData.paddingBottom
+      );
+
+      // Wrap mode
+      const layoutWrap = nodeData.autoLayout?.layoutWrap || nodeData.layoutWrap;
+      if (layoutWrap === "WRAP") {
+        frame.layoutWrap = "WRAP";
+        const counterAxisSpacing = ValidationUtils.safeParseFloat(
+          nodeData.autoLayout?.counterAxisSpacing ??
+            nodeData.counterAxisSpacing,
+          0
+        );
+        frame.counterAxisSpacing = Math.max(0, counterAxisSpacing);
+      }
+
+      console.log(`✅ Auto Layout applied: ${layoutMode}`);
+    } catch (error) {
+      console.warn(`⚠️ Failed to apply Auto Layout:`, error);
+    }
+  }
+
+  private applyFlexChildProperties(
+    node: SceneNode,
+    nodeData: ValidatedNodeData
+  ): void {
+    if ("layoutGrow" in node && nodeData.layoutGrow !== undefined) {
+      const layoutGrow = ValidationUtils.safeParseFloat(nodeData.layoutGrow, 0);
+      if (layoutGrow > 0) {
+        (node as FrameNode).layoutGrow = layoutGrow;
+      }
+    }
+
+    if (
+      "layoutAlign" in node &&
+      nodeData.layoutAlign &&
+      nodeData.layoutAlign !== "INHERIT"
+    ) {
+      (node as FrameNode).layoutAlign = nodeData.layoutAlign as
+        | "MIN"
+        | "CENTER"
+        | "MAX"
+        | "STRETCH";
+    }
+  }
+
+  private clampPadding(value: number | undefined | null): number {
+    if (value === undefined || value === null) return 0;
+    const parsed = ValidationUtils.safeParseFloat(value, 0);
+    return Math.max(0, parsed);
+  }
+
+  private safeSetPluginData(node: SceneNode, key: string, value: string): void {
+    try {
+      node.setPluginData(key, value);
+    } catch (error) {
+      console.warn(`Failed to set plugin data ${key}:`, error);
+    }
+  }
+
+  private recordFailedNode(
+    nodeData: any,
+    errorMessage: string,
+    stack: string | undefined | null
+  ): void {
+    this.failedNodes.push({
+      id: nodeData.id || "unknown",
+      type: nodeData.type || "unknown",
+      error: errorMessage,
+      stack: stack || undefined,
+      nodeData: nodeData,
+      timestamp: Date.now(),
+    });
+  }
+
+  // ============================================================================
+  // IMAGE PROCESSING WITH VALIDATION
+  // ============================================================================
+
+  private async batchProcessImagesRobust(imageNodes: any[]): Promise<void> {
     const batches = this.chunkArray(imageNodes, this.options.maxBatchSize);
 
     for (let i = 0; i < batches.length; i++) {
-      const batch = batches[i];
+      this.postProgress(
+        `Processing image batch ${i + 1}/${batches.length}...`,
+        15 + (i / batches.length) * 15
+      );
 
-      figma.ui.postMessage({
-        type: "progress",
-        message: `Processing image batch ${i + 1}/${batches.length}...`,
-        percent: 15 + (i / batches.length) * 15,
-      });
-
-      // Process images in parallel within batch
-      const batchPromises = batch.map((nodeData) =>
-        this.preloadImage(nodeData)
+      const batchPromises = batches[i].map((node) =>
+        this.preloadImageRobust(node)
       );
       await Promise.allSettled(batchPromises);
 
-      // Small delay to prevent overwhelming Figma
       await new Promise((resolve) => setTimeout(resolve, 50));
     }
   }
 
-  /**
-   * Preload image and cache the result
-   */
-  private async preloadImage(
+  private async preloadImageRobust(
     nodeData: any,
-    attempt = 0
+    attempt: number = 0
   ): Promise<ImageCreationResult> {
     const startTime = Date.now();
     const result: ImageCreationResult = {
       success: false,
       retryAttempts: attempt,
       processingTime: 0,
+      originalHash: nodeData.imageHash || "unknown",
     };
 
     try {
       const imageHash = nodeData.imageHash;
-      if (!imageHash || this.imageCreationCache.has(imageHash)) {
+
+      if (!imageHash || typeof imageHash !== "string") {
+        throw new Error("Invalid or missing imageHash");
+      }
+
+      if (this.imageCreationCache.has(imageHash)) {
         result.success = true;
         result.imageHash = this.imageCreationCache.get(imageHash);
         return result;
       }
 
-      // Get image data from assets (accept multiple property names for robustness)
       const imageAsset = this.data.assets?.images?.[imageHash];
       if (!imageAsset) {
-        throw new Error(`Image asset not found for hash: ${imageHash}`);
+        throw new Error(`Image asset not found: ${imageHash}`);
       }
 
-      // Some capture code (e.g. puppeteer helper) writes the raw base64 into
-      // `data` or `screenshot` fields instead of `base64`. Accept those as
-      // fallbacks to be more tolerant of upstream shape changes.
-      const base64Candidate: string | undefined =
+      const base64Data =
         imageAsset.base64 || imageAsset.data || imageAsset.screenshot;
-      if (
-        !base64Candidate ||
-        typeof base64Candidate !== "string" ||
-        base64Candidate.length === 0
-      ) {
-        throw new Error(
-          `Image asset for hash ${imageHash} has no base64 data (missing .base64/.data/.screenshot)`
-        );
+
+      if (!base64Data || typeof base64Data !== "string") {
+        throw new Error(`No base64 data for image: ${imageHash}`);
       }
 
-      // Convert base64 to Uint8Array using proper method
-      const imageBytes = await this.base64ToUint8Array(base64Candidate);
+      if (!ValidationUtils.validateBase64(base64Data)) {
+        throw new Error(`Invalid base64 data for image: ${imageHash}`);
+      }
 
-      // Create Figma image
+      const imageBytes = await this.base64ToUint8ArrayRobust(base64Data);
       const figmaImage = figma.createImage(imageBytes);
-      this.imageCreationCache.set(imageHash, figmaImage.hash);
 
-      // Share with NodeBuilder
+      this.imageCreationCache.set(imageHash, figmaImage.hash);
       this.nodeBuilder.preloadImageHash(imageHash, figmaImage.hash);
 
       result.success = true;
       result.imageHash = figmaImage.hash;
 
-      if (this.options.enableDebugMode) {
-        console.log(`✅ Preloaded image ${imageHash} → ${figmaImage.hash}`);
-      }
+      console.log(`✅ Preloaded image: ${imageHash}`);
     } catch (error) {
       result.error = error instanceof Error ? error.message : "Unknown error";
 
-      // Retry logic with bounded attempts
+      // Retry logic
       const nextAttempt = attempt + 1;
       if (this.options.retryFailedImages && nextAttempt <= 2) {
         await new Promise((resolve) => setTimeout(resolve, 100 * nextAttempt));
-        return this.preloadImage(nodeData, nextAttempt);
+        return this.preloadImageRobust(nodeData, nextAttempt);
       }
 
-      if (this.options.enableDebugMode) {
-        console.warn(
-          `❌ Failed to preload image ${nodeData.imageHash}:`,
-          error
-        );
-      }
+      console.warn(
+        `❌ Failed to preload image after ${attempt + 1} attempts:`,
+        result.error
+      );
     } finally {
       result.processingTime = Date.now() - startTime;
     }
@@ -808,491 +1273,178 @@ export class EnhancedFigmaImporter {
     return result;
   }
 
-  /**
-   * Convert base64 string to Uint8Array for Figma
-   */
-  private async base64ToUint8Array(base64: string): Promise<Uint8Array> {
-    // Handle data URL format or raw base64 and decode using Figma API
+  private async base64ToUint8ArrayRobust(base64: string): Promise<Uint8Array> {
     const base64Data = base64.includes(",") ? base64.split(",")[1] : base64;
     const clean = base64Data.replace(/\s/g, "");
 
-    const isWebp = clean.startsWith("UklG") || clean.includes("WEBP");
-    if (isWebp) {
+    // WebP detection and transcoding
+    if (ValidationUtils.isWebP(clean)) {
       try {
-        const pngBytes = await this.transcodeWebpWithRetry(clean);
-        if (pngBytes?.length) {
+        const pngBytes = await this.transcodeWebpWithRetry(clean, 2);
+        if (pngBytes?.length > 0) {
           return pngBytes;
         }
-        console.warn("⚠️ WebP transcode returned empty buffer");
       } catch (error) {
-        console.warn(
-          "❌ WebP transcode failed, falling back to direct decode",
-          error
-        );
+        console.warn("WebP transcode failed, using direct decode:", error);
       }
     }
 
     return figma.base64Decode(clean);
   }
 
-  /**
-   * Create a single Figma node with proper positioning
-   */
-  private async createSingleNode(
-    nodeData: any,
-    parent: FrameNode
-  ): Promise<SceneNode | null> {
+  private async transcodeWebpWithRetry(
+    base64: string,
+    retries: number
+  ): Promise<Uint8Array> {
+    let lastError: any;
+
+    for (let attempt = 0; attempt < retries; attempt++) {
+      try {
+        const png = await requestWebpTranscode(base64);
+        if (png?.length > 0) {
+          return png;
+        }
+        lastError = new Error("Empty transcode result");
+      } catch (error) {
+        lastError = error;
+        await new Promise((resolve) =>
+          setTimeout(resolve, 200 * (attempt + 1))
+        );
+      }
+    }
+
+    throw lastError || new Error("WebP transcode failed");
+  }
+
+  // ============================================================================
+  // TEXT NODE VALIDATION
+  // ============================================================================
+
+  private async validateAllTextNodes(): Promise<void> {
+    this.postProgress("Validating text nodes...", 88);
+
+    const textNodes = Array.from(this.createdNodes.values()).filter(
+      (node) => node.type === "TEXT"
+    ) as TextNode[];
+
+    console.log(`📝 Validating ${textNodes.length} text nodes`);
+
+    for (const textNode of textNodes) {
+      const validation = await this.validateTextNode(textNode);
+      this.textValidationResults.push(validation);
+    }
+
+    const failures = this.textValidationResults.filter(
+      (v) => !v.success
+    ).length;
+    console.log(`✅ Text validation complete: ${failures} failures`);
+  }
+
+  private async validateTextNode(
+    textNode: TextNode
+  ): Promise<TextValidationResult> {
+    const result: TextValidationResult = {
+      elementId: textNode.id,
+      success: true,
+      fontLoaded: false,
+      contentMatches: true,
+      boundsReasonable: true,
+      errors: [],
+    };
+
     try {
-      console.log("🧱 Enhanced importer: creating node", {
-        id: nodeData.id,
-        type: nodeData.type,
-        tag: nodeData.htmlTag,
-        name: nodeData.name,
-        children: Array.isArray(nodeData.children)
-          ? nodeData.children.length
-          : 0,
-        bounds: nodeData.absoluteLayout || nodeData.layout,
-        hasFills: !!nodeData.fills,
-        fillsCount: nodeData.fills?.length || 0,
-        hasBackgrounds: !!nodeData.backgrounds,
-        backgroundsCount: nodeData.backgrounds?.length || 0,
-        hasImageHash: !!nodeData.imageHash,
-      });
+      // Validate font is loaded
+      const fontName = textNode.fontName as FontName;
+      const fontKey = `${fontName.family}-${fontName.style}`;
+      result.fontLoaded = this.loadedFonts.has(fontKey);
 
-      // DEBUG: Log text node details
-      if (nodeData.type === "TEXT") {
-        console.log("📝 TEXT NODE:", {
-          id: nodeData.id,
-          text: nodeData.characters
-            ? nodeData.characters.substring(0, 20) + "..."
-            : "empty",
-          bounds: nodeData.absoluteLayout,
-          layout: nodeData.layout,
-          parent: parent.name,
-        });
+      if (!result.fontLoaded) {
+        result.errors.push(`Font not loaded: ${fontKey}`);
+        result.success = false;
       }
 
-      // CRITICAL DEBUG: Log fill/background data if present
-      if (nodeData.fills && nodeData.fills.length > 0) {
-        console.log(
-          "  📌 Node has fills:",
-          nodeData.fills.map((f: any) => ({ type: f.type, color: f.color }))
-        );
-      }
-      if (nodeData.backgrounds && nodeData.backgrounds.length > 0) {
-        console.log(
-          "  🎨 Node has backgrounds:",
-          nodeData.backgrounds.map((b: any) => ({
-            type: b.type,
-            color: b.color,
-          }))
-        );
+      // Validate text content
+      const text = ValidationUtils.sanitizeText(textNode.characters);
+      if (text.length === 0 && textNode.characters.length > 0) {
+        result.errors.push("Text contains only invalid characters");
+        result.contentMatches = false;
+        result.success = false;
       }
 
-      // CRITICAL FIX: If this is a body node with a solid background fill,
-      // clear it to prevent overriding the main frame's white background
-      // (unless it's a small section with intentional colored background)
-
-      // Use shared NodeBuilder to materialize the SceneNode
-      const figmaNode = await this.nodeBuilder.createNode(nodeData);
-
-      if (!figmaNode) {
-        console.warn(
-          "⚠️ Enhanced importer: nodeBuilder.createNode returned null",
-          {
-            id: nodeData.id,
-            type: nodeData.type,
-            name: nodeData.name,
-          }
-        );
-        return null;
+      // Validate bounds
+      if (textNode.width < 0 || textNode.height < 0) {
+        result.errors.push("Negative dimensions");
+        result.boundsReasonable = false;
+        result.success = false;
       }
 
-      // CRITICAL FIX: Always clear body/html background fills to prevent overriding main frame
-      // The main frame has a white background, and body backgrounds should not override it
-      // Body backgrounds are typically full-page backgrounds that should be handled by the main frame
-      if (
-        (nodeData.htmlTag === "body" || nodeData.htmlTag === "html") &&
-        "fills" in figmaNode
-      ) {
-        const bodyFills = (figmaNode as any).fills;
-        if (bodyFills && bodyFills.length > 0) {
-          // Check if any fill is a solid color (not white/transparent)
-          const hasNonWhiteFill = bodyFills.some((fill: any) => {
-            if (fill.type === "SOLID" && fill.color) {
-              // Check if color is not white (allowing for slight variations)
-              const isWhite =
-                fill.color.r > 0.95 &&
-                fill.color.g > 0.95 &&
-                fill.color.b > 0.95;
-              const isTransparent = fill.opacity === 0 || fill.color.a === 0;
-              return !isWhite && !isTransparent;
-            }
-            return false;
-          });
-
-          if (hasNonWhiteFill) {
-            console.log(
-              `🔄 [BODY] Clearing ${nodeData.htmlTag} background fill (${bodyFills.length} fills) to prevent overriding main frame white background`
-            );
-            (figmaNode as any).fills = [];
-          }
-        }
+      if (textNode.width > 10000 || textNode.height > 10000) {
+        result.errors.push("Unreasonably large dimensions");
+        result.boundsReasonable = false;
+        result.success = false;
       }
-
-      // Shadow Host labeling
-      if (nodeData.isShadowHost) {
-        figmaNode.name = `${figmaNode.name} (Shadow Host)`;
-        figmaNode.setPluginData("isShadowHost", "true");
-      }
-
-      // AI Enhancement: Apply ML classification to component type
-      if (nodeData.mlUIType && nodeData.mlConfidence > 0.7) {
-        const mlType = nodeData.mlUIType;
-        this.safeSetPluginData(figmaNode, "mlClassification", mlType);
-        this.safeSetPluginData(
-          figmaNode,
-          "mlConfidence",
-          String(nodeData.mlConfidence)
-        );
-
-        // Enhance node name with ML type if generic
-        if (
-          figmaNode.name === "Frame" ||
-          figmaNode.name === "Rectangle" ||
-          figmaNode.name === nodeData.htmlTag
-        ) {
-          figmaNode.name = `${mlType} - ${figmaNode.name}`;
-          console.log(
-            `✅ [AI] Enhanced node name with ML classification: ${mlType} (confidence: ${nodeData.mlConfidence.toFixed(
-              2
-            )})`
-          );
-        }
-
-        // For high-confidence button/input detections, suggest component creation
-        if (
-          (mlType === "BUTTON" || mlType === "INPUT") &&
-          nodeData.mlConfidence > 0.9
-        ) {
-          this.safeSetPluginData(figmaNode, "suggestedComponentType", mlType);
-          console.log(
-            `✅ [AI] High-confidence ${mlType} detected - consider creating component`
-          );
-        }
-      }
-
-      console.log("✅ Node created:", {
-        id: nodeData.id,
-        figmaType: figmaNode.type,
-        hasFills: "fills" in figmaNode,
-        fillsCount:
-          "fills" in figmaNode ? (figmaNode as any).fills?.length || 0 : "N/A",
-        mlType: nodeData.mlUIType || "none",
-        hasOCRText: !!(nodeData.ocrText && nodeData.hasOCRText),
-      });
-
-      // CRITICAL FIX: Determine absolute position first (always use absoluteLayout if available)
-      let absX = 0;
-      let absY = 0;
-
-      if (nodeData.absoluteLayout) {
-        // CRITICAL: Always prefer absoluteLayout for consistent coordinate system
-        absX = nodeData.absoluteLayout.left;
-        absY = nodeData.absoluteLayout.top;
-      } else if (nodeData.layout) {
-        // Fallback: dom-extractor puts absolute coords in layout.x/y (document coordinates: viewport + scroll)
-        absX = nodeData.layout.x;
-        absY = nodeData.layout.y;
-      }
-
-      // Store absolute position for children to use
-      this.safeSetPluginData(figmaNode, "absoluteX", String(absX));
-      this.safeSetPluginData(figmaNode, "absoluteY", String(absY));
-
-      // CRITICAL FIX: Check if parent has Auto Layout BEFORE setting position
-      // Auto Layout parents ignore manual x/y positioning - children are positioned automatically
-      // Must check AFTER parent's Auto Layout has been applied (which happens in previous recursive call)
-      const parentHasAutoLayout =
-        "layoutMode" in parent && parent.layoutMode !== "NONE";
-
-      // Only set manual position if parent does NOT have Auto Layout
-      // Auto Layout will position children automatically based on itemSpacing and alignment
-      if (!parentHasAutoLayout) {
-        // Calculate relative position for Figma
-        // If parent has absolute position, subtract it to get relative
-        const parentAbsXStr = parent.getPluginData("absoluteX");
-        const parentAbsYStr = parent.getPluginData("absoluteY");
-
-        if (parentAbsXStr && parentAbsYStr) {
-          const parentAbsX = parseFloat(parentAbsXStr);
-          const parentAbsY = parseFloat(parentAbsYStr);
-
-          // CRITICAL FIX: Calculate relative position accounting for parent's position and padding
-          // For Auto Layout parents, padding affects child positioning
-          const parentPaddingLeft =
-            "paddingLeft" in parent ? (parent as FrameNode).paddingLeft : 0;
-          const parentPaddingTop =
-            "paddingTop" in parent ? (parent as FrameNode).paddingTop : 0;
-
-          figmaNode.x =
-            (absX - parentAbsX) * this.scaleFactor - parentPaddingLeft;
-          figmaNode.y =
-            (absY - parentAbsY) * this.scaleFactor - parentPaddingTop;
-        } else {
-          // Root level or parent has no position data - use absolute as relative
-          figmaNode.x = absX * this.scaleFactor;
-          figmaNode.y = absY * this.scaleFactor;
-        }
-      } else {
-        // Parent has Auto Layout - don't set x/y, let Auto Layout position the child
-        // Store position in plugin data for reference/debugging
-        this.safeSetPluginData(figmaNode, "originalX", String(absX));
-        this.safeSetPluginData(figmaNode, "originalY", String(absY));
-        if (this.options.enableDebugMode) {
-          console.log(
-            `📍 Skipping manual position for ${figmaNode.name} - parent has Auto Layout (${parent.layoutMode})`
-          );
-        }
-      }
-
-      // Apply size from layout
-      if ("resize" in figmaNode && nodeData.layout) {
-        const width = (nodeData.layout.width || 1) * this.scaleFactor;
-        const height = (nodeData.layout.height || 1) * this.scaleFactor;
-        const w = Math.max(width, 0.01);
-        const h = Math.max(height, 0.01);
-        (figmaNode as LayoutMixin).resize(w, h);
-      }
-
-      // CRITICAL FIX: Apply Auto Layout BEFORE appending to parent
-      // This ensures parent's Auto Layout check works correctly for children
-      // Check both autoLayout object (legacy) and top-level properties (from dom-extractor)
-      // Also check AI-suggested Auto Layout
-      const hasAutoLayoutData =
-        nodeData.autoLayout ||
-        (nodeData.layoutMode &&
-          nodeData.layoutMode !== "NONE" &&
-          nodeData.layoutMode !== "GRID") ||
-        (nodeData.suggestedAutoLayout && nodeData.suggestedLayoutMode);
-
-      if (hasAutoLayoutData && "layoutMode" in figmaNode) {
-        const frame = figmaNode as FrameNode;
-
-        // Read from autoLayout object, top-level properties, or AI suggestion
-        const layoutMode =
-          nodeData.autoLayout?.layoutMode ||
-          nodeData.layoutMode ||
-          (nodeData.suggestedLayoutMode as "HORIZONTAL" | "VERTICAL");
-
-        if (layoutMode && layoutMode !== "NONE" && layoutMode !== "GRID") {
-          frame.layoutMode = layoutMode as "HORIZONTAL" | "VERTICAL";
-
-          // If this was AI-suggested, log it
-          if (nodeData.suggestedAutoLayout) {
-            console.log(
-              `✅ [AI] Applied suggested Auto Layout to ${figmaNode.name}: ${layoutMode}`
-            );
-          }
-
-          // Sizing modes
-          frame.primaryAxisSizingMode = (nodeData.autoLayout
-            ?.primaryAxisSizingMode ||
-            nodeData.primaryAxisSizingMode ||
-            "AUTO") as "FIXED" | "AUTO";
-          frame.counterAxisSizingMode = (nodeData.autoLayout
-            ?.counterAxisSizingMode ||
-            nodeData.counterAxisSizingMode ||
-            "AUTO") as "FIXED" | "AUTO";
-
-          // Alignment
-          frame.primaryAxisAlignItems = (nodeData.autoLayout
-            ?.primaryAxisAlignItems ||
-            nodeData.primaryAxisAlignItems ||
-            "MIN") as "MIN" | "MAX" | "CENTER" | "SPACE_BETWEEN";
-          frame.counterAxisAlignItems = (nodeData.autoLayout
-            ?.counterAxisAlignItems ||
-            nodeData.counterAxisAlignItems ||
-            "MIN") as "MIN" | "MAX" | "CENTER" | "BASELINE";
-
-          // Spacing
-          frame.itemSpacing =
-            nodeData.autoLayout?.itemSpacing ?? nodeData.itemSpacing ?? 0;
-          frame.paddingLeft = this.clampPadding(
-            nodeData.autoLayout?.paddingLeft ?? nodeData.paddingLeft
-          );
-          frame.paddingRight = this.clampPadding(
-            nodeData.autoLayout?.paddingRight ?? nodeData.paddingRight
-          );
-          frame.paddingTop = this.clampPadding(
-            nodeData.autoLayout?.paddingTop ?? nodeData.paddingTop
-          );
-          frame.paddingBottom = this.clampPadding(
-            nodeData.autoLayout?.paddingBottom ?? nodeData.paddingBottom
-          );
-
-          // Wrap mode
-          const layoutWrap =
-            nodeData.autoLayout?.layoutWrap || nodeData.layoutWrap;
-          if (layoutWrap === "WRAP") {
-            frame.layoutWrap = "WRAP";
-            frame.counterAxisSpacing =
-              nodeData.autoLayout?.counterAxisSpacing ??
-              nodeData.counterAxisSpacing ??
-              0;
-          }
-
-          console.log(`✅ Auto Layout applied to ${frame.name}: ${layoutMode}`);
-        }
-      }
-
-      // === Apply flex child properties (layoutGrow, layoutAlign) ===
-      // These are applied to the node itself when it's a child of an Auto Layout frame
-      if ("layoutGrow" in figmaNode) {
-        // layoutGrow: 0 = fixed, 1 = fill container
-        const layoutGrow = nodeData.layoutGrow;
-        if (layoutGrow !== undefined && layoutGrow > 0) {
-          (figmaNode as FrameNode).layoutGrow = layoutGrow;
-        }
-      }
-
-      if ("layoutAlign" in figmaNode) {
-        // layoutAlign: override parent's counterAxisAlignItems for this child
-        const layoutAlign = nodeData.layoutAlign;
-        if (layoutAlign && layoutAlign !== "INHERIT") {
-          (figmaNode as FrameNode).layoutAlign = layoutAlign as
-            | "MIN"
-            | "CENTER"
-            | "MAX"
-            | "STRETCH";
-        }
-      }
-
-      // Append to parent frame
-      // CRITICAL: Text nodes cannot have children in Figma, so we must handle them carefully
-      // If the parent is a TextNode (which shouldn't happen with our logic), we can't append
-      if ((parent as SceneNode).type !== "TEXT") {
-        parent.appendChild(figmaNode);
-      } else {
-        console.warn("⚠️ Cannot append child to TEXT node:", parent.name);
-      }
-
-      return figmaNode;
     } catch (error) {
-      console.warn(`Failed to create node ${nodeData.id}:`, error);
-      if (error instanceof Error) {
-        console.error("Stack trace:", error.stack);
-        console.log(
-          "Node data causing error:",
-          JSON.stringify(nodeData, null, 2)
-        );
-      }
-      return null;
+      result.success = false;
+      result.errors.push(
+        error instanceof Error ? error.message : "Unknown error"
+      );
     }
+
+    return result;
   }
 
-  private safeSetPluginData(node: SceneNode, key: string, value: string) {
-    try {
-      node.setPluginData(key, value);
-    } catch (e) {
-      console.warn(`Failed to set plugin data ${key} on ${node.name}`, e);
-    }
-  }
+  // ============================================================================
+  // VERIFICATION & REPORTING
+  // ============================================================================
 
-  /**
-   * Verify import accuracy by checking positions
-   */
-  private async verifyImportAccuracy(): Promise<ImportVerificationReport> {
-    figma.ui.postMessage({
-      type: "progress",
-      message: "Verifying import accuracy...",
-      percent: 85,
-    });
+  private async verifyImportAccuracyRobust(): Promise<ImportVerificationReport> {
+    this.postProgress("Verifying positions...", 90);
 
-    const verificationResults: PositionVerificationResult[] = [];
-    let withinTolerance = 0;
-    let outsideTolerance = 0;
+    const results: PositionVerificationResult[] = [];
     const deviations: number[] = [];
-    const sizeMismatches: Array<{
-      id: string;
-      expected: { w: number; h: number };
-      actual: { w: number; h: number };
-      delta: { dw: number; dh: number };
-    }> = [];
 
     for (const { elementId, originalData, figmaNode } of this
       .verificationData) {
-      if (!("x" in figmaNode) || !("y" in figmaNode) || !originalData.layout) {
-        continue;
-      }
+      if (!("x" in figmaNode) || !("y" in figmaNode)) continue;
+      if (!originalData.layout && !originalData.absoluteLayout) continue;
 
-      const expectedX =
-        typeof originalData.absoluteLayout?.left === "number"
-          ? originalData.absoluteLayout.left
-          : originalData.layout?.x || 0;
-      const expectedY =
-        typeof originalData.absoluteLayout?.top === "number"
-          ? originalData.absoluteLayout.top
-          : originalData.layout?.y || 0;
+      const expectedX = ValidationUtils.safeParseFloat(
+        originalData.absoluteLayout?.left ?? originalData.layout?.x,
+        0
+      );
+      const expectedY = ValidationUtils.safeParseFloat(
+        originalData.absoluteLayout?.top ?? originalData.layout?.y,
+        0
+      );
 
+      const actual = { x: figmaNode.x, y: figmaNode.y };
       const expected = { x: expectedX, y: expectedY };
-
-      const actual = {
-        x: figmaNode.x,
-        y: figmaNode.y,
-      };
 
       const xDiff = Math.abs(actual.x - expected.x);
       const yDiff = Math.abs(actual.y - expected.y);
       const deviation = Math.sqrt(xDiff * xDiff + yDiff * yDiff);
-      const withinToleranceFlag = deviation <= this.options.coordinateTolerance;
-
-      if (withinToleranceFlag) {
-        withinTolerance++;
-      } else {
-        outsideTolerance++;
-      }
+      const withinTolerance = deviation <= this.options.coordinateTolerance;
 
       deviations.push(deviation);
-      verificationResults.push({
+      results.push({
         elementId,
         expected,
         actual,
         deviation,
-        withinTolerance: withinToleranceFlag,
+        withinTolerance,
       });
-
-      // Size verification when possible
-      if ("width" in figmaNode && "height" in figmaNode) {
-        const expectedW =
-          typeof originalData.absoluteLayout?.width === "number"
-            ? originalData.absoluteLayout.width
-            : originalData.layout?.width ?? (figmaNode as LayoutMixin).width;
-        const expectedH =
-          typeof originalData.absoluteLayout?.height === "number"
-            ? originalData.absoluteLayout.height
-            : originalData.layout?.height ?? (figmaNode as LayoutMixin).height;
-        const actualW = (figmaNode as LayoutMixin).width;
-        const actualH = (figmaNode as LayoutMixin).height;
-        const dw = Math.abs(actualW - expectedW);
-        const dh = Math.abs(actualH - expectedH);
-        if (dw > 1 || dh > 1) {
-          sizeMismatches.push({
-            id: elementId,
-            expected: { w: expectedW, h: expectedH },
-            actual: { w: actualW, h: actualH },
-            delta: { dw, dh },
-          });
-        }
-      }
     }
 
-    // Sort by deviation (worst first)
-    verificationResults.sort((a, b) => b.deviation - a.deviation);
+    results.sort((a, b) => b.deviation - a.deviation);
 
-    const report: ImportVerificationReport = {
-      totalElements: this.verificationData.length,
-      positionsVerified: verificationResults.length,
+    const withinTolerance = results.filter((r) => r.withinTolerance).length;
+    const outsideTolerance = results.length - withinTolerance;
+
+    return {
+      totalElements: this.createdNodes.size,
+      successfulElements: this.createdNodes.size - this.failedNodes.length,
+      failedElements: this.failedNodes.length,
+      positionsVerified: results.length,
       positionsWithinTolerance: withinTolerance,
       positionsOutsideTolerance: outsideTolerance,
       maxDeviation: deviations.length > 0 ? Math.max(...deviations) : 0,
@@ -1300,78 +1452,124 @@ export class EnhancedFigmaImporter {
         deviations.length > 0
           ? deviations.reduce((sum, d) => sum + d, 0) / deviations.length
           : 0,
-      problematicElements: verificationResults
+      problematicElements: results
         .filter((r) => !r.withinTolerance)
-        .slice(0, 10), // Top 10 worst
+        .slice(0, 10),
       imagesProcessed: this.imageCreationCache.size,
       imagesSuccessful: Array.from(this.imageCreationCache.values()).filter(
-        (hash) => hash
+        (h) => h
       ).length,
-      imagesFailed: 0, // Would need to track this separately
-      totalProcessingTime: 0, // Set by caller
+      imagesFailed: 0,
+      totalProcessingTime: 0,
+      textNodesValidated: this.textValidationResults.length,
+      textValidationFailures: this.textValidationResults.filter(
+        (v) => !v.success
+      ).length,
+      failedNodes: this.failedNodes,
+    };
+  }
+
+  private generateFinalReport(
+    totalTime: number,
+    verification: ImportVerificationReport | null
+  ): ImportVerificationReport {
+    const report: ImportVerificationReport = verification || {
+      totalElements: this.createdNodes.size,
+      successfulElements: this.createdNodes.size - this.failedNodes.length,
+      failedElements: this.failedNodes.length,
+      positionsVerified: 0,
+      positionsWithinTolerance: 0,
+      positionsOutsideTolerance: 0,
+      maxDeviation: 0,
+      averageDeviation: 0,
+      problematicElements: [],
+      imagesProcessed: this.imageCreationCache.size,
+      imagesSuccessful: this.imageCreationCache.size,
+      imagesFailed: 0,
+      totalProcessingTime: totalTime,
+      textNodesValidated: this.textValidationResults.length,
+      textValidationFailures: this.textValidationResults.filter(
+        (v) => !v.success
+      ).length,
+      failedNodes: this.failedNodes,
     };
 
-    // Log verification results
-    if (this.options.enableDebugMode) {
-      console.log("📐 Position verification results:", {
-        accuracy: `${withinTolerance}/${verificationResults.length} within ${this.options.coordinateTolerance}px`,
-        maxDeviation: `${report.maxDeviation.toFixed(2)}px`,
-        averageDeviation: `${report.averageDeviation.toFixed(2)}px`,
-      });
-
-      if (sizeMismatches.length) {
-        const worstSizes = sizeMismatches
-          .sort(
-            (a, b) =>
-              Math.max(b.delta.dw, b.delta.dh) -
-              Math.max(a.delta.dw, a.delta.dh)
-          )
-          .slice(0, 5)
-          .map((m) => ({
-            id: m.id,
-            expected: `${m.expected.w}x${m.expected.h}`,
-            actual: `${m.actual.w}x${m.actual.h}`,
-            delta: `Δw=${m.delta.dw.toFixed(2)}, Δh=${m.delta.dh.toFixed(2)}`,
-          }));
-        console.warn("⚠️ Size mismatches detected:", worstSizes);
-      }
-
-      if (report.problematicElements.length > 0) {
-        console.warn(
-          "⚠️ Elements with position mismatches:",
-          report.problematicElements.slice(0, 5).map((el) => ({
-            id: el.elementId,
-            expected: `(${el.expected.x}, ${el.expected.y})`,
-            actual: `(${el.actual.x}, ${el.actual.y})`,
-            deviation: `${el.deviation.toFixed(2)}px`,
-          }))
-        );
-      }
-    }
-
-    // Notify user of verification results
-    if (report.positionsOutsideTolerance > 0) {
-      figma.notify(
-        `⚠️ ${report.positionsOutsideTolerance} elements have position mismatches > ${this.options.coordinateTolerance}px`,
-        { timeout: 5000 }
-      );
-    } else {
-      figma.notify("✅ Import accuracy verified - all positions correct!");
-    }
+    report.totalProcessingTime = totalTime;
+    report.memoryUsage = {
+      imageCache: this.imageCreationCache.size,
+      nodeCache: this.createdNodes.size,
+      verificationData: this.verificationData.length,
+    };
 
     return report;
   }
+
+  // ============================================================================
+  // MEMORY CLEANUP
+  // ============================================================================
+
+  private performMemoryCleanup(): void {
+    console.log("🧹 Performing memory cleanup");
+
+    this.imageCreationCache.clear();
+    this.verificationData = [];
+
+    // Keep createdNodes and failedNodes for reporting
+
+    console.log("✅ Memory cleanup complete");
+  }
+
+  // ============================================================================
+  // UI COMMUNICATION
+  // ============================================================================
+
+  private postProgress(message: string, percent: number): void {
+    figma.ui.postMessage({
+      type: "progress",
+      message,
+      percent: Math.min(100, Math.max(0, percent)),
+    });
+  }
+
+  private postComplete(report: ImportVerificationReport): void {
+    figma.ui.postMessage({
+      type: "complete",
+      stats: {
+        elements: report.successfulElements,
+        failed: report.failedElements,
+        images: report.imagesSuccessful,
+        textNodes: report.textNodesValidated,
+      },
+      verification: report,
+    });
+
+    // User notification
+    if (report.failedElements > 0) {
+      figma.notify(
+        `⚠️ Import complete: ${report.successfulElements} successful, ${report.failedElements} failed`,
+        { timeout: 5000 }
+      );
+    } else {
+      figma.notify(
+        `✅ Import complete: ${report.successfulElements} elements created!`
+      );
+    }
+  }
+
+  // ============================================================================
+  // SCREENSHOT & UTILITIES
+  // ============================================================================
 
   private async createScreenshotBaseLayer(
     frame: FrameNode,
     screenshotBase64: string
   ): Promise<void> {
     try {
-      figma.ui.postMessage({
-        type: "progress",
-        message: "Creating screenshot base layer...",
-        percent: 15,
-      });
+      this.postProgress("Creating screenshot base layer...", 15);
+
+      if (!ValidationUtils.validateBase64(screenshotBase64)) {
+        throw new Error("Invalid screenshot base64 data");
+      }
 
       const imageBytes = figma.base64Decode(screenshotBase64);
       const image = figma.createImage(imageBytes);
@@ -1380,25 +1578,18 @@ export class EnhancedFigmaImporter {
       rect.name = "Screenshot Base Layer";
       rect.resize(frame.width, frame.height);
       rect.fills = [
-        {
-          type: "IMAGE",
-          imageHash: image.hash,
-          scaleMode: "FILL",
-        },
+        { type: "IMAGE", imageHash: image.hash, scaleMode: "FILL" },
       ];
       rect.locked = true;
 
       frame.insertChild(0, rect);
 
-      console.log("✅ Created screenshot base layer");
+      console.log("✅ Screenshot base layer created");
     } catch (error) {
       console.warn("⚠️ Failed to create screenshot base layer:", error);
     }
   }
 
-  /**
-   * Utility methods
-   */
   private traverseAndCollect(root: any): {
     totalNodes: number;
     imageNodes: any[];
@@ -1414,10 +1605,8 @@ export class EnhancedFigmaImporter {
         imageNodes.push(node);
       }
 
-      if (node.children && Array.isArray(node.children)) {
-        for (const child of node.children) {
-          traverse(child);
-        }
+      if (Array.isArray(node.children)) {
+        node.children.forEach((child: any) => traverse(child));
       }
     };
 
@@ -1425,52 +1614,18 @@ export class EnhancedFigmaImporter {
     return { totalNodes, imageNodes };
   }
 
-  private chunkArray<T>(array: T[], chunkSize: number): T[][] {
+  private chunkArray<T>(array: T[], size: number): T[][] {
     const chunks: T[][] = [];
-    for (let i = 0; i < array.length; i += chunkSize) {
-      chunks.push(array.slice(i, i + chunkSize));
+    for (let i = 0; i < array.length; i += size) {
+      chunks.push(array.slice(i, i + size));
     }
     return chunks;
   }
 
-  private weightToStyle(weight: number): string {
-    if (weight >= 700) return "Bold";
-    if (weight >= 600) return "SemiBold";
-    if (weight >= 500) return "Medium";
-    if (weight >= 300) return "Light";
-    return "Regular";
-  }
+  // ============================================================================
+  // AI INTEGRATION
+  // ============================================================================
 
-  /**
-   * Retry helper for WebP → PNG transcode via the UI bridge.
-   * Avoids silent failures that leave images empty.
-   */
-  private async transcodeWebpWithRetry(
-    base64: string,
-    retries: number = 2
-  ): Promise<Uint8Array> {
-    let lastError: any;
-    for (let attempt = 0; attempt < retries; attempt++) {
-      try {
-        const png = await requestWebpTranscode(base64);
-        if (png?.length) {
-          return png;
-        }
-        lastError = new Error("Empty transcode result");
-      } catch (error) {
-        lastError = error;
-        // Small backoff before retrying
-        await new Promise((resolve) =>
-          setTimeout(resolve, 200 * (attempt + 1))
-        );
-      }
-    }
-    throw lastError || new Error("WebP transcode failed");
-  }
-
-  /**
-   * Integrate AI-extracted color palette into Figma styles
-   */
   private async integrateColorPalette(colorPalette: any): Promise<void> {
     if (
       !colorPalette.palette ||
@@ -1480,22 +1635,17 @@ export class EnhancedFigmaImporter {
     }
 
     try {
-      for (const [name, color] of Object.entries(colorPalette.palette)) {
-        if (!color || !color.figma) continue;
+      for (const [name, colorData] of Object.entries(colorPalette.palette)) {
+        const color = colorData as any;
+        if (!color?.figma) continue;
 
         try {
           const style = figma.createPaintStyle();
           style.name = `AI Colors/${name}`;
-          style.paints = [
-            {
-              type: "SOLID",
-              color: color.figma,
-              opacity: 1,
-            },
-          ];
-          console.log(`✅ Created color style from AI palette: ${name}`);
-        } catch (e) {
-          console.warn(`⚠️ Failed to create color style for ${name}:`, e);
+          style.paints = [{ type: "SOLID", color: color.figma, opacity: 1 }];
+          console.log(`✅ Color style created: ${name}`);
+        } catch (error) {
+          console.warn(`⚠️ Failed to create color style ${name}:`, error);
         }
       }
     } catch (error) {
@@ -1503,34 +1653,29 @@ export class EnhancedFigmaImporter {
     }
   }
 
-  /**
-   * Integrate AI-extracted typography analysis into Figma styles
-   */
   private async integrateTypographyAnalysis(typography: any): Promise<void> {
     if (!typography.tokens || Object.keys(typography.tokens).length === 0) {
       return;
     }
 
     try {
-      for (const [name, token] of Object.entries(typography.tokens)) {
-        if (!token || typeof token !== "object") continue;
+      for (const [name, tokenData] of Object.entries(typography.tokens)) {
+        const token = tokenData as any;
+        if (!token) continue;
 
         try {
           const fontFamily = token.fontFamily || "Inter";
-          const fontWeight = token.fontWeight || 400;
-          const fontSize = token.fontSize || 16;
+          const fontWeight = ValidationUtils.safeParseFloat(
+            token.fontWeight,
+            400
+          );
+          const fontSize = ValidationUtils.safeParseFloat(token.fontSize, 16);
+          const fontStyle = this.weightToStyle(fontWeight);
 
-          // Map font weight to style name
-          const weightToStyle = (weight: number): string => {
-            if (weight >= 700) return "Bold";
-            if (weight >= 600) return "SemiBold";
-            if (weight >= 500) return "Medium";
-            if (weight >= 300) return "Light";
-            return "Regular";
-          };
-          const fontStyle = weightToStyle(fontWeight);
-
-          await figma.loadFontAsync({ family: fontFamily, style: fontStyle });
+          await this.loadFontWithValidation({
+            family: fontFamily,
+            style: fontStyle,
+          });
 
           const style = figma.createTextStyle();
           style.name = `AI Typography/${name}`;
@@ -1538,19 +1683,26 @@ export class EnhancedFigmaImporter {
           style.fontSize = fontSize;
 
           if (token.lineHeight) {
-            style.lineHeight = { unit: "PIXELS", value: token.lineHeight };
+            const lineHeight = ValidationUtils.safeParseFloat(
+              token.lineHeight,
+              0
+            );
+            if (lineHeight > 0) {
+              style.lineHeight = { unit: "PIXELS", value: lineHeight };
+            }
           }
 
           if (token.letterSpacing) {
-            style.letterSpacing = {
-              unit: "PIXELS",
-              value: token.letterSpacing,
-            };
+            const letterSpacing = ValidationUtils.safeParseFloat(
+              token.letterSpacing,
+              0
+            );
+            style.letterSpacing = { unit: "PIXELS", value: letterSpacing };
           }
 
-          console.log(`✅ Created text style from AI typography: ${name}`);
-        } catch (e) {
-          console.warn(`⚠️ Failed to create text style for ${name}:`, e);
+          console.log(`✅ Typography style created: ${name}`);
+        } catch (error) {
+          console.warn(`⚠️ Failed to create typography style ${name}:`, error);
         }
       }
     } catch (error) {

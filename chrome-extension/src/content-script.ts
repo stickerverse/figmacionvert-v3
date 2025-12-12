@@ -160,8 +160,54 @@ console.log("If you see this, content-script.js is executing!");
     if (watchdogTimer) clearTimeout(watchdogTimer);
     if (!isCapturing) return;
 
+    // #region agent log
+    fetch("http://127.0.0.1:7242/ingest/ec6ff4c5-673b-403d-a943-70cb2e5565f2", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        location: "content-script.ts:159",
+        message: "Watchdog reset",
+        data: {
+          isCapturing,
+          captureStartTime,
+          currentTime: Date.now(),
+          elapsed: captureStartTime ? Date.now() - captureStartTime : null,
+        },
+        timestamp: Date.now(),
+        sessionId: "debug-session",
+        runId: "run1",
+        hypothesisId: "C",
+      }),
+    }).catch(() => {});
+    // #endregion
+
     watchdogTimer = setTimeout(() => {
       const elapsed = Date.now() - (captureStartTime || Date.now());
+      // #region agent log
+      fetch(
+        "http://127.0.0.1:7242/ingest/ec6ff4c5-673b-403d-a943-70cb2e5565f2",
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            location: "content-script.ts:164",
+            message: "Watchdog stalled",
+            data: {
+              elapsed,
+              captureStartTime,
+              currentTime: Date.now(),
+              calculatedElapsed: captureStartTime
+                ? Date.now() - captureStartTime
+                : 0,
+            },
+            timestamp: Date.now(),
+            sessionId: "debug-session",
+            runId: "run1",
+            hypothesisId: "A",
+          }),
+        }
+      ).catch(() => {});
+      // #endregion
       console.warn(
         `⚠️ [WATCHDOG] Capture stalled after ${Math.round(elapsed / 1000)}s!`
       );
@@ -178,6 +224,31 @@ console.log("If you see this, content-script.js is executing!");
       // Set a second timeout for ultimate failure
       watchdogTimer = setTimeout(() => {
         const totalElapsed = Date.now() - (captureStartTime || Date.now());
+        // #region agent log
+        fetch(
+          "http://127.0.0.1:7242/ingest/ec6ff4c5-673b-403d-a943-70cb2e5565f2",
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              location: "content-script.ts:179",
+              message: "Watchdog timeout",
+              data: {
+                totalElapsed,
+                captureStartTime,
+                currentTime: Date.now(),
+                calculatedElapsed: captureStartTime
+                  ? Date.now() - captureStartTime
+                  : 0,
+              },
+              timestamp: Date.now(),
+              sessionId: "debug-session",
+              runId: "run1",
+              hypothesisId: "A",
+            }),
+          }
+        ).catch(() => {});
+        // #endregion
         console.error(
           `❌ [WATCHDOG] Capture timed out completely after ${Math.round(
             totalElapsed / 1000
@@ -339,6 +410,33 @@ console.log("If you see this, content-script.js is executing!");
         const mutationRate = (mutationCount / elapsed) * 1000; // mutations per second
         const significantRate = (significantMutationCount / elapsed) * 1000;
 
+        // #region agent log
+        fetch(
+          "http://127.0.0.1:7242/ingest/ec6ff4c5-673b-403d-a943-70cb2e5565f2",
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              location: "content-script.ts:337",
+              message: "DOM stability timeout",
+              data: {
+                elapsed,
+                mutationCount,
+                significantMutationCount,
+                mutationRate,
+                significantRate,
+                stableDurationMs,
+                maxWaitMs,
+              },
+              timestamp: Date.now(),
+              sessionId: "debug-session",
+              runId: "run1",
+              hypothesisId: "B",
+            }),
+          }
+        ).catch(() => {});
+        // #endregion
+
         console.warn(
           `⚠️ DOM stability check timed out after ${elapsed}ms (${mutationCount} total, ${significantMutationCount} significant mutations)`
         );
@@ -358,6 +456,27 @@ console.log("If you see this, content-script.js is executing!");
           "  - Proceeding with capture - layout should still be accurate"
         );
         observer.disconnect();
+        // #region agent log
+        fetch(
+          "http://127.0.0.1:7242/ingest/ec6ff4c5-673b-403d-a943-70cb2e5565f2",
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              location: "content-script.ts:360",
+              message: "DOM stability timeout - proceeding",
+              data: {
+                observerDisconnected: true,
+                elapsed,
+              },
+              timestamp: Date.now(),
+              sessionId: "debug-session",
+              runId: "run1",
+              hypothesisId: "B",
+            }),
+          }
+        ).catch(() => {});
+        // #endregion
         resolve();
       }, maxWaitMs);
     });
@@ -509,6 +628,28 @@ console.log("If you see this, content-script.js is executing!");
       document.body.setAttribute("data-debug-startcapture", "received");
       const startTime = Date.now();
       captureStartTime = startTime; // Store for watchdog diagnostics
+      // #region agent log
+      fetch(
+        "http://127.0.0.1:7242/ingest/ec6ff4c5-673b-403d-a943-70cb2e5565f2",
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            location: "content-script.ts:511",
+            message: "Capture start time set",
+            data: {
+              startTime,
+              captureStartTime,
+              isCapturing,
+            },
+            timestamp: Date.now(),
+            sessionId: "debug-session",
+            runId: "run1",
+            hypothesisId: "C",
+          }),
+        }
+      ).catch(() => {});
+      // #endregion
       console.log("🚀 [CAPTURE START] Initiating capture process...");
       console.log("   ⏱️  Started at:", new Date().toLocaleTimeString());
       isCapturing = true;

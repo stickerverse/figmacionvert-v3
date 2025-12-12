@@ -501,30 +501,87 @@ export class NodeBuilder {
       fontFamily = fontLoadResult.family;
       finalFontStyle = fontLoadResult.style;
 
+      // ENHANCED: Improved font metrics compensation using Canvas TextMetrics
       let fontMetricsRatio = 1.0;
       if (fontFamily !== originalFontFamily) {
-        fontMetricsRatio = this.getFontMetricsRatio(
-          fontFamily,
-          originalFontFamily
-        );
-        console.log(
-          `📝 Font fallback: ${originalFontFamily} → ${fontFamily} (ratio: ${fontMetricsRatio.toFixed(
-            3
-          )})`
-        );
+        // Use Canvas TextMetrics if available for more accurate compensation
+        if (
+          data.renderedMetrics?.actualBoundingBoxAscent &&
+          data.renderedMetrics?.actualBoundingBoxDescent
+        ) {
+          // Calculate ratio based on actual text metrics
+          const originalHeight =
+            data.renderedMetrics.actualBoundingBoxAscent +
+            data.renderedMetrics.actualBoundingBoxDescent;
+          const expectedHeight = data.textStyle.fontSize * 1.2; // Approximate line height
+          fontMetricsRatio = originalHeight / expectedHeight;
+
+          // Clamp ratio to reasonable bounds (0.8 to 1.2) to prevent extreme adjustments
+          fontMetricsRatio = Math.max(0.8, Math.min(1.2, fontMetricsRatio));
+
+          console.log(
+            `📝 Font fallback with metrics: ${originalFontFamily} → ${fontFamily} (ratio: ${fontMetricsRatio.toFixed(
+              3
+            )}, originalHeight: ${originalHeight.toFixed(2)}px)`
+          );
+        } else {
+          // Fallback to static ratio map
+          fontMetricsRatio = this.getFontMetricsRatio(
+            fontFamily,
+            originalFontFamily
+          );
+          console.log(
+            `📝 Font fallback: ${originalFontFamily} → ${fontFamily} (ratio: ${fontMetricsRatio.toFixed(
+              3
+            )})`
+          );
+        }
       }
 
       text.fontName = { family: fontFamily, style: finalFontStyle };
 
       const adjustedFontSize = data.textStyle.fontSize * fontMetricsRatio;
       text.fontSize = adjustedFontSize;
-      text.textAlignHorizontal = data.textStyle.textAlignHorizontal;
-      text.textAlignVertical = data.textStyle.textAlignVertical;
+      // ENHANCED: Improved text alignment handling
+      // Map CSS text-align to Figma textAlignHorizontal
+      const textAlign = data.textStyle.textAlignHorizontal || "LEFT";
+      text.textAlignHorizontal =
+        textAlign === "CENTER"
+          ? "CENTER"
+          : textAlign === "RIGHT"
+          ? "RIGHT"
+          : textAlign === "JUSTIFY"
+          ? "JUSTIFIED"
+          : "LEFT";
 
+      // ENHANCED: Better vertical alignment based on CSS vertical-align and line-height
+      // Default to TOP for most cases, but can be adjusted based on CSS
+      const verticalAlign = data.textStyle.textAlignVertical || "TOP";
+      text.textAlignVertical =
+        verticalAlign === "CENTER"
+          ? "CENTER"
+          : verticalAlign === "BOTTOM"
+          ? "BOTTOM"
+          : "TOP";
+
+      // ENHANCED: Improved line height calculation using Canvas TextMetrics
       if (data.renderedMetrics?.lineHeightPx) {
+        // Use measured line height from browser
         text.lineHeight = {
           unit: "PIXELS",
           value: data.renderedMetrics.lineHeightPx,
+        };
+      } else if (
+        data.renderedMetrics?.actualBoundingBoxAscent &&
+        data.renderedMetrics?.actualBoundingBoxDescent
+      ) {
+        // Calculate line height from Canvas TextMetrics if available
+        const measuredLineHeight =
+          data.renderedMetrics.actualBoundingBoxAscent +
+          data.renderedMetrics.actualBoundingBoxDescent;
+        text.lineHeight = {
+          unit: "PIXELS",
+          value: measuredLineHeight,
         };
       } else if (data.textStyle.lineHeight?.unit === "PIXELS") {
         text.lineHeight = {
@@ -537,7 +594,12 @@ export class NodeBuilder {
           value: data.textStyle.lineHeight.value,
         };
       } else {
-        text.lineHeight = { unit: "AUTO" };
+        // ENHANCED: Use font size * 1.2 as default line height (standard typography)
+        const defaultLineHeight = adjustedFontSize * 1.2;
+        text.lineHeight = {
+          unit: "PIXELS",
+          value: defaultLineHeight,
+        };
       }
 
       if (data.textStyle.letterSpacing?.unit === "PIXELS") {
@@ -552,8 +614,85 @@ export class NodeBuilder {
         };
       }
 
+      // CRITICAL FIX: Apply text fills from textStyle.fills (primary) or data.fills (fallback)
+      // Text color is extracted into textStyle.fills in dom-extractor.ts:extractTypography
       if (data.textStyle?.fills?.length) {
         text.fills = await this.convertFillsAsync(data.textStyle.fills);
+        // #region agent log
+        fetch(
+          "http://127.0.0.1:7242/ingest/ec6ff4c5-673b-403d-a943-70cb2e5565f2",
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              location: "node-builder.ts:555",
+              message: "Text fills applied from textStyle",
+              data: {
+                nodeName: text.name,
+                characters: text.characters?.substring(0, 30),
+                fillsCount: text.fills.length,
+                fills: text.fills,
+                source: "textStyle.fills",
+              },
+              timestamp: Date.now(),
+              sessionId: "debug-session",
+              runId: "run1",
+              hypothesisId: "TEXT_FILL",
+            }),
+          }
+        ).catch(() => {});
+        // #endregion
+      } else if (data.fills && data.fills.length > 0) {
+        // Fallback: use node.fills if textStyle.fills is not available
+        text.fills = await this.convertFillsAsync(data.fills);
+        // #region agent log
+        fetch(
+          "http://127.0.0.1:7242/ingest/ec6ff4c5-673b-403d-a943-70cb2e5565f2",
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              location: "node-builder.ts:555",
+              message: "Text fills applied from node.fills (fallback)",
+              data: {
+                nodeName: text.name,
+                characters: text.characters?.substring(0, 30),
+                fillsCount: text.fills.length,
+                fills: text.fills,
+                source: "node.fills",
+              },
+              timestamp: Date.now(),
+              sessionId: "debug-session",
+              runId: "run1",
+              hypothesisId: "TEXT_FILL",
+            }),
+          }
+        ).catch(() => {});
+        // #endregion
+      } else {
+        // #region agent log
+        fetch(
+          "http://127.0.0.1:7242/ingest/ec6ff4c5-673b-403d-a943-70cb2e5565f2",
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              location: "node-builder.ts:555",
+              message: "Text node has no fills",
+              data: {
+                nodeName: text.name,
+                characters: text.characters?.substring(0, 30),
+                hasTextStyleFills: !!data.textStyle?.fills?.length,
+                hasNodeFills: !!data.fills?.length,
+              },
+              timestamp: Date.now(),
+              sessionId: "debug-session",
+              runId: "run1",
+              hypothesisId: "TEXT_FILL",
+            }),
+          }
+        ).catch(() => {});
+        // #endregion
       }
 
       if (data.textStyle.textDecoration) {
@@ -640,24 +779,12 @@ export class NodeBuilder {
     // Setting absolute coordinates here bypasses the relative positioning logic
     // and causes text to appear in wrong positions
 
-    // Only set size here - position will be set by applyPositioning() in afterCreate()
-    const targetWidth =
-      data.renderedMetrics?.width ||
-      data.absoluteLayout?.width ||
-      data.layout.width ||
-      1;
-    const targetHeight =
-      data.renderedMetrics?.height ||
-      data.absoluteLayout?.height ||
-      data.layout.height ||
-      1;
-    text.resize(Math.max(targetWidth, 1), Math.max(targetHeight, 1));
-
     // Store layout info for applyPositioning() to use
     if (data.absoluteLayout) {
       this.safeSetPluginData(text, "usedAbsoluteLayout", "true");
     }
 
+    // CRITICAL FIX: Set characters BEFORE sizing to ensure accurate text bounds
     // AI Enhancement: Use OCR alternative if available and confidence is high
     if (data.ocrAlternative && data.ocrConfidence > 0.8 && !characters) {
       console.log(
@@ -668,9 +795,122 @@ export class NodeBuilder {
       text.characters = data.ocrAlternative;
       this.safeSetPluginData(text, "usedOCRAlternative", "true");
       this.safeSetPluginData(text, "ocrConfidence", String(data.ocrConfidence));
-    } else {
+    } else if (characters) {
       text.characters = characters;
     }
+
+    // ENHANCED: Set text size AFTER characters are set with improved accuracy
+    // Priority: Canvas TextMetrics > renderedMetrics > absoluteLayout > layout
+    let targetWidth = 1;
+    let targetHeight = 1;
+
+    // Use Canvas TextMetrics width if available (most accurate)
+    if (data.renderedMetrics?.width && data.renderedMetrics.width > 0) {
+      targetWidth = data.renderedMetrics.width;
+    } else if (data.absoluteLayout?.width && data.absoluteLayout.width > 0) {
+      targetWidth = data.absoluteLayout.width;
+    } else if (data.layout?.width && data.layout.width > 0) {
+      targetWidth = data.layout.width;
+    }
+
+    // Use Canvas TextMetrics height if available (most accurate)
+    if (
+      data.renderedMetrics?.actualBoundingBoxAscent &&
+      data.renderedMetrics?.actualBoundingBoxDescent
+    ) {
+      // Calculate height from Canvas TextMetrics (most accurate)
+      targetHeight =
+        data.renderedMetrics.actualBoundingBoxAscent +
+        data.renderedMetrics.actualBoundingBoxDescent;
+    } else if (
+      data.renderedMetrics?.height &&
+      data.renderedMetrics.height > 0
+    ) {
+      targetHeight = data.renderedMetrics.height;
+    } else if (data.absoluteLayout?.height && data.absoluteLayout.height > 0) {
+      targetHeight = data.absoluteLayout.height;
+    } else if (data.layout?.height && data.layout.height > 0) {
+      targetHeight = data.layout.height;
+    } else if (
+      text.lineHeight &&
+      typeof text.lineHeight === "object" &&
+      "value" in text.lineHeight
+    ) {
+      // Fallback to line height if available
+      targetHeight = text.lineHeight.value;
+    }
+    // #region agent log
+    fetch("http://127.0.0.1:7242/ingest/ec6ff4c5-673b-403d-a943-70cb2e5565f2", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        location: "node-builder.ts:643",
+        message: "Text node sizing",
+        data: {
+          nodeName: text.name,
+          characters: text.characters?.substring(0, 30),
+          renderedWidth: data.renderedMetrics?.width,
+          renderedHeight: data.renderedMetrics?.height,
+          absoluteWidth: data.absoluteLayout?.width,
+          absoluteHeight: data.absoluteLayout?.height,
+          layoutWidth: data.layout.width,
+          layoutHeight: data.layout.height,
+          targetWidth,
+          targetHeight,
+          finalWidth: Math.max(targetWidth, 1),
+          finalHeight: Math.max(targetHeight, 1),
+        },
+        timestamp: Date.now(),
+        sessionId: "debug-session",
+        runId: "run1",
+        hypothesisId: "TEXT_SIZE",
+      }),
+    }).catch(() => {});
+    // #endregion
+
+    // ENHANCED: Improved text sizing with better bounds handling
+    // Use minimum of 1px to prevent zero-size text nodes, but allow sub-pixel precision
+    const finalWidth = Math.max(targetWidth, 1);
+    const finalHeight = Math.max(targetHeight, 1);
+
+    // ENHANCED: For single-line text, use actual text width if available
+    // This prevents text from being wider than necessary
+    if (
+      data.textStyle?.whiteSpace === "nowrap" &&
+      data.renderedMetrics?.width &&
+      data.renderedMetrics.width < finalWidth
+    ) {
+      // Use actual text width for nowrap text
+      text.resize(Math.max(data.renderedMetrics.width, 1), finalHeight);
+    } else {
+      text.resize(finalWidth, finalHeight);
+    }
+
+    // #region agent log
+    fetch("http://127.0.0.1:7242/ingest/ec6ff4c5-673b-403d-a943-70cb2e5565f2", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        location: "node-builder.ts:865",
+        message: "Text node resize complete",
+        data: {
+          nodeName: text.name,
+          characters: text.characters?.substring(0, 30),
+          finalWidth,
+          finalHeight,
+          actualWidth: text.width,
+          actualHeight: text.height,
+          fontSize: text.fontSize,
+          lineHeight: text.lineHeight,
+          textAutoResize: text.textAutoResize,
+        },
+        timestamp: Date.now(),
+        sessionId: "debug-session",
+        runId: "run1",
+        hypothesisId: "TEXT_SIZE",
+      }),
+    }).catch(() => {});
+    // #endregion
 
     // AI Enhancement: Log typography normalization
     if (data.normalizedToTypeScale && data.originalFontSize) {
@@ -1868,89 +2108,71 @@ export class NodeBuilder {
           paints.push(await this.resolveImagePaint(imageFill));
         }
 
-        // 4. Fallback: If still no paints, try promotion or singular color derivation
+        // 4. Fallback: If still no paints, try to derive a solid color fill
         // Note: body/html nodes are already handled above and skip all fill processing
+        // CRITICAL FIX: Do NOT promote descendant images to parent backgrounds
+        // Images should only be used when explicitly set as background-image in CSS
+        // Promoting descendant images causes incorrect backgrounds (e.g., <img> tags becoming page backgrounds)
         if (paints.length === 0) {
-          const descendantImageHash = this.findFirstImageHash(data);
-          if (descendantImageHash) {
-            console.log(
-              `  🪄 Promoting descendant image hash ${descendantImageHash} to ${data.name}`
-            );
+          // CRITICAL FIX: ALWAYS try to derive a solid fill from CSS backgroundColor
+          // This is the most important fallback - many nodes rely on this
+          // Try multiple sources in order of preference
+          let parsedColor =
+            this.parseColorString(data.style?.backgroundColor) ||
+            this.parseColorString(data.backgroundColor) ||
+            this.parseColorString(data.fillColor);
+
+          // If no color found, try getPlaceholderColor which checks CSS variables and other sources
+          if (!parsedColor) {
             const placeholderColor = this.getPlaceholderColor(data);
+            const isDefaultGrey =
+              Math.abs(placeholderColor.r - 0.92) < 0.01 &&
+              Math.abs(placeholderColor.g - 0.92) < 0.01 &&
+              Math.abs(placeholderColor.b - 0.92) < 0.01;
+
+            // Only use placeholder if it's not the default grey (meaning it found an actual color)
+            if (!isDefaultGrey) {
+              parsedColor = placeholderColor;
+              console.log(
+                `  🎨 Using placeholder color for ${data.name} (extracted from CSS variables/data)`
+              );
+            }
+          }
+
+          if (parsedColor) {
+            console.log(
+              `  🎨 Derived solid fill for ${data.name} from backgroundColor (fallback):`,
+              {
+                source: data.style?.backgroundColor
+                  ? "style.backgroundColor"
+                  : data.backgroundColor
+                  ? "backgroundColor"
+                  : data.fillColor
+                  ? "fillColor"
+                  : "placeholder/getPlaceholderColor",
+                color: parsedColor,
+              }
+            );
             paints.push({
               type: "SOLID",
-              color: placeholderColor,
+              color: parsedColor,
               opacity: 1,
-            } as SolidPaint);
-
-            const imageFill = {
-              type: "IMAGE" as const,
-              imageHash: descendantImageHash,
-              scaleMode: "FILL" as const,
               visible: true,
-            };
-            paints.push(await this.resolveImagePaint(imageFill));
+            } as SolidPaint);
           } else {
-            // CRITICAL FIX: ALWAYS try to derive a solid fill from CSS backgroundColor
-            // This is the most important fallback - many nodes rely on this
-            // Try multiple sources in order of preference
-            let parsedColor =
-              this.parseColorString(data.style?.backgroundColor) ||
-              this.parseColorString(data.backgroundColor) ||
-              this.parseColorString(data.fillColor);
-
-            // If no color found, try getPlaceholderColor which checks CSS variables and other sources
-            if (!parsedColor) {
-              const placeholderColor = this.getPlaceholderColor(data);
-              const isDefaultGrey =
-                Math.abs(placeholderColor.r - 0.92) < 0.01 &&
-                Math.abs(placeholderColor.g - 0.92) < 0.01 &&
-                Math.abs(placeholderColor.b - 0.92) < 0.01;
-
-              // Only use placeholder if it's not the default grey (meaning it found an actual color)
-              if (!isDefaultGrey) {
-                parsedColor = placeholderColor;
-                console.log(
-                  `  🎨 Using placeholder color for ${data.name} (extracted from CSS variables/data)`
-                );
+            // Last resort: Log that we couldn't find any color
+            console.warn(
+              `  ⚠️ [FILL] No color found for ${data.name} - node will be transparent`,
+              {
+                hasStyle: !!data.style,
+                styleBg: data.style?.backgroundColor,
+                directBg: data.backgroundColor,
+                fillColor: data.fillColor,
+                cssVariables: data.cssVariables
+                  ? Object.keys(data.cssVariables).length
+                  : 0,
               }
-            }
-
-            if (parsedColor) {
-              console.log(
-                `  🎨 Derived solid fill for ${data.name} from backgroundColor (fallback):`,
-                {
-                  source: data.style?.backgroundColor
-                    ? "style.backgroundColor"
-                    : data.backgroundColor
-                    ? "backgroundColor"
-                    : data.fillColor
-                    ? "fillColor"
-                    : "placeholder/getPlaceholderColor",
-                  color: parsedColor,
-                }
-              );
-              paints.push({
-                type: "SOLID",
-                color: parsedColor,
-                opacity: 1,
-                visible: true,
-              } as SolidPaint);
-            } else {
-              // Last resort: Log that we couldn't find any color
-              console.warn(
-                `  ⚠️ [FILL] No color found for ${data.name} - node will be transparent`,
-                {
-                  hasStyle: !!data.style,
-                  styleBg: data.style?.backgroundColor,
-                  directBg: data.backgroundColor,
-                  fillColor: data.fillColor,
-                  cssVariables: data.cssVariables
-                    ? Object.keys(data.cssVariables).length
-                    : 0,
-                }
-              );
-            }
+            );
           }
         }
 
@@ -2039,13 +2261,93 @@ export class NodeBuilder {
     }
 
     if ("strokeWeight" in node && data.strokeWeight !== undefined) {
+      // #region agent log
+      fetch(
+        "http://127.0.0.1:7242/ingest/ec6ff4c5-673b-403d-a943-70cb2e5565f2",
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            location: "node-builder.ts:2023",
+            message: "Stroke weight before",
+            data: {
+              strokeWeight: data.strokeWeight,
+              nodeName: data.name,
+              nodeWidth: data.layout?.width,
+              nodeHeight: data.layout?.height,
+            },
+            timestamp: Date.now(),
+            sessionId: "debug-session",
+            runId: "run1",
+            hypothesisId: "D",
+          }),
+        }
+      ).catch(() => {});
+      // #endregion
       (node as any).strokeWeight = data.strokeWeight;
+      // #region agent log
+      fetch(
+        "http://127.0.0.1:7242/ingest/ec6ff4c5-673b-403d-a943-70cb2e5565f2",
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            location: "node-builder.ts:2025",
+            message: "Stroke weight after",
+            data: {
+              appliedWeight: (node as any).strokeWeight,
+              nodeName: data.name,
+            },
+            timestamp: Date.now(),
+            sessionId: "debug-session",
+            runId: "run1",
+            hypothesisId: "D",
+          }),
+        }
+      ).catch(() => {});
+      // #endregion
     } else if ("strokeWeight" in node && data.strokes?.[0]?.thickness) {
+      // #region agent log
+      fetch(
+        "http://127.0.0.1:7242/ingest/ec6ff4c5-673b-403d-a943-70cb2e5565f2",
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            location: "node-builder.ts:2026",
+            message: "Stroke weight from strokes",
+            data: { thickness: data.strokes[0].thickness, nodeName: data.name },
+            timestamp: Date.now(),
+            sessionId: "debug-session",
+            runId: "run1",
+            hypothesisId: "D",
+          }),
+        }
+      ).catch(() => {});
+      // #endregion
       (node as any).strokeWeight = data.strokes[0].thickness;
     }
 
     if ("strokeAlign" in node) {
       if (data.strokeAlign) {
+        // #region agent log
+        fetch(
+          "http://127.0.0.1:7242/ingest/ec6ff4c5-673b-403d-a943-70cb2e5565f2",
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              location: "node-builder.ts:2030",
+              message: "Stroke align applied",
+              data: { strokeAlign: data.strokeAlign, nodeName: data.name },
+              timestamp: Date.now(),
+              sessionId: "debug-session",
+              runId: "run1",
+              hypothesisId: "D",
+            }),
+          }
+        ).catch(() => {});
+        // #endregion
         (node as any).strokeAlign = data.strokeAlign;
       } else if (data.strokes?.[0]?.strokeAlign) {
         (node as any).strokeAlign = data.strokes[0].strokeAlign;
