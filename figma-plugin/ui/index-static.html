@@ -447,6 +447,36 @@
     .hidden {
       display: none !important;
     }
+
+    /* Diagnostics Panel */
+    .diagnostics-panel {
+      margin: 16px;
+      padding: 12px;
+      border-radius: 10px;
+      background: #fff7ed;
+      border: 1px solid #fed7aa;
+      display: none;
+    }
+    .diagnostics-panel.visible {
+      display: block;
+    }
+    .diagnostics-panel h4 {
+      margin: 0 0 8px;
+      font-size: 14px;
+      color: #9a3412;
+    }
+    .diagnostics-summary {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 6px;
+      font-size: 12px;
+      color: #7c2d12;
+    }
+    .diagnostics-summary span {
+      padding: 4px 8px;
+      background: rgba(251, 146, 60, 0.15);
+      border-radius: 4px;
+    }
   </style>
 </head>
 <body>
@@ -530,6 +560,17 @@
     <div id="font-warnings" class="font-warnings">
       <strong>Missing fonts detected:</strong>
       <ul id="font-warnings-list"></ul>
+    </div>
+
+    <!-- Diagnostics Panel -->
+    <div id="diagnostics-panel" class="diagnostics-panel">
+      <h4>⚠️ Import Diagnostics</h4>
+      <div class="diagnostics-summary">
+        <span id="diag-fills">Missing Fills: 0</span>
+        <span id="diag-images">Missing Images: 0</span>
+        <span id="diag-text">Missing Text: 0</span>
+        <span id="diag-fonts">Font Errors: 0</span>
+      </div>
     </div>
 
     <!-- Import Actions (no animations) -->
@@ -623,12 +664,17 @@
     
     // Update status display
     function updateStatus(message, type = 'info') {
-      statusEl.textContent = message;
+      let displayMessage = message;
+      if (typeof message === 'object' && message !== null) {
+        displayMessage = message.message || message.error || JSON.stringify(message);
+      }
+      
+      statusEl.textContent = displayMessage;
       statusEl.className = `status ${type}`;
       // Also surface in connection message area for visibility
       if (connectionMessage) {
         if (type === 'error') {
-          connectionMessage.textContent = message;
+          connectionMessage.textContent = displayMessage;
           connectionMessage.classList.remove('hidden');
         } else {
           connectionMessage.classList.add('hidden');
@@ -934,7 +980,7 @@
           break;
 
         case 'history-error':
-          updateStatus(`❌ ${msg.message}`, 'error');
+          updateStatus(msg.message, 'error');
           renderHistory([]);
           break;
 
@@ -942,18 +988,39 @@
           showFontWarnings(msg.fonts || []);
           break;
 
+        case 'import-diagnostics': {
+          const panel = document.getElementById('diagnostics-panel');
+          const diagFills = document.getElementById('diag-fills');
+          const diagImages = document.getElementById('diag-images');
+          const diagText = document.getElementById('diag-text');
+          const diagFonts = document.getElementById('diag-fonts');
+          if (panel && msg.summary) {
+            const s = msg.summary;
+            if (s.totalIssues > 0) {
+              panel.classList.add('visible');
+              if (diagFills) diagFills.textContent = `Missing Fills: ${s.missingFills}`;
+              if (diagImages) diagImages.textContent = `Missing Images: ${s.missingImages}`;
+              if (diagText) diagText.textContent = `Missing Text: ${s.missingText}`;
+              if (diagFonts) diagFonts.textContent = `Font Errors: ${s.failedFontLoads}`;
+            } else {
+              panel.classList.remove('visible');
+            }
+          }
+          break;
+        }
+
         case 'history-loading':
           updateStatus('Loading history...', 'info');
           break;
 
         case 'error':
-          updateStatus(`❌ ${msg.message}`, 'error');
+          updateStatus(msg.message, 'error');
           updateProgress(0);
           importBtn.disabled = false;
           break;
 
         case 'CAPTURE_ERROR':
-          updateStatus(`❌ ${msg.error || 'Capture failed'}`, 'error');
+          updateStatus(msg.error || 'Capture failed', 'error');
           updateProgress(0);
           setConnectionState('extension', false);
           setConnectionState('server', false);

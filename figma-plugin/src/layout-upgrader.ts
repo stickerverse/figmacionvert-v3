@@ -719,10 +719,10 @@ export function upgradeToAutoLayout(container: FrameNode | GroupNode): FrameNode
 
   frame.layoutMode = direction;
   frame.itemSpacing = spacing;
-  frame.paddingTop = padding.top;
-  frame.paddingRight = padding.right;
-  frame.paddingBottom = padding.bottom;
-  frame.paddingLeft = padding.left;
+  frame.paddingTop = Math.max(0, padding.top);
+  frame.paddingRight = Math.max(0, padding.right);
+  frame.paddingBottom = Math.max(0, padding.bottom);
+  frame.paddingLeft = Math.max(0, padding.left);
   frame.primaryAxisAlignItems = primary;
   frame.counterAxisAlignItems = counter;
 
@@ -739,7 +739,7 @@ export function upgradeToAutoLayout(container: FrameNode | GroupNode): FrameNode
   }));
 
   for (const kid of kids) {
-    if ('layoutPositioning' in kid.node) {
+    if (frame.layoutMode && frame.layoutMode !== 'NONE' && 'layoutPositioning' in kid.node) {
       (kid.node as any).layoutPositioning = overlapping.has(kid.node) ? 'ABSOLUTE' : 'AUTO';
     }
     if (kid.node.type === 'TEXT') {

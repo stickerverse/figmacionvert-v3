@@ -14,6 +14,14 @@ export interface WebToFigmaSchema {
   assetOptimization?: AssetOptimizationReport;
   coordinateMetrics?: CoordinateMetrics;
   comprehensiveStates?: ComprehensiveStatesRegistry; // New: Comprehensive interactive state capture
+
+  // AI/ML Enhancement Results
+  ocr?: OCRResult;
+  visionComponents?: VisionComponentAnalysis;
+  colorPalette?: ColorPaletteResult;
+  typography?: TypographyAnalysis;
+  mlComponents?: MLComponentDetections;
+  spacingScale?: SpacingScaleAnalysis;
 }
 
 export interface AssetOptimizationReport {
@@ -59,6 +67,16 @@ export interface PageMetadata {
   };
   fonts: FontDefinition[];
   breakpoint?: "mobile" | "tablet" | "desktop";
+  mediaQueries?: Array<{
+    query: string;
+    type: string;
+    features: Record<string, string>;
+  }>;
+  responsiveBreakpoints?: Array<{
+    name: string;
+    width: number;
+    height?: number;
+  }>;
   captureOptions?: CaptureOptions;
   extractionSummary?: {
     scrollComplete: boolean;
@@ -420,6 +438,7 @@ export interface Effect {
 
 export interface TextStyle {
   fontFamily: string;
+  fontFamilyStack?: string[]; // Full font-family stack from CSS (e.g., ["Roboto", "Arial", "sans-serif"])
   fontWeight: number;
   fontSize: number;
   lineHeight: { value: number; unit: "PIXELS" | "PERCENT" | "AUTO" };
@@ -595,6 +614,79 @@ export interface FontDefinition {
   weights: number[];
   source: "google" | "system" | "custom";
   url?: string;
+}
+
+// AI/ML Enhancement Result Types
+export interface OCRResult {
+  fullText: string;
+  wordCount: number;
+  confidence: number;
+  duration: number;
+  words?: Array<{
+    text: string;
+    confidence: number;
+    bbox: { x: number; y: number; width: number; height: number };
+  }>;
+}
+
+export interface VisionComponentAnalysis {
+  summary: Record<string, number>;
+  detectedCount: number;
+  buttonCount: number;
+  inputCount: number;
+  cardCount: number;
+  navCount: number;
+  components?: Array<{
+    type: string;
+    bbox: { x: number; y: number; width: number; height: number };
+    confidence?: number;
+  }>;
+}
+
+export interface ColorPaletteResult {
+  theme: "light" | "dark" | "unknown";
+  tokens: Record<string, string>;
+  css: string;
+  palette: Record<
+    string,
+    {
+      hex: string;
+      rgb: { r: number; g: number; b: number };
+      hsl: { h: number; s: number; l: number };
+      population?: number;
+      figma: { r: number; g: number; b: number };
+    }
+  >;
+}
+
+export interface TypographyAnalysis {
+  scale: string;
+  ratio: number | null;
+  baseSize: number;
+  roles: Record<string, number>;
+  families: string[];
+  tokens: Record<string, any>;
+}
+
+export interface MLComponentDetections {
+  detections: Array<{
+    class: string;
+    score: number;
+    bbox: { x: number; y: number; width: number; height: number };
+    uiType?: string;
+  }>;
+  summary: {
+    total: number;
+    byType: Record<string, number>;
+  };
+  imageSize: { width: number; height: number };
+  duration: number;
+  error?: string;
+}
+
+export interface SpacingScaleAnalysis {
+  base: number;
+  scale: number[];
 }
 
 export interface DesignTokenRegistry {

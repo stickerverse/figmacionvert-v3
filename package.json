@@ -9,7 +9,8 @@
     "install:all": "npm install && cd chrome-extension && npm install && cd ../capture-service && npm install && cd ../figma-plugin && npm install",
     "build:extension": "cd chrome-extension && npm run build",
     "build:plugin": "cd figma-plugin && npm run build",
-    "build:all": "npm run build:extension && npm run build:plugin"
+    "build:all": "npm run build:extension && npm run build:plugin",
+    "verify-models": "node verify-models.js"
   },
   "dependencies": {
     "express": "^4.18.2",

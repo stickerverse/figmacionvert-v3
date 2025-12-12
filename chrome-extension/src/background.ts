@@ -564,94 +564,46 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
         if (!tabId) throw new Error("No tab ID provided");
 
-        // Get tab URL
-        const tab = await chrome.tabs.get(tabId);
-        if (!tab.url) throw new Error("Cannot capture tab without URL");
+        // Ensure content script is present so we can use the rich in-page pipeline
+        await ensureContentScript(tabId);
 
-        console.log(`[capture] Triggering server-side capture for ${tab.url}`);
-
-        // Notify popup that we're starting
+        // Let popup know we're starting the in-tab capture flow
         chrome.runtime.sendMessage(
           {
             type: "CAPTURE_PROGRESS",
-            phase: "Starting Puppeteer Capture",
+            phase: "Starting in-tab capture",
             progress: 10,
           },
           () => void chrome.runtime.lastError
         );
 
-        // Call Handoff Server API
-        const response = await fetch(`${currentHandoffBase()}/api/capture`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            url: tab.url,
-            options: {
-              mode,
-              allowNavigation,
-              viewport: message.viewports?.[0],
-            },
-          }),
-        });
-
-        if (!response.ok) {
-          const errText = await response.text();
-          throw new Error(
-            `Server capture failed: ${response.status} ${errText}`
-          );
-        }
-
-        const result = await response.json();
-        if (!result.ok) throw new Error(result.error || "Capture failed");
-
-        const captureData = result.data;
-
-        // If mode is 'send', job is already queued by server via /api/capture
-        // No need to re-upload - server's Puppeteer worker handles everything
-        if (mode === "send") {
-          chrome.runtime.sendMessage(
-            {
-              type: "CAPTURE_PROGRESS",
-              phase: "Capture queued for Figma",
-              progress: 90,
-            },
-            () => void chrome.runtime.lastError
-          );
-          // NOTE: Do NOT call postToHandoffServer() here.
-          // The /api/capture endpoint creates the job and queues it for Figma plugin.
-          console.log(
-            "[capture] Job queued by server, Figma plugin will receive it via /api/jobs/next"
-          );
-        }
-
-        // Send explicit job queued notification
-        chrome.runtime.sendMessage(
+        // Relay capture request to the content script (triggers scroll, states, multi-viewport, chunking)
+        chrome.tabs.sendMessage(
+          tabId,
           {
-            type: "CAPTURE_REMOTE_JOB_QUEUED",
-            jobId: result.jobId || "unknown",
-            url: tab.url,
-            mode,
+            type: "start-capture",
+            allowNavigation,
+            viewports: message.viewports,
           },
-          () => void chrome.runtime.lastError
-        );
+          (response) => {
+            if (chrome.runtime.lastError) {
+              const msg = chrome.runtime.lastError.message || "Capture failed";
+              console.error("[capture] start-capture failed:", msg);
+              sendResponse?.({ ok: false, error: msg });
+              return;
+            }
 
-        // Notify completion (metadata only - full payload cached in background)
-        const captureSize = captureData
-          ? JSON.stringify(captureData).length
-          : 0;
-        chrome.runtime.sendMessage(
-          {
-            type: "CAPTURE_COMPLETE",
-            hasData: true,
-            dataSize: captureSize,
-            dataSizeKB: (captureSize / 1024).toFixed(1),
-            dataSizeMB: (captureSize / (1024 * 1024)).toFixed(2),
-          },
-          () => void chrome.runtime.lastError
-        );
+            if (response && response.started === false) {
+              const error = response.error || "Capture did not start";
+              console.error("[capture] start-capture rejected:", error);
+              sendResponse?.({ ok: false, error });
+              return;
+            }
 
-        // Success response to close the message channel
-        sendResponse?.({ ok: true });
+            console.log("[capture] start-capture dispatched to tab");
+            sendResponse?.({ ok: true });
+          }
+        );
       } catch (error) {
         const errorMessage =
           error instanceof Error ? error.message : "Unknown error";
@@ -1714,6 +1666,15 @@ async function postToHandoffServer(payload: any): Promise<void> {
       schema.screenshot = screenshot;
     }
 
+    // Ensure metadata exists and set captureEngine to 'extension' for extension-captured data
+    if (!schema.metadata) {
+      schema.metadata = {};
+    }
+    // Only set captureEngine if not already set (content script may have set it to 'puppeteer')
+    if (!schema.metadata.captureEngine) {
+      schema.metadata.captureEngine = "extension";
+    }
+
     // Send schema directly, not wrapped in requestBody
     jsonPayload = JSON.stringify(schema);
     payloadSizeMB =
@@ -1832,6 +1793,8 @@ async function postToHandoffServer(payload: any): Promise<void> {
 
   let lastError: Error | null = null;
   for (let attempt = 0; attempt < HANDOFF_BASES.length; attempt++) {
+    // Try each configured base in order; advance index so helpers like handoffEndpoint() stay in sync
+    handoffBaseIndex = attempt;
     const target = handoffEndpoint("/api/jobs");
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 30000); // 30s per attempt
@@ -1866,6 +1829,9 @@ async function postToHandoffServer(payload: any): Promise<void> {
       console.warn(
         `[HANDOFF] Attempt ${attempt + 1} failed for ${target}:`,
         lastError.message
+      );
+      remoteLog(
+        `[handoff] Attempt ${attempt + 1} failed: ${lastError.message}`
       );
       rotateHandoffBase();
     }

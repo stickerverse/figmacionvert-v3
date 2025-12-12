@@ -1,6 +1,6 @@
 {
   "manifest_version": 3,
-  "name": "Web to Figma Capture",
+  "name": "HTML2DESIGN",
   "version": "1.0.0",
   "description": "Capture web pages and send to Figma",
   "permissions": [

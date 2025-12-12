@@ -2,7 +2,6 @@ import { handleWebpTranscodeResult } from "./ui-bridge";
 
 // Import the static UI
 import uiHtml from "../ui/index-static.html";
-import { FigmaImporter, ImportOptions } from "./importer";
 import {
   EnhancedFigmaImporter,
   EnhancedImportOptions,
@@ -10,6 +9,7 @@ import {
 import { prepareLayoutSchema } from "./layout-solver";
 import { upgradeSelectionToAutoLayout } from "./layout-upgrader";
 import { WTFParser } from "./wtf-parser";
+import { diagnostics } from "./node-builder";
 import pako from "pako";
 
 // Type definitions for API responses
@@ -43,16 +43,20 @@ interface MissingFontReport {
 
 figma.showUI(uiHtml, { width: 400, height: 600 });
 
-const defaultImportOptions: ImportOptions = {
+const defaultEnhancedOptions: Partial<EnhancedImportOptions> = {
   createMainFrame: true,
-  createVariantsFrame: false,
-  createComponentsFrame: true,
-  createDesignSystem: false,
-  applyAutoLayout: true, // Enable Auto Layout by default for pixel-perfect fidelity
+  createScreenshotOverlay: true,
+  enableBatchProcessing: true,
+  verifyPositions: true,
+  maxBatchSize: 10,
+  coordinateTolerance: 2,
+  enableDebugMode: false,
+  retryFailedImages: true,
+  enableProgressiveLoading: false,
+  usePixelPerfectPositioning: true,
+  showValidationMarkers: false,
+  applyAutoLayout: true,
   createStyles: true,
-  usePixelPerfectPositioning: true, // Enable pixel-perfect positioning
-  createScreenshotOverlay: true, // Enable screenshot reference overlay
-  showValidationMarkers: false, // Disable by default to avoid clutter
 };
 
 let isImporting = false;
@@ -69,6 +73,7 @@ interface HandoffTelemetry {
   lastDeliveredJobId?: string | null;
 }
 let lastHandoffStatus: HandoffStatus | null = null;
+let lastTelemetry: HandoffTelemetry | null = null;
 let chromeConnectionState: "connected" | "disconnected" = "disconnected";
 let serverConnectionState: "connected" | "disconnected" = "disconnected";
 // Capture service endpoints - configured for cloud deployment
@@ -109,6 +114,29 @@ figma.on("run", (runEvent) => {
 figma.ui.onmessage = async (msg) => {
   if (msg.type === "handoff-telemetry") {
     handleTelemetryFromUi(msg.telemetry as HandoffTelemetry | null);
+    return;
+  }
+  if (msg.type === "ui-ready") {
+    figma.ui.postMessage({
+      type:
+        chromeConnectionState === "connected"
+          ? "chrome-extension-connected"
+          : "chrome-extension-disconnected",
+    });
+    figma.ui.postMessage({
+      type:
+        serverConnectionState === "connected"
+          ? "server-connected"
+          : "server-disconnected",
+    });
+    figma.ui.postMessage({
+      type: "handoff-status",
+      status: lastHandoffStatus || "waiting",
+    });
+    figma.ui.postMessage({
+      type: "handoff-telemetry",
+      telemetry: lastTelemetry,
+    });
     return;
   }
   if (msg.type === "fetch-history") {
@@ -159,7 +187,7 @@ figma.ui.onmessage = async (msg) => {
 
 async function handleImportRequest(
   data: any,
-  options: Partial<ImportOptions> | undefined,
+  options: Partial<EnhancedImportOptions> | undefined,
   trigger: "import" | "auto-import" | "live-import"
 ): Promise<void> {
   console.log("🔵 handleImportRequest called", {
@@ -337,8 +365,8 @@ async function handleImportRequest(
     return;
   }
 
-  const resolvedOptions: ImportOptions = {
-    ...defaultImportOptions,
+  const resolvedOptions: Partial<EnhancedImportOptions> = {
+    ...defaultEnhancedOptions,
     ...(options || {}),
   };
 
@@ -432,6 +460,11 @@ async function handleImportRequest(
 
     figma.ui.postMessage({ type: "complete", stats: enhancedStats });
 
+    // Send import diagnostics summary to UI
+    const diagSummary = diagnostics.getSummary();
+    figma.ui.postMessage({ type: "import-diagnostics", summary: diagSummary });
+    console.log("📊 [FIGMA IMPORT] Diagnostics Summary:", diagSummary);
+
     // Show enhanced validation-aware notification
     if (verificationReport.positionsOutsideTolerance > 0) {
       figma.notify(
@@ -481,7 +514,7 @@ async function handleImportRequest(
 
 async function handleWTFImport(
   fileData: ArrayBuffer,
-  options: Partial<ImportOptions> | undefined
+  options: Partial<EnhancedImportOptions> | undefined
 ): Promise<void> {
   if (!fileData) {
     figma.ui.postMessage({
@@ -590,6 +623,7 @@ function updateServerConnection(state: "connected" | "disconnected") {
 }
 
 function handleTelemetryFromUi(telemetry?: HandoffTelemetry | null) {
+  lastTelemetry = telemetry || null;
   figma.ui.postMessage({
     type: "handoff-telemetry",
     telemetry: telemetry || null,
@@ -604,10 +638,10 @@ function handleTelemetryFromUi(telemetry?: HandoffTelemetry | null) {
   const now = Date.now();
   const extensionHeartbeat =
     typeof telemetry.lastExtensionPingAt === "number" &&
-    now - telemetry.lastExtensionPingAt < 8000;
+    now - telemetry.lastExtensionPingAt < 30000;
   const pluginPolling =
     typeof telemetry.lastPluginPollAt === "number" &&
-    now - telemetry.lastPluginPollAt < 8000;
+    now - telemetry.lastPluginPollAt < 30000;
 
   updateChromeConnection(extensionHeartbeat ? "connected" : "disconnected");
   updateServerConnection(pluginPolling ? "connected" : "disconnected");
@@ -616,12 +650,16 @@ function handleTelemetryFromUi(telemetry?: HandoffTelemetry | null) {
 function applyTelemetry(telemetry?: HandoffTelemetry | null): boolean {
   if (!telemetry) return false;
 
+  console.log("📡 Applying telemetry:", telemetry);
+  lastTelemetry = telemetry;
+
   const now = Date.now();
   const extensionHeartbeat =
     typeof telemetry.lastExtensionPingAt === "number" &&
-    now - telemetry.lastExtensionPingAt < 8000;
+    now - telemetry.lastExtensionPingAt < 30000;
 
   updateChromeConnection(extensionHeartbeat ? "connected" : "disconnected");
+  updateServerConnection("connected");
   figma.ui.postMessage({ type: "handoff-telemetry", telemetry });
   return true;
 }
@@ -741,34 +779,61 @@ async function fetchHandoffHistory(): Promise<{
   jobs: HandoffHistoryItem[];
   telemetry?: HandoffTelemetry | null;
 }> {
-  const response = await fetch(`${currentHandoffBase()}/api/jobs/history`, {
-    headers: buildHandoffHeaders({ "cache-control": "no-cache" }),
-  });
-  if (!response.ok) {
-    throw new Error(`History request failed: HTTP ${response.status}`);
+  let lastError: Error | null = null;
+  for (let attempt = 0; attempt < HANDOFF_BASES.length; attempt++) {
+    handoffBaseIndex = attempt;
+    try {
+      const response = await fetch(`${currentHandoffBase()}/api/jobs/history`, {
+        headers: buildHandoffHeaders({ "cache-control": "no-cache" }),
+      });
+      if (!response.ok) {
+        lastError = new Error(
+          `History request failed: HTTP ${response.status}`
+        );
+        continue;
+      }
+      const body = (await response.json()) as {
+        jobs?: HandoffHistoryItem[];
+        telemetry?: HandoffTelemetry | null;
+      };
+      applyTelemetry(body?.telemetry || null);
+      return { jobs: body?.jobs || [], telemetry: body?.telemetry || null };
+    } catch (err) {
+      lastError = err instanceof Error ? err : new Error(String(err));
+      continue;
+    }
   }
-  const body = (await response.json()) as {
-    jobs?: HandoffHistoryItem[];
-    telemetry?: HandoffTelemetry | null;
-  };
-  applyTelemetry(body?.telemetry || null);
-  return { jobs: body?.jobs || [], telemetry: body?.telemetry || null };
+  throw lastError || new Error("History request failed");
 }
 
 async function fetchHandoffJob(jobId: string): Promise<any> {
-  const response = await fetch(`${currentHandoffBase()}/api/jobs/${jobId}`, {
-    headers: buildHandoffHeaders({ "cache-control": "no-cache" }),
-  });
-  if (!response.ok) {
-    throw new Error(`Job fetch failed: HTTP ${response.status}`);
+  let lastError: Error | null = null;
+  for (let attempt = 0; attempt < HANDOFF_BASES.length; attempt++) {
+    handoffBaseIndex = attempt;
+    try {
+      const response = await fetch(
+        `${currentHandoffBase()}/api/jobs/${jobId}`,
+        {
+          headers: buildHandoffHeaders({ "cache-control": "no-cache" }),
+        }
+      );
+      if (!response.ok) {
+        lastError = new Error(`Job fetch failed: HTTP ${response.status}`);
+        continue;
+      }
+      const body = (await response.json()) as {
+        job?: { id: string; payload?: any; permalink?: string };
+        telemetry?: HandoffTelemetry | null;
+      };
+      applyTelemetry(body?.telemetry || null);
+      const payload = decompressPayload(body?.job?.payload);
+      return { job: body?.job, payload };
+    } catch (err) {
+      lastError = err instanceof Error ? err : new Error(String(err));
+      continue;
+    }
   }
-  const body = (await response.json()) as {
-    job?: { id: string; payload?: any; permalink?: string };
-    telemetry?: HandoffTelemetry | null;
-  };
-  applyTelemetry(body?.telemetry || null);
-  const payload = decompressPayload(body?.job?.payload);
-  return { job: body?.job, payload };
+  throw lastError || new Error("Job fetch failed");
 }
 
 async function pollHandoffJobs(): Promise<void> {
@@ -892,6 +957,7 @@ async function pollHandoffJobs(): Promise<void> {
         console.log("[POLL] No job in response");
         postHandoffStatus("waiting");
       }
+      updateServerConnection("connected");
     }
   } catch (error) {
     console.error("[POLL] Error during poll:", error);
@@ -989,6 +1055,7 @@ async function pingHandoffHealth(): Promise<void> {
       base: currentHandoffBase(),
       queueLength: body.queueLength,
     });
+    updateServerConnection("connected");
     figma.ui.postMessage({
       type: "handoff-health",
       base: currentHandoffBase(),
@@ -1055,37 +1122,24 @@ async function handleEnhancedImport(
     console.log("✅ Layout schema prepared.");
 
     // Transform options from enhanced UI format
-    const importOptions: ImportOptions = {
-      ...defaultImportOptions,
+    const enhancedOptions: Partial<EnhancedImportOptions> = {
+      ...defaultEnhancedOptions,
       applyAutoLayout: options?.autoLayout ?? true,
-      createComponentsFrame: options?.components ?? true,
       createStyles: options?.styles ?? true,
-      createVariantsFrame: options?.variants ?? false,
+      createScreenshotOverlay: true,
+      // These toggles map to our enhanced importer capabilities
+      createMainFrame: true,
+      enableBatchProcessing: true,
+      verifyPositions: true,
     };
 
-    // Create importer instance
-    const importer = new FigmaImporter(importOptions);
+    const importer = new EnhancedFigmaImporter(data, enhancedOptions);
+    const verificationReport = await importer.runImport();
 
-    // Set up progress callback for enhanced UI
-    importer.setProgressCallback(
-      (percent: number, message: string, phase?: string) => {
-        figma.ui.postMessage({
-          type: "progress",
-          percent: Math.min(percent, 95), // Leave 5% for finalization
-          message,
-          phase: phase || "Processing",
-        });
-      }
-    );
-
-    // Import the data
-    const result = await importer.import(data);
-
-    // Send statistics
     const stats = {
-      nodes: result.elementsCount || 0,
-      styles: result.stylesCount || 0,
-      components: result.componentsCount || 0,
+      nodes: verificationReport.totalElements || 0,
+      styles: data?.styles ? Object.keys(data.styles || {}).length : 0,
+      components: verificationReport.totalElements || 0,
     };
 
     figma.ui.postMessage({ type: "import-stats", ...stats });
@@ -1097,7 +1151,6 @@ async function handleEnhancedImport(
     });
     figma.ui.postMessage({ type: "complete", stats });
 
-    // Show Figma notification
     figma.notify(`✓ Successfully imported ${stats.nodes} elements!`, {
       timeout: 3000,
     });
