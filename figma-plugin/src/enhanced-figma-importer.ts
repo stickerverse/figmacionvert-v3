@@ -13,7 +13,7 @@
 import { NodeBuilder } from "./node-builder";
 import { StyleManager } from "./style-manager";
 import { ComponentManager } from "./component-manager";
-import { ImportOptions } from "./importer";
+import { ImportOptions } from "./import-options";
 import { ScreenshotOverlay } from "./screenshot-overlay";
 import { DesignTokensManager } from "./design-tokens-manager";
 import { requestWebpTranscode } from "./ui-bridge";
@@ -78,6 +78,10 @@ export class EnhancedFigmaImporter {
     figmaNode: SceneNode;
   }> = [];
   private scaleFactor: number = 1;
+  private clampPadding(value: number | undefined | null): number {
+    if (value === undefined || value === null || Number.isNaN(value)) return 0;
+    return Math.max(0, value);
+  }
 
   constructor(private data: any, options: Partial<EnhancedImportOptions> = {}) {
     this.options = {
@@ -107,6 +111,50 @@ export class EnhancedFigmaImporter {
           : "no children"
         : "no tree",
     });
+
+    // #region agent log
+    fetch("http://127.0.0.1:7242/ingest/ec6ff4c5-673b-403d-a943-70cb2e5565f2", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        location: "enhanced-figma-importer.ts:constructor",
+        message: "Importer constructed (version stamp + basic payload shape)",
+        data: {
+          importerVersionStamp: "2025-12-11T_fix_fills_images_v1",
+          payloadKeys: data ? Object.keys(data) : [],
+          hasTree: !!data?.tree,
+          hasAssets: !!data?.assets,
+          hasStyles: !!data?.styles,
+          meta: {
+            captureEngine: data?.metadata?.captureEngine,
+            url: data?.metadata?.url,
+            viewport: data?.metadata?.viewport,
+            viewportHeight: data?.metadata?.viewportHeight,
+          },
+          root: {
+            id: data?.tree?.id,
+            name: data?.tree?.name,
+            layout: data?.tree?.layout,
+            fillsCount: Array.isArray(data?.tree?.fills)
+              ? data.tree.fills.length
+              : 0,
+          },
+          assets: {
+            images: data?.assets?.images
+              ? Object.keys(data.assets.images).length
+              : 0,
+            fonts: data?.assets?.fonts
+              ? Object.keys(data.assets.fonts).length
+              : 0,
+          },
+        },
+        timestamp: Date.now(),
+        sessionId: "debug-session",
+        runId: "fills-images",
+        hypothesisId: "A",
+      }),
+    }).catch(() => {});
+    // #endregion
 
     // Detailed asset logging for debugging images
     if (data?.assets) {
@@ -185,7 +233,21 @@ export class EnhancedFigmaImporter {
           message: "Creating local styles...",
           percent: 8,
         });
+
         await this.styleManager.createFigmaStyles();
+
+        // Step 1.5.1: Enhance styles with AI-extracted color palette and typography
+        if (this.data.colorPalette && this.data.colorPalette.palette) {
+          console.log(
+            "🎨 Integrating AI-extracted color palette into styles..."
+          );
+          await this.integrateColorPalette(this.data.colorPalette);
+        }
+
+        if (this.data.typography && this.data.typography.tokens) {
+          console.log("📝 Integrating AI-extracted typography into styles...");
+          await this.integrateTypographyAnalysis(this.data.typography);
+        }
       }
 
       // Step 1.6: Create Figma Variables from design tokens if available
@@ -377,16 +439,36 @@ export class EnhancedFigmaImporter {
     // The schema already encodes coordinates in CSS pixels, so additional scaling based
     // on screenshotScale causes text and layout to be mis-sized. We now ignore
     // screenshotScale for positioning/sizing and keep scaleFactor at 1.
-    const metadata = this.data.metadata?.viewport || {};
-    const layoutWidth = metadata.layoutViewportWidth || metadata.width || 1440;
-    const layoutHeight =
-      metadata.layoutViewportHeight || metadata.height || 900;
-    const scrollHeight = metadata.scrollHeight || layoutHeight;
+    const viewport = this.data.metadata?.viewport || {};
+    // Width: prefer explicit viewportWidth if present, then viewport width, then root tree width
+    const layoutWidth =
+      (this.data as any).metadata?.viewportWidth ||
+      (viewport as any).layoutViewportWidth ||
+      (viewport as any).width ||
+      this.data.tree?.layout?.width ||
+      1440;
+
+    // Height: prefer explicit scroll height fields if present (puppeteer capture emits viewportHeight),
+    // then viewport height, then derive from root tree.
+    const viewportHeightHint =
+      (this.data as any).metadata?.viewportHeight ||
+      (this.data as any).metadata?.scrollHeight ||
+      (viewport as any).scrollHeight ||
+      (viewport as any).layoutViewportHeight ||
+      (viewport as any).height ||
+      900;
+
+    const treeHeightHint =
+      this.data.tree?.layout?.height && this.data.tree.layout.height > 1
+        ? this.data.tree.layout.height
+        : undefined;
+
+    const scrollHeight = Math.max(viewportHeightHint, treeHeightHint || 0);
 
     this.scaleFactor = 1;
 
-    const finalWidth = layoutWidth;
-    const finalHeight = scrollHeight;
+    const finalWidth = Math.max(1, layoutWidth);
+    const finalHeight = Math.max(1, scrollHeight);
 
     frame.resize(finalWidth, finalHeight);
 
@@ -537,7 +619,6 @@ export class EnhancedFigmaImporter {
         });
 
         processedCount++;
-        processedCount++;
         const progress = 10 + (processedCount / totalNodes) * 70;
         figma.ui.postMessage({
           type: "progress",
@@ -599,7 +680,18 @@ export class EnhancedFigmaImporter {
       }
     };
 
-    await buildHierarchy(this.data.tree, parentFrame);
+    // CRITICAL FIX: If root tree is body, skip body node and process children directly
+    // This prevents body background from overriding main frame background
+    if (this.data.tree.htmlTag === "body" && this.data.tree.children) {
+      console.log(
+        "🔄 [BODY] Root is body node, processing children directly to avoid background override"
+      );
+      for (const child of this.data.tree.children) {
+        await buildHierarchy(child, parentFrame);
+      }
+    } else {
+      await buildHierarchy(this.data.tree, parentFrame);
+    }
 
     if (this.options.enableDebugMode) {
       console.log(
@@ -797,6 +889,10 @@ export class EnhancedFigmaImporter {
         );
       }
 
+      // CRITICAL FIX: If this is a body node with a solid background fill,
+      // clear it to prevent overriding the main frame's white background
+      // (unless it's a small section with intentional colored background)
+
       // Use shared NodeBuilder to materialize the SceneNode
       const figmaNode = await this.nodeBuilder.createNode(nodeData);
 
@@ -812,10 +908,78 @@ export class EnhancedFigmaImporter {
         return null;
       }
 
+      // CRITICAL FIX: Always clear body/html background fills to prevent overriding main frame
+      // The main frame has a white background, and body backgrounds should not override it
+      // Body backgrounds are typically full-page backgrounds that should be handled by the main frame
+      if (
+        (nodeData.htmlTag === "body" || nodeData.htmlTag === "html") &&
+        "fills" in figmaNode
+      ) {
+        const bodyFills = (figmaNode as any).fills;
+        if (bodyFills && bodyFills.length > 0) {
+          // Check if any fill is a solid color (not white/transparent)
+          const hasNonWhiteFill = bodyFills.some((fill: any) => {
+            if (fill.type === "SOLID" && fill.color) {
+              // Check if color is not white (allowing for slight variations)
+              const isWhite =
+                fill.color.r > 0.95 &&
+                fill.color.g > 0.95 &&
+                fill.color.b > 0.95;
+              const isTransparent = fill.opacity === 0 || fill.color.a === 0;
+              return !isWhite && !isTransparent;
+            }
+            return false;
+          });
+
+          if (hasNonWhiteFill) {
+            console.log(
+              `🔄 [BODY] Clearing ${nodeData.htmlTag} background fill (${bodyFills.length} fills) to prevent overriding main frame white background`
+            );
+            (figmaNode as any).fills = [];
+          }
+        }
+      }
+
       // Shadow Host labeling
       if (nodeData.isShadowHost) {
         figmaNode.name = `${figmaNode.name} (Shadow Host)`;
         figmaNode.setPluginData("isShadowHost", "true");
+      }
+
+      // AI Enhancement: Apply ML classification to component type
+      if (nodeData.mlUIType && nodeData.mlConfidence > 0.7) {
+        const mlType = nodeData.mlUIType;
+        this.safeSetPluginData(figmaNode, "mlClassification", mlType);
+        this.safeSetPluginData(
+          figmaNode,
+          "mlConfidence",
+          String(nodeData.mlConfidence)
+        );
+
+        // Enhance node name with ML type if generic
+        if (
+          figmaNode.name === "Frame" ||
+          figmaNode.name === "Rectangle" ||
+          figmaNode.name === nodeData.htmlTag
+        ) {
+          figmaNode.name = `${mlType} - ${figmaNode.name}`;
+          console.log(
+            `✅ [AI] Enhanced node name with ML classification: ${mlType} (confidence: ${nodeData.mlConfidence.toFixed(
+              2
+            )})`
+          );
+        }
+
+        // For high-confidence button/input detections, suggest component creation
+        if (
+          (mlType === "BUTTON" || mlType === "INPUT") &&
+          nodeData.mlConfidence > 0.9
+        ) {
+          this.safeSetPluginData(figmaNode, "suggestedComponentType", mlType);
+          console.log(
+            `✅ [AI] High-confidence ${mlType} detected - consider creating component`
+          );
+        }
       }
 
       console.log("✅ Node created:", {
@@ -824,17 +988,20 @@ export class EnhancedFigmaImporter {
         hasFills: "fills" in figmaNode,
         fillsCount:
           "fills" in figmaNode ? (figmaNode as any).fills?.length || 0 : "N/A",
+        mlType: nodeData.mlUIType || "none",
+        hasOCRText: !!(nodeData.ocrText && nodeData.hasOCRText),
       });
 
-      // Determine absolute position of this node
+      // CRITICAL FIX: Determine absolute position first (always use absoluteLayout if available)
       let absX = 0;
       let absY = 0;
 
       if (nodeData.absoluteLayout) {
+        // CRITICAL: Always prefer absoluteLayout for consistent coordinate system
         absX = nodeData.absoluteLayout.left;
         absY = nodeData.absoluteLayout.top;
       } else if (nodeData.layout) {
-        // dom-extractor puts absolute coords in layout.x/y
+        // Fallback: dom-extractor puts absolute coords in layout.x/y (document coordinates: viewport + scroll)
         absX = nodeData.layout.x;
         absY = nodeData.layout.y;
       }
@@ -843,21 +1010,50 @@ export class EnhancedFigmaImporter {
       this.safeSetPluginData(figmaNode, "absoluteX", String(absX));
       this.safeSetPluginData(figmaNode, "absoluteY", String(absY));
 
-      // Calculate relative position for Figma
-      // If parent has absolute position, subtract it to get relative
-      const parentAbsXStr = parent.getPluginData("absoluteX");
-      const parentAbsYStr = parent.getPluginData("absoluteY");
+      // CRITICAL FIX: Check if parent has Auto Layout BEFORE setting position
+      // Auto Layout parents ignore manual x/y positioning - children are positioned automatically
+      // Must check AFTER parent's Auto Layout has been applied (which happens in previous recursive call)
+      const parentHasAutoLayout =
+        "layoutMode" in parent && parent.layoutMode !== "NONE";
 
-      if (parentAbsXStr && parentAbsYStr) {
-        const parentAbsX = parseFloat(parentAbsXStr);
-        const parentAbsY = parseFloat(parentAbsYStr);
+      // Only set manual position if parent does NOT have Auto Layout
+      // Auto Layout will position children automatically based on itemSpacing and alignment
+      if (!parentHasAutoLayout) {
+        // Calculate relative position for Figma
+        // If parent has absolute position, subtract it to get relative
+        const parentAbsXStr = parent.getPluginData("absoluteX");
+        const parentAbsYStr = parent.getPluginData("absoluteY");
 
-        figmaNode.x = (absX - parentAbsX) * this.scaleFactor;
-        figmaNode.y = (absY - parentAbsY) * this.scaleFactor;
+        if (parentAbsXStr && parentAbsYStr) {
+          const parentAbsX = parseFloat(parentAbsXStr);
+          const parentAbsY = parseFloat(parentAbsYStr);
+
+          // CRITICAL FIX: Calculate relative position accounting for parent's position and padding
+          // For Auto Layout parents, padding affects child positioning
+          const parentPaddingLeft =
+            "paddingLeft" in parent ? (parent as FrameNode).paddingLeft : 0;
+          const parentPaddingTop =
+            "paddingTop" in parent ? (parent as FrameNode).paddingTop : 0;
+
+          figmaNode.x =
+            (absX - parentAbsX) * this.scaleFactor - parentPaddingLeft;
+          figmaNode.y =
+            (absY - parentAbsY) * this.scaleFactor - parentPaddingTop;
+        } else {
+          // Root level or parent has no position data - use absolute as relative
+          figmaNode.x = absX * this.scaleFactor;
+          figmaNode.y = absY * this.scaleFactor;
+        }
       } else {
-        // Root level or parent has no position data - use absolute as relative
-        figmaNode.x = absX * this.scaleFactor;
-        figmaNode.y = absY * this.scaleFactor;
+        // Parent has Auto Layout - don't set x/y, let Auto Layout position the child
+        // Store position in plugin data for reference/debugging
+        this.safeSetPluginData(figmaNode, "originalX", String(absX));
+        this.safeSetPluginData(figmaNode, "originalY", String(absY));
+        if (this.options.enableDebugMode) {
+          console.log(
+            `📍 Skipping manual position for ${figmaNode.name} - parent has Auto Layout (${parent.layoutMode})`
+          );
+        }
       }
 
       // Apply size from layout
@@ -869,23 +1065,35 @@ export class EnhancedFigmaImporter {
         (figmaNode as LayoutMixin).resize(w, h);
       }
 
-      // Apply Auto Layout if present
+      // CRITICAL FIX: Apply Auto Layout BEFORE appending to parent
+      // This ensures parent's Auto Layout check works correctly for children
       // Check both autoLayout object (legacy) and top-level properties (from dom-extractor)
+      // Also check AI-suggested Auto Layout
       const hasAutoLayoutData =
         nodeData.autoLayout ||
         (nodeData.layoutMode &&
           nodeData.layoutMode !== "NONE" &&
-          nodeData.layoutMode !== "GRID");
+          nodeData.layoutMode !== "GRID") ||
+        (nodeData.suggestedAutoLayout && nodeData.suggestedLayoutMode);
 
       if (hasAutoLayoutData && "layoutMode" in figmaNode) {
         const frame = figmaNode as FrameNode;
 
-        // Read from autoLayout object or top-level properties
+        // Read from autoLayout object, top-level properties, or AI suggestion
         const layoutMode =
-          nodeData.autoLayout?.layoutMode || nodeData.layoutMode;
+          nodeData.autoLayout?.layoutMode ||
+          nodeData.layoutMode ||
+          (nodeData.suggestedLayoutMode as "HORIZONTAL" | "VERTICAL");
 
         if (layoutMode && layoutMode !== "NONE" && layoutMode !== "GRID") {
           frame.layoutMode = layoutMode as "HORIZONTAL" | "VERTICAL";
+
+          // If this was AI-suggested, log it
+          if (nodeData.suggestedAutoLayout) {
+            console.log(
+              `✅ [AI] Applied suggested Auto Layout to ${figmaNode.name}: ${layoutMode}`
+            );
+          }
 
           // Sizing modes
           frame.primaryAxisSizingMode = (nodeData.autoLayout
@@ -910,14 +1118,18 @@ export class EnhancedFigmaImporter {
           // Spacing
           frame.itemSpacing =
             nodeData.autoLayout?.itemSpacing ?? nodeData.itemSpacing ?? 0;
-          frame.paddingLeft =
-            nodeData.autoLayout?.paddingLeft ?? nodeData.paddingLeft ?? 0;
-          frame.paddingRight =
-            nodeData.autoLayout?.paddingRight ?? nodeData.paddingRight ?? 0;
-          frame.paddingTop =
-            nodeData.autoLayout?.paddingTop ?? nodeData.paddingTop ?? 0;
-          frame.paddingBottom =
-            nodeData.autoLayout?.paddingBottom ?? nodeData.paddingBottom ?? 0;
+          frame.paddingLeft = this.clampPadding(
+            nodeData.autoLayout?.paddingLeft ?? nodeData.paddingLeft
+          );
+          frame.paddingRight = this.clampPadding(
+            nodeData.autoLayout?.paddingRight ?? nodeData.paddingRight
+          );
+          frame.paddingTop = this.clampPadding(
+            nodeData.autoLayout?.paddingTop ?? nodeData.paddingTop
+          );
+          frame.paddingBottom = this.clampPadding(
+            nodeData.autoLayout?.paddingBottom ?? nodeData.paddingBottom
+          );
 
           // Wrap mode
           const layoutWrap =
@@ -1254,5 +1466,95 @@ export class EnhancedFigmaImporter {
       }
     }
     throw lastError || new Error("WebP transcode failed");
+  }
+
+  /**
+   * Integrate AI-extracted color palette into Figma styles
+   */
+  private async integrateColorPalette(colorPalette: any): Promise<void> {
+    if (
+      !colorPalette.palette ||
+      Object.keys(colorPalette.palette).length === 0
+    ) {
+      return;
+    }
+
+    try {
+      for (const [name, color] of Object.entries(colorPalette.palette)) {
+        if (!color || !color.figma) continue;
+
+        try {
+          const style = figma.createPaintStyle();
+          style.name = `AI Colors/${name}`;
+          style.paints = [
+            {
+              type: "SOLID",
+              color: color.figma,
+              opacity: 1,
+            },
+          ];
+          console.log(`✅ Created color style from AI palette: ${name}`);
+        } catch (e) {
+          console.warn(`⚠️ Failed to create color style for ${name}:`, e);
+        }
+      }
+    } catch (error) {
+      console.warn("⚠️ Color palette integration failed:", error);
+    }
+  }
+
+  /**
+   * Integrate AI-extracted typography analysis into Figma styles
+   */
+  private async integrateTypographyAnalysis(typography: any): Promise<void> {
+    if (!typography.tokens || Object.keys(typography.tokens).length === 0) {
+      return;
+    }
+
+    try {
+      for (const [name, token] of Object.entries(typography.tokens)) {
+        if (!token || typeof token !== "object") continue;
+
+        try {
+          const fontFamily = token.fontFamily || "Inter";
+          const fontWeight = token.fontWeight || 400;
+          const fontSize = token.fontSize || 16;
+
+          // Map font weight to style name
+          const weightToStyle = (weight: number): string => {
+            if (weight >= 700) return "Bold";
+            if (weight >= 600) return "SemiBold";
+            if (weight >= 500) return "Medium";
+            if (weight >= 300) return "Light";
+            return "Regular";
+          };
+          const fontStyle = weightToStyle(fontWeight);
+
+          await figma.loadFontAsync({ family: fontFamily, style: fontStyle });
+
+          const style = figma.createTextStyle();
+          style.name = `AI Typography/${name}`;
+          style.fontName = { family: fontFamily, style: fontStyle };
+          style.fontSize = fontSize;
+
+          if (token.lineHeight) {
+            style.lineHeight = { unit: "PIXELS", value: token.lineHeight };
+          }
+
+          if (token.letterSpacing) {
+            style.letterSpacing = {
+              unit: "PIXELS",
+              value: token.letterSpacing,
+            };
+          }
+
+          console.log(`✅ Created text style from AI typography: ${name}`);
+        } catch (e) {
+          console.warn(`⚠️ Failed to create text style for ${name}:`, e);
+        }
+      }
+    } catch (error) {
+      console.warn("⚠️ Typography integration failed:", error);
+    }
   }
 }

@@ -73,6 +73,30 @@ const messageListener = async (event: MessageEvent) => {
     return;
   }
 
+  // CRITICAL FIX: Handle partial schema request for timeout recovery
+  if (event.data.type === "GET_PARTIAL_SCHEMA") {
+    const extractor = (window as any).__CURRENT_EXTRACTOR__;
+    if (extractor && typeof extractor.getPartialSchema === "function") {
+      const partial = extractor.getPartialSchema();
+      window.postMessage(
+        {
+          type: "PARTIAL_SCHEMA",
+          schema: partial,
+        },
+        "*"
+      );
+    } else {
+      window.postMessage(
+        {
+          type: "PARTIAL_SCHEMA",
+          schema: null,
+        },
+        "*"
+      );
+    }
+    return;
+  }
+
   if (event.data.type === "START_EXTRACTION") {
     (window as any).__EXTRACTION_COUNT__++;
     console.log(
@@ -96,6 +120,8 @@ const messageListener = async (event: MessageEvent) => {
     try {
       console.log("🔍 [INJECT] Creating DOMExtractor instance...");
       const extractor = new DOMExtractor();
+      // CRITICAL FIX: Store extractor globally for timeout recovery
+      (window as any).__CURRENT_EXTRACTOR__ = extractor;
 
       // Set up a heartbeat to keep the watchdog alive during long extractions
       let heartbeatCount = 0;
@@ -136,6 +162,8 @@ const messageListener = async (event: MessageEvent) => {
       } finally {
         // Always clear the heartbeat interval
         clearInterval(heartbeatInterval);
+        // Clear extractor reference
+        (window as any).__CURRENT_EXTRACTOR__ = null;
       }
     } catch (error) {
       console.error("❌ [INJECT] Extraction failed:", error);

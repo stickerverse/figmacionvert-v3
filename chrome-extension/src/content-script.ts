@@ -1,6 +1,7 @@
 import { StatusOverlay } from "./utils/status-overlay";
 import { PageScroller } from "./utils/page-scroller";
 import { SelectionOverlay } from "./content-scripts/selection-overlay";
+import { enhanceSchemaWithAI } from "./utils/ai-schema-enhancer";
 // Add type definition for window chunk storage
 declare global {
   interface Window {
@@ -135,6 +136,7 @@ console.log("If you see this, content-script.js is executing!");
   let isCapturing = false;
   let watchdogTimer: any = null;
   let cancelCurrentExtraction: (() => void) | null = null;
+  let captureStartTime: number | null = null; // Track capture start time for diagnostics
   const WATCHDOG_TIMEOUT = 90000; // 90 seconds without progress = stall (increased for complex sites)
   let isScriptInjected = false; // Track if injection script has been loaded this session
 
@@ -159,20 +161,206 @@ console.log("If you see this, content-script.js is executing!");
     if (!isCapturing) return;
 
     watchdogTimer = setTimeout(() => {
-      console.warn("⚠️ [WATCHDOG] Capture stalled!");
-      overlay.update("⚠️ Capture seems stuck. Waiting...");
+      const elapsed = Date.now() - (captureStartTime || Date.now());
+      console.warn(
+        `⚠️ [WATCHDOG] Capture stalled after ${Math.round(elapsed / 1000)}s!`
+      );
+      console.warn("⚠️ [WATCHDOG] Possible causes:");
+      console.warn("  - DOM extraction is taking too long");
+      console.warn("  - AI analysis is stuck");
+      console.warn("  - Network requests are hanging");
+      console.warn("  - Page is still loading content");
+
+      overlay.update(
+        `⚠️ Capture seems stuck (${Math.round(elapsed / 1000)}s). Waiting...`
+      );
 
       // Set a second timeout for ultimate failure
       watchdogTimer = setTimeout(() => {
-        console.error("❌ [WATCHDOG] Capture timed out completely.");
-        overlay.update("❌ Capture timed out. Please refresh and try again.");
+        const totalElapsed = Date.now() - (captureStartTime || Date.now());
+        console.error(
+          `❌ [WATCHDOG] Capture timed out completely after ${Math.round(
+            totalElapsed / 1000
+          )}s.`
+        );
+        console.error("❌ [WATCHDOG] Capture failed. Possible issues:");
+        console.error("  - DOM extraction exceeded 120s timeout");
+        console.error("  - AI analysis exceeded 30s timeout");
+        console.error("  - Network connectivity issues");
+        console.error("  - Page is too complex or has infinite loading");
+
+        overlay.update(
+          `❌ Capture timed out after ${Math.round(
+            totalElapsed / 1000
+          )}s. Please refresh and try again.`
+        );
         isCapturing = false;
         if (cancelCurrentExtraction) {
           cancelCurrentExtraction();
           cancelCurrentExtraction = null;
         }
+
+        // Send error to background for logging
+        chrome.runtime.sendMessage(
+          {
+            type: "CAPTURE_ERROR",
+            error: `Capture watchdog timeout after ${Math.round(
+              totalElapsed / 1000
+            )}s`,
+            details: {
+              elapsed: totalElapsed,
+              phase: "watchdog-timeout",
+              suggestions: [
+                "Try refreshing the page and capturing again",
+                "The page may be too complex - try capturing a smaller section",
+                "Check browser console for specific error messages",
+                "Ensure handoff server is running if using AI analysis",
+              ],
+            },
+          },
+          () => void chrome.runtime.lastError
+        );
       }, 30000); // Wait another 30s before giving up
     }, WATCHDOG_TIMEOUT);
+  }
+
+  function waitForDomStability(
+    stableDurationMs = 1000,
+    maxWaitMs = 10000
+  ): Promise<void> {
+    return new Promise((resolve) => {
+      const startTime = Date.now();
+      console.log(
+        `⏳ Waiting for DOM stability (${stableDurationMs}ms quiet period, max ${maxWaitMs}ms)...`
+      );
+      let timeout: any;
+      let maxTimeout: any;
+      let mutationCount = 0;
+      let significantMutationCount = 0;
+      let lastSignificantMutationTime = startTime;
+
+      // CRITICAL FIX: Filter out "noise" mutations that don't affect layout
+      // This helps with complex pages like Etsy that have continuous ads/trackers
+      const isSignificantMutation = (mutation: MutationRecord): boolean => {
+        const target = mutation.target as Element;
+
+        // Ignore mutations in iframes (ads, trackers)
+        if (target.closest("iframe")) return false;
+
+        // Ignore mutations in script/style tags
+        if (target.tagName === "SCRIPT" || target.tagName === "STYLE")
+          return false;
+
+        // Ignore mutations in hidden elements
+        if (target instanceof Element) {
+          const style = window.getComputedStyle(target);
+          if (style.display === "none" || style.visibility === "hidden") {
+            return false;
+          }
+        }
+
+        // Ignore attribute-only mutations that don't affect layout
+        if (mutation.type === "attributes") {
+          const attrName = mutation.attributeName;
+          // These attributes don't typically affect layout
+          const nonLayoutAttributes = [
+            "data-",
+            "aria-",
+            "id",
+            "data-testid",
+            "data-analytics",
+            "data-tracking",
+            "data-cy",
+          ];
+          if (
+            attrName &&
+            nonLayoutAttributes.some((prefix) => attrName.startsWith(prefix))
+          ) {
+            return false; // These don't affect layout
+          }
+          // Class and style changes can affect layout, so count them
+          if (attrName === "class" || attrName === "style") {
+            return true;
+          }
+        }
+
+        // Ignore character data mutations in script/style
+        if (mutation.type === "characterData") {
+          const parent = target.parentElement;
+          if (
+            parent &&
+            (parent.tagName === "SCRIPT" || parent.tagName === "STYLE")
+          ) {
+            return false;
+          }
+        }
+
+        // All other mutations (childList, most attributes) are considered significant
+        return true;
+      };
+
+      const onStabilityReached = () => {
+        if (maxTimeout) clearTimeout(maxTimeout);
+        observer.disconnect();
+        const elapsed = Date.now() - startTime;
+        console.log(
+          `✅ DOM stabilized after ${elapsed}ms (${mutationCount} total, ${significantMutationCount} significant mutations)`
+        );
+        resolve();
+      };
+
+      const observer = new MutationObserver((mutations) => {
+        mutationCount += mutations.length;
+
+        // Count only significant mutations
+        const significantMutations = mutations.filter(isSignificantMutation);
+        if (significantMutations.length > 0) {
+          significantMutationCount += significantMutations.length;
+          lastSignificantMutationTime = Date.now();
+          // Reset timeout when we see significant mutations
+          clearTimeout(timeout);
+          timeout = setTimeout(onStabilityReached, stableDurationMs);
+        }
+        // If only noise mutations, don't reset timeout - let it proceed if quiet period is met
+      });
+
+      observer.observe(document.body, {
+        childList: true,
+        subtree: true,
+        attributes: true,
+        attributeFilter: undefined, // Observe all attributes, filter in callback
+        characterData: true,
+      });
+
+      timeout = setTimeout(onStabilityReached, stableDurationMs);
+
+      maxTimeout = setTimeout(() => {
+        const elapsed = Date.now() - startTime;
+        const mutationRate = (mutationCount / elapsed) * 1000; // mutations per second
+        const significantRate = (significantMutationCount / elapsed) * 1000;
+
+        console.warn(
+          `⚠️ DOM stability check timed out after ${elapsed}ms (${mutationCount} total, ${significantMutationCount} significant mutations)`
+        );
+        console.warn(
+          `⚠️ Mutation rate: ${mutationRate.toFixed(
+            1
+          )}/s total, ${significantRate.toFixed(1)}/s significant`
+        );
+        console.warn("⚠️ This may indicate:");
+        console.warn("  - Page has continuous animations or updates");
+        console.warn("  - Dynamic content is still loading");
+        console.warn("  - Ads or trackers are modifying the DOM");
+        console.warn(
+          "  - This is normal for some complex pages (e.g., Etsy, Amazon)"
+        );
+        console.warn(
+          "  - Proceeding with capture - layout should still be accurate"
+        );
+        observer.disconnect();
+        resolve();
+      }, maxWaitMs);
+    });
   }
 
   // Add type definition for window chunk storage
@@ -227,7 +415,7 @@ console.log("If you see this, content-script.js is executing!");
 
   // Send capture data to background using chunked transfer to avoid Chrome message size limits
   async function sendCaptureToBackground(captureData: any): Promise<void> {
-    const CHUNK_SIZE = 256 * 1024; // 256KB chunks
+    const CHUNK_SIZE = 10 * 1024 * 1024; // 10MB chunks to reduce message count
 
     let jsonString: string;
     try {
@@ -320,6 +508,7 @@ console.log("If you see this, content-script.js is executing!");
 
       document.body.setAttribute("data-debug-startcapture", "received");
       const startTime = Date.now();
+      captureStartTime = startTime; // Store for watchdog diagnostics
       console.log("🚀 [CAPTURE START] Initiating capture process...");
       console.log("   ⏱️  Started at:", new Date().toLocaleTimeString());
       isCapturing = true;
@@ -374,6 +563,7 @@ console.log("If you see this, content-script.js is executing!");
           const errorCaptureData = {
             version: "2.0.0",
             multiViewport: true,
+            metadata: { captureEngine: "puppeteer" },
             captures: [],
             error: error.message,
             errorCode: (error as any).code,
@@ -387,6 +577,7 @@ console.log("If you see this, content-script.js is executing!");
         })
         .finally(() => {
           isCapturing = false;
+          captureStartTime = null; // Reset capture start time
         });
 
       // Return true to indicate we've handled the message (response already sent)
@@ -582,6 +773,21 @@ console.log("If you see this, content-script.js is executing!");
         viewports: viewports.length,
       });
 
+      console.log("📜 Performing scroll pre-pass to trigger lazy loading...");
+      overlay.update("📜 Scrolling to load content...");
+
+      // extensive scroll to ensure everything loads
+      await scroller.scrollPage(100, (percent) => {
+        sendCaptureProgress("Scrolling page", percent);
+      });
+
+      console.log("✅ Scroll pre-pass complete");
+
+      overlay.update("⏳ Waiting for content to settle...");
+      // CRITICAL FIX: Increased timeout and quiet period for complex pages (e.g., Etsy with dynamic content)
+      // Using smarter mutation filtering to ignore ads/trackers/animations
+      await waitForDomStability(2000, 25000);
+
       await injectScript();
       await wait(500);
 
@@ -651,6 +857,7 @@ console.log("If you see this, content-script.js is executing!");
       const captureData = {
         version: "2.0.0",
         multiViewport: true,
+        metadata: { captureEngine: "puppeteer" },
         captures,
       };
 
@@ -811,12 +1018,16 @@ console.log("If you see this, content-script.js is executing!");
         );
       }
 
-      // Scroll page
-      console.log("📍 Step 2: Scroll page");
-      overlay.update("📜 Scrolling page...");
-      sendCaptureProgress("Scrolling page", 30);
-      await scroller.scrollPage();
-      await wait(200);
+      // Scroll page - skip if called from multi-viewport mode (skipInject=true) since we already did a pre-pass
+      if (!skipInject) {
+        console.log("📍 Step 2: Scroll page");
+        overlay.update("📜 Scrolling page...");
+        sendCaptureProgress("Scrolling page", 30);
+        await scroller.scrollPage();
+        await wait(200);
+      } else {
+        console.log("📍 Step 2: Skipping scroll (already done in pre-pass)");
+      }
 
       // Capture interactive states (dropdowns, accordions, etc.)
       console.log("📍 Step 2b: Capturing interactive states...");
@@ -863,6 +1074,10 @@ console.log("If you see this, content-script.js is executing!");
       const extractTime = ((Date.now() - extractStart) / 1000).toFixed(2);
 
       if (result.data) {
+        // Ensure metadata exists and force captureEngine to puppeteer (as required by plugin)
+        if (!result.data.metadata) result.data.metadata = {};
+        result.data.metadata.captureEngine = "puppeteer";
+
         const elementCount = result.data.tree?.children?.length || 0;
         console.log(
           `✅ DOM extraction complete (${elementCount} elements, took ${extractTime}s)`
@@ -992,8 +1207,11 @@ console.log("If you see this, content-script.js is executing!");
     sendCaptureProgress("Extracting DOM structure", 25);
 
     return new Promise(async (resolve, reject) => {
+      // Set up timeout ID reference for cleanup
+      let timeoutIdRef: { id: any } = { id: null };
+
       // Set up message listener for extraction results
-      const messageListener = (event: MessageEvent) => {
+      const messageListener = async (event: MessageEvent) => {
         // Relaxed check for extraction messages to ensure we catch them from Main World
         const isExtractionMessage =
           event.data?.type === "EXTRACTION_COMPLETE" ||
@@ -1012,6 +1230,11 @@ console.log("If you see this, content-script.js is executing!");
 
         if (event.data.type === "EXTRACTION_COMPLETE") {
           console.log("✅ Extraction complete, received data");
+          // Clear timeout on completion
+          if (timeoutIdRef.id) {
+            clearTimeout(timeoutIdRef.id);
+            timeoutIdRef.id = null;
+          }
           window.removeEventListener("message", messageListener);
 
           const schema = event.data.data;
@@ -1049,6 +1272,297 @@ console.log("If you see this, content-script.js is executing!");
             () => void chrome.runtime.lastError
           );
 
+          // NEW: Run AI analysis on screenshot and merge results
+          if (screenshot) {
+            overlay.update("🤖 Running AI analysis... (60%)");
+            chrome.runtime.sendMessage(
+              {
+                type: "EXTRACTION_PROGRESS",
+                phase: "AI Analysis",
+                message: "Running AI analysis...",
+                percent: 60,
+              },
+              () => void chrome.runtime.lastError
+            );
+
+            try {
+              console.log("🤖 [AI] Starting AI analysis via handoff server...");
+              const aiStartTime = Date.now();
+
+              // CRITICAL FIX: Add timeout to prevent hanging
+              const handoffBase = "http://localhost:4411";
+              const AI_ANALYSIS_TIMEOUT = 30000; // 30 seconds max
+
+              const fetchWithTimeout = (
+                url: string,
+                options: RequestInit,
+                timeout: number
+              ): Promise<Response> => {
+                return Promise.race([
+                  fetch(url, options),
+                  new Promise<Response>((_, reject) =>
+                    setTimeout(
+                      () =>
+                        reject(
+                          new Error("AI analysis timeout after 30 seconds")
+                        ),
+                      timeout
+                    )
+                  ),
+                ]);
+              };
+
+              let response: Response;
+              try {
+                response = await fetchWithTimeout(
+                  `${handoffBase}/api/ai-analyze`,
+                  {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ screenshot }),
+                  },
+                  AI_ANALYSIS_TIMEOUT
+                );
+              } catch (fetchError) {
+                const errorMessage =
+                  fetchError instanceof Error
+                    ? fetchError.message
+                    : String(fetchError);
+                console.error("❌ [AI] Fetch failed:", errorMessage);
+
+                // Check if it's a timeout
+                if (errorMessage.includes("timeout")) {
+                  const elapsed = Date.now() - aiStartTime;
+                  throw new Error(
+                    `AI analysis timed out after ${elapsed}ms. The handoff server may be slow or unresponsive.`
+                  );
+                }
+
+                // Check if it's a network error
+                if (
+                  errorMessage.includes("Failed to fetch") ||
+                  errorMessage.includes("NetworkError")
+                ) {
+                  throw new Error(
+                    `Cannot connect to AI analysis server at ${handoffBase}. Is the handoff server running?`
+                  );
+                }
+
+                throw new Error(`AI analysis request failed: ${errorMessage}`);
+              }
+
+              if (!response.ok) {
+                const statusText =
+                  response.statusText || `HTTP ${response.status}`;
+                let errorDetails = `AI analysis server returned ${statusText}`;
+
+                // Try to get error details from response
+                try {
+                  const errorBody = await response.json();
+                  if (errorBody.error) {
+                    errorDetails = errorBody.error;
+                  }
+                } catch (e) {
+                  // Ignore JSON parse errors
+                }
+
+                console.error(
+                  `❌ [AI] Server error (${response.status}):`,
+                  errorDetails
+                );
+                throw new Error(errorDetails);
+              }
+
+              const aiResponse = await response.json();
+              if (!aiResponse.ok || !aiResponse.results) {
+                const errorMsg =
+                  aiResponse.error || "AI analysis returned no results";
+                console.error("❌ [AI] Invalid response:", errorMsg);
+                throw new Error(errorMsg);
+              }
+
+              const aiResults = aiResponse.results;
+              const aiDuration = Date.now() - aiStartTime;
+
+              console.log(`✅ [AI] Analysis completed in ${aiDuration}ms`);
+
+              // Store AI results in schema
+              if (aiResults.ocr) {
+                schema.ocr = aiResults.ocr;
+                console.log(
+                  `✅ [AI] OCR: ${
+                    aiResults.ocr.wordCount
+                  } words extracted (confidence: ${(
+                    aiResults.ocr.confidence || 0
+                  ).toFixed(2)})`
+                );
+              } else {
+                console.warn("⚠️ [AI] No OCR results returned");
+              }
+
+              if (aiResults.colorPalette) {
+                schema.colorPalette = aiResults.colorPalette;
+
+                // Integrate color palette into styles
+                if (!schema.styles) {
+                  schema.styles = { colors: {}, textStyles: {}, effects: {} };
+                }
+                if (
+                  aiResults.colorPalette.palette &&
+                  Object.keys(aiResults.colorPalette.palette).length > 0
+                ) {
+                  Object.entries(aiResults.colorPalette.palette).forEach(
+                    ([name, color]: [string, any]) => {
+                      if (color && color.hex) {
+                        const colorId = `palette-${name
+                          .toLowerCase()
+                          .replace(/\s+/g, "-")}`;
+                        schema.styles.colors[colorId] = {
+                          id: colorId,
+                          name: name,
+                          color: color.figma || {
+                            r: color.rgb.r / 255,
+                            g: color.rgb.g / 255,
+                            b: color.rgb.b / 255,
+                            a: 1,
+                          },
+                          usageCount: color.population || 1,
+                        };
+                      }
+                    }
+                  );
+                  console.log(
+                    `✅ [AI] Integrated ${
+                      Object.keys(schema.styles.colors).length
+                    } colors into style registry`
+                  );
+                }
+              }
+
+              if (aiResults.mlComponents) {
+                schema.mlComponents = aiResults.mlComponents;
+                console.log(
+                  `✅ [AI] ML: ${aiResults.mlComponents.summary.total} components detected`
+                );
+              } else {
+                console.warn(
+                  "⚠️ [AI] No ML component detection results returned"
+                );
+              }
+
+              // Log any errors from AI analysis
+              if (
+                aiResults.errors &&
+                Object.keys(aiResults.errors).length > 0
+              ) {
+                console.warn(
+                  "⚠️ [AI] Some AI models failed:",
+                  aiResults.errors
+                );
+              }
+
+              // Store AI execution summary in metadata
+              if (!schema.metadata) {
+                schema.metadata = {};
+              }
+              schema.metadata.aiModelsExecuted = {
+                ocr: !!aiResults.ocr,
+                color: !!aiResults.colorPalette,
+                ml: !!aiResults.mlComponents,
+                timestamp: new Date().toISOString(),
+              };
+
+              // CRITICAL: Enhance schema with AI results to improve fidelity
+              console.log(
+                "🤖 [AI-Enhancer] Enhancing schema with AI results..."
+              );
+              try {
+                const enhancedSchema = enhanceSchemaWithAI(schema, {
+                  ocr: aiResults.ocr,
+                  colorPalette: aiResults.colorPalette,
+                  mlComponents: aiResults.mlComponents,
+                  typography: aiResults.typography,
+                  spacingScale: aiResults.spacingScale,
+                });
+                // Update schema object properties instead of reassigning
+                Object.assign(schema, enhancedSchema);
+                console.log("✅ [AI-Enhancer] Schema enhancement complete");
+              } catch (enhanceError) {
+                console.warn(
+                  "⚠️ [AI-Enhancer] Schema enhancement failed:",
+                  enhanceError
+                );
+                // Continue without enhancement - schema is still valid
+              }
+
+              overlay.update("✅ AI analysis complete (70%)");
+              chrome.runtime.sendMessage(
+                {
+                  type: "EXTRACTION_PROGRESS",
+                  phase: "AI Analysis",
+                  message: "AI analysis complete",
+                  percent: 70,
+                },
+                () => void chrome.runtime.lastError
+              );
+            } catch (aiError) {
+              const errorMessage =
+                aiError instanceof Error ? aiError.message : String(aiError);
+              const errorStack =
+                aiError instanceof Error ? aiError.stack : undefined;
+
+              console.error("❌ [AI] AI analysis failed:", errorMessage);
+              if (errorStack) {
+                console.error("❌ [AI] Stack trace:", errorStack);
+              }
+
+              // Log to server for debugging
+              chrome.runtime.sendMessage(
+                {
+                  type: "LOG_TO_SERVER",
+                  message: `AI analysis failed: ${errorMessage}`,
+                  data: {
+                    error: errorMessage,
+                    stack: errorStack,
+                    timestamp: new Date().toISOString(),
+                  },
+                },
+                () => void chrome.runtime.lastError
+              );
+
+              // Determine user-friendly error message
+              let userMessage = "AI analysis skipped";
+              if (errorMessage.includes("timeout")) {
+                userMessage = "AI analysis timed out (30s limit)";
+              } else if (errorMessage.includes("Cannot connect")) {
+                userMessage = "AI server unavailable";
+              } else if (errorMessage.includes("HTTP")) {
+                userMessage = "AI server error";
+              } else {
+                userMessage = `AI analysis failed: ${errorMessage.substring(
+                  0,
+                  50
+                )}${errorMessage.length > 50 ? "..." : ""}`;
+              }
+
+              // Update overlay to show AI was skipped with specific reason
+              overlay.update(`⚠️ ${userMessage} (70%)`);
+              chrome.runtime.sendMessage(
+                {
+                  type: "EXTRACTION_PROGRESS",
+                  phase: "AI Analysis",
+                  message: userMessage,
+                  percent: 70,
+                  error: errorMessage, // Include full error for debugging
+                },
+                () => void chrome.runtime.lastError
+              );
+
+              // Continue without AI results - don't fail the entire capture
+              console.log("✅ [AI] Continuing capture without AI results...");
+            }
+          }
+
           resolve({
             data: schema,
             validationReport: null,
@@ -1058,6 +1572,11 @@ console.log("If you see this, content-script.js is executing!");
 
         if (event.data.type === "EXTRACTION_ERROR") {
           console.error("❌ Extraction error:", event.data.error);
+          // Clear timeout on error
+          if (timeoutIdRef.id) {
+            clearTimeout(timeoutIdRef.id);
+            timeoutIdRef.id = null;
+          }
           chrome.runtime.sendMessage(
             {
               type: "CAPTURE_ERROR",
@@ -1103,6 +1622,74 @@ console.log("If you see this, content-script.js is executing!");
           });
         }
       };
+
+      // CRITICAL FIX: Set timeout to return partial schema instead of failing completely
+      timeoutIdRef.id = setTimeout(async () => {
+        window.removeEventListener("message", messageListener);
+        console.warn(
+          "⚠️ [TIMEOUT] DOM extraction timed out after 120 seconds - attempting to recover partial schema"
+        );
+
+        // Try to get partial schema from the extractor
+        try {
+          const partialSchema = await new Promise<any>((resolve) => {
+            // Post message to injected script to get partial schema
+            const partialListener = (e: MessageEvent) => {
+              if (e.data?.type === "PARTIAL_SCHEMA") {
+                window.removeEventListener("message", partialListener);
+                resolve(e.data.schema);
+              }
+            };
+            window.addEventListener("message", partialListener);
+            window.postMessage({ type: "GET_PARTIAL_SCHEMA" }, "*");
+
+            // Timeout after 2 seconds
+            setTimeout(() => {
+              window.removeEventListener("message", partialListener);
+              resolve(null);
+            }, 2000);
+          });
+
+          if (partialSchema && partialSchema.tree) {
+            console.log(
+              "✅ [TIMEOUT] Recovered partial schema with",
+              (partialSchema.metadata as any)?.extractedNodes || 0,
+              "nodes"
+            );
+            // Attach screenshot if available
+            if (screenshot && partialSchema) {
+              partialSchema.screenshot = screenshot;
+            }
+            // Add viewport metadata
+            if (viewport?.name && partialSchema?.metadata) {
+              (partialSchema.metadata as any).viewportName = viewport.name;
+            }
+            if (viewport?.width && partialSchema?.metadata) {
+              (partialSchema.metadata as any).viewportWidth = viewport.width;
+              (partialSchema.metadata as any).viewportHeight = viewport.height;
+            }
+
+            resolve({
+              data: partialSchema,
+              validationReport: null,
+              previewWithOverlay: null,
+            });
+            return;
+          }
+        } catch (recoveryError) {
+          console.error(
+            "❌ [TIMEOUT] Failed to recover partial schema:",
+            recoveryError
+          );
+        }
+
+        // If recovery failed, reject with error
+        reject(
+          new Error(
+            "DOM extraction timed out after 120 seconds - no partial data available"
+          )
+        );
+      }, 120000);
 
       window.addEventListener("message", messageListener);
 
@@ -1188,12 +1775,6 @@ console.log("If you see this, content-script.js is executing!");
         },
         "*"
       );
-
-      // Set timeout to prevent hanging forever
-      setTimeout(() => {
-        window.removeEventListener("message", messageListener);
-        reject(new Error("DOM extraction timed out after 60 seconds"));
-      }, 60000);
     });
   }
 
@@ -1224,7 +1805,7 @@ console.log("If you see this, content-script.js is executing!");
     try {
       console.log("📦 sendLargeCaptureData called");
       // Use smaller chunks to avoid Chrome's message size limit
-      const chunkSize = 256 * 1024; // 256KB chunks (Chrome limit is ~64MB but smaller is safer)
+      const chunkSize = 10 * 1024 * 1024; // 10MB chunks (Chrome limit is ~64MB but smaller is safer)
 
       // Yield to UI before heavy operation
       await wait(10);

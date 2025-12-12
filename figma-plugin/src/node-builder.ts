@@ -1,10 +1,70 @@
 import { StyleManager } from "./style-manager";
 import { ComponentManager } from "./component-manager";
-import { ImportOptions } from "./importer";
+import { ImportOptions } from "./import-options";
 import { DesignTokensManager } from "./design-tokens-manager";
 import { requestWebpTranscode } from "./ui-bridge";
 
 type SceneNodeWithGeometry = SceneNode & GeometryMixin;
+
+interface DiagnosticReport {
+  nodeId: string;
+  nodeName: string;
+  nodeType: string;
+  issues: string[];
+  expectedProps: Record<string, any>;
+  actualProps: Record<string, any>;
+}
+
+class FigmaImportDiagnostics {
+  private reports: DiagnosticReport[] = [];
+  private missingFills = 0;
+  private missingStrokes = 0;
+  private missingText = 0;
+  private missingImages = 0;
+  private failedFontLoads = 0;
+
+  logIssue(
+    nodeId: string,
+    nodeName: string,
+    nodeType: string,
+    issue: string,
+    expected?: any,
+    actual?: any
+  ) {
+    console.log(`[FIGMA IMPORT] ❌ ${nodeType} "${nodeName}": ${issue}`);
+
+    const report: DiagnosticReport = {
+      nodeId,
+      nodeName,
+      nodeType,
+      issues: [issue],
+      expectedProps: expected || {},
+      actualProps: actual || {},
+    };
+
+    this.reports.push(report);
+
+    if (issue.includes("fill")) this.missingFills++;
+    if (issue.includes("stroke")) this.missingStrokes++;
+    if (issue.includes("text")) this.missingText++;
+    if (issue.includes("image")) this.missingImages++;
+    if (issue.includes("font")) this.failedFontLoads++;
+  }
+
+  getSummary() {
+    return {
+      totalIssues: this.reports.length,
+      missingFills: this.missingFills,
+      missingStrokes: this.missingStrokes,
+      missingText: this.missingText,
+      missingImages: this.missingImages,
+      failedFontLoads: this.failedFontLoads,
+      reports: this.reports,
+    };
+  }
+}
+
+export const diagnostics = new FigmaImportDiagnostics();
 
 export class NodeBuilder {
   private imageFetchCache = new Map<string, Uint8Array>();
@@ -85,6 +145,8 @@ export class NodeBuilder {
         ["Helvetica Neue", "Helvetica", "Arial", "sans-serif"],
       ],
       ["Roboto", ["Roboto", "Arial", "sans-serif"]],
+      ["YouTube Sans", ["Roboto", "Inter", "Arial", "sans-serif"]],
+      ["YouTube", ["Roboto", "Inter", "Arial", "sans-serif"]],
       ["Open Sans", ["Open Sans", "Arial", "sans-serif"]],
       ["Lato", ["Lato", "Arial", "sans-serif"]],
       ["Montserrat", ["Montserrat", "Arial", "sans-serif"]],
@@ -112,14 +174,20 @@ export class NodeBuilder {
     ];
 
     for (const fontFamily of fallbackChain) {
+      // Expanded font weight style fallback chain for better matching
       const stylesToTry = Array.from(
         new Set([
           requestedStyle,
           "Regular",
           "Normal",
-          "Medium",
-          "Bold",
+          "Thin",
+          "ExtraLight",
           "Light",
+          "Medium",
+          "SemiBold",
+          "Bold",
+          "ExtraBold",
+          "Black",
         ])
       );
 
@@ -365,16 +433,46 @@ export class NodeBuilder {
       const isItalic = (data.textStyle.fontStyle || "")
         .toLowerCase()
         .includes("italic");
-      let fontFamily = data.textStyle.fontFamily;
+
+      // Use fontFamilyStack if available for better font matching
+      const fontFamilyStack = data.textStyle.fontFamilyStack || [
+        data.textStyle.fontFamily,
+      ];
+      let fontFamily = fontFamilyStack[0] || data.textStyle.fontFamily;
       let finalFontStyle = isItalic ? "Italic" : fontStyle;
 
       const originalFontFamily = fontFamily;
-      const fontLoadResult = await this.loadFontWithFallbacks(
-        fontFamily,
-        finalFontStyle
-      );
+
+      // Try fonts from the stack first, then fall back to default chain
+      let fontLoadResult: { family: string; style: string } | null = null;
+      for (const stackFont of fontFamilyStack) {
+        fontLoadResult = await this.loadFontWithFallbacks(
+          stackFont,
+          finalFontStyle
+        );
+        if (fontLoadResult) {
+          fontFamily = fontLoadResult.family;
+          break;
+        }
+      }
+
+      // If stack fonts failed, try the original font with fallback chain
+      if (!fontLoadResult) {
+        fontLoadResult = await this.loadFontWithFallbacks(
+          fontFamily,
+          finalFontStyle
+        );
+      }
 
       if (!fontLoadResult) {
+        diagnostics.logIssue(
+          data.id || "unknown",
+          data.name,
+          "TEXT",
+          `Font loading failed completely for ${originalFontFamily}`,
+          { family: originalFontFamily, style: finalFontStyle },
+          { error: "All fallbacks failed" }
+        );
         console.error(
           `❌ Font loading failed completely for ${originalFontFamily}. Creating rectangle placeholder.`
         );
@@ -531,25 +629,56 @@ export class NodeBuilder {
       }
     }
 
+    // CRITICAL FIX: Don't set position here - let applyPositioning() handle it
+    // Text nodes should use relative positioning like all other nodes
+    // Setting absolute coordinates here bypasses the relative positioning logic
+    // and causes text to appear in wrong positions
+
+    // Only set size here - position will be set by applyPositioning() in afterCreate()
+    const targetWidth =
+      data.renderedMetrics?.width ||
+      data.absoluteLayout?.width ||
+      data.layout.width ||
+      1;
+    const targetHeight =
+      data.renderedMetrics?.height ||
+      data.absoluteLayout?.height ||
+      data.layout.height ||
+      1;
+    text.resize(Math.max(targetWidth, 1), Math.max(targetHeight, 1));
+
+    // Store layout info for applyPositioning() to use
     if (data.absoluteLayout) {
-      text.x = data.absoluteLayout.left;
-      text.y = data.absoluteLayout.top;
-      const targetWidth =
-        data.renderedMetrics?.width || data.absoluteLayout.width || 1;
-      const targetHeight =
-        data.renderedMetrics?.height || data.absoluteLayout.height || 1;
-      text.resize(Math.max(targetWidth, 1), Math.max(targetHeight, 1));
       this.safeSetPluginData(text, "usedAbsoluteLayout", "true");
-    } else {
-      text.x = data.layout.x || 0;
-      text.y = data.layout.y || 0;
-      const targetWidth = data.renderedMetrics?.width || data.layout.width || 1;
-      const targetHeight =
-        data.renderedMetrics?.height || data.layout.height || 1;
-      text.resize(Math.max(targetWidth, 1), Math.max(targetHeight, 1));
     }
 
-    text.characters = characters;
+    // AI Enhancement: Use OCR alternative if available and confidence is high
+    if (data.ocrAlternative && data.ocrConfidence > 0.8 && !characters) {
+      console.log(
+        `✅ [AI] Using OCR alternative text for ${
+          data.name
+        }: "${data.ocrAlternative.substring(0, 50)}"`
+      );
+      text.characters = data.ocrAlternative;
+      this.safeSetPluginData(text, "usedOCRAlternative", "true");
+      this.safeSetPluginData(text, "ocrConfidence", String(data.ocrConfidence));
+    } else {
+      text.characters = characters;
+    }
+
+    // AI Enhancement: Log typography normalization
+    if (data.normalizedToTypeScale && data.originalFontSize) {
+      console.log(
+        `✅ [AI] Using normalized font size: ${data.textStyle.fontSize}px (original: ${data.originalFontSize}px) for ${data.name}`
+      );
+      this.safeSetPluginData(
+        text,
+        "originalFontSize",
+        String(data.originalFontSize)
+      );
+      this.safeSetPluginData(text, "normalizedToTypeScale", "true");
+    }
+
     try {
       text.textAutoResize = text.textAutoResize || "NONE";
     } catch {
@@ -558,6 +687,17 @@ export class NodeBuilder {
 
     if (data.inlineTextSegments && data.inlineTextSegments.length > 0) {
       await this.applyInlineTextSegments(text, data.inlineTextSegments);
+    }
+
+    if (!characters && !data.textContent) {
+      diagnostics.logIssue(
+        data.id || "unknown",
+        data.name,
+        "TEXT",
+        "Text node created with empty characters",
+        { characters: "non-empty string" },
+        { characters: characters }
+      );
     }
 
     console.log(
@@ -674,6 +814,36 @@ export class NodeBuilder {
       playIcon.x = (data.layout.width - playIcon.width) / 2;
       playIcon.y = (data.layout.height - playIcon.height) / 2;
 
+      // AI Enhancement: Add OCR text overlay if available
+      if (data.ocrText && data.hasOCRText && data.ocrConfidence > 0.7) {
+        try {
+          await figma.loadFontAsync({ family: "Inter", style: "Regular" });
+          const ocrTextNode = figma.createText();
+          ocrTextNode.characters = data.ocrText.substring(0, 200); // Limit length
+          ocrTextNode.fontSize =
+            Math.min(data.layout.width, data.layout.height) * 0.05;
+          ocrTextNode.fills = [{ type: "SOLID", color: { r: 1, g: 1, b: 1 } }];
+          ocrTextNode.x = 10;
+          ocrTextNode.y = 10;
+          ocrTextNode.name = "OCR Text Overlay";
+          frame.appendChild(ocrTextNode);
+          this.safeSetPluginData(ocrTextNode, "ocrText", data.ocrText);
+          this.safeSetPluginData(
+            ocrTextNode,
+            "ocrConfidence",
+            String(data.ocrConfidence)
+          );
+          console.log(
+            `✅ [AI] Added OCR text overlay to image: "${data.ocrText.substring(
+              0,
+              50
+            )}"`
+          );
+        } catch (ocrError) {
+          console.warn("⚠️ [AI] Failed to create OCR text overlay:", ocrError);
+        }
+      }
+
       const circle = figma.createEllipse();
       circle.resize(iconSize * 2, iconSize * 2);
       circle.x = (data.layout.width - circle.width) / 2;
@@ -725,12 +895,69 @@ export class NodeBuilder {
     }
 
     if (hash) {
-      const scaleMode = this.mapObjectFitToScaleMode(data.objectFit || "cover");
+      // CRITICAL FIX: Use scaleMode from fills if available, otherwise derive from objectFit
+      let scaleMode: "FILL" | "FIT" | "CROP" | "TILE" = "FILL";
+      if (data.fills && data.fills.length > 0) {
+        const imageFill = data.fills.find((f: any) => f && f.type === "IMAGE");
+        if (imageFill && imageFill.scaleMode) {
+          scaleMode = imageFill.scaleMode;
+        }
+      }
+      if (scaleMode === "FILL" && data.objectFit) {
+        scaleMode = this.mapObjectFitToScaleMode(data.objectFit);
+      }
+
+      // CRITICAL FIX: Get imageTransform from the fill if available
+      const imageFill = data.fills?.find((f: any) => f && f.type === "IMAGE");
       const imagePaint = await this.resolveImagePaint({
         imageHash: hash,
         scaleMode,
+        imageTransform: imageFill?.imageTransform,
+        objectFit: data.objectFit || imageFill?.objectFit,
+        objectPosition: imageFill?.objectPosition,
       });
       rect.fills = [imagePaint];
+    }
+
+    // AI Enhancement: Add OCR text overlay for images with text
+    if (data.ocrText && data.hasOCRText && data.ocrConfidence > 0.7) {
+      try {
+        // Convert rectangle to frame to hold text overlay
+        const frame = figma.createFrame();
+        frame.name = data.name || "Image";
+        frame.resize(rect.width, rect.height);
+        frame.fills = rect.fills;
+        frame.x = rect.x;
+        frame.y = rect.y;
+
+        await figma.loadFontAsync({ family: "Inter", style: "Regular" });
+        const ocrTextNode = figma.createText();
+        ocrTextNode.characters = data.ocrText.substring(0, 200);
+        const fontSize =
+          Math.min(data.layout.width || 100, data.layout.height || 100) * 0.05;
+        ocrTextNode.fontSize = Math.max(fontSize, 12);
+        ocrTextNode.fills = [{ type: "SOLID", color: { r: 1, g: 1, b: 1 } }];
+        ocrTextNode.x = 10;
+        ocrTextNode.y = 10;
+        ocrTextNode.name = "OCR Text Overlay";
+        frame.appendChild(ocrTextNode);
+        this.safeSetPluginData(ocrTextNode, "ocrText", data.ocrText);
+        this.safeSetPluginData(
+          ocrTextNode,
+          "ocrConfidence",
+          String(data.ocrConfidence)
+        );
+        console.log(
+          `✅ [AI] Added OCR text overlay to image: "${data.ocrText.substring(
+            0,
+            50
+          )}"`
+        );
+        return frame;
+      } catch (ocrError) {
+        console.warn("⚠️ [AI] Failed to create OCR text overlay:", ocrError);
+        // Return original rect if overlay fails
+      }
     }
 
     return rect;
@@ -782,7 +1009,46 @@ export class NodeBuilder {
       }
     }
 
-    return this.createRectangle(data);
+    const imageNode = this.createRectangle(data);
+
+    // AI Enhancement: Add OCR text overlay for images with text
+    if (
+      data.ocrText &&
+      data.hasOCRText &&
+      data.ocrConfidence > 0.7 &&
+      imageNode &&
+      "appendChild" in imageNode
+    ) {
+      try {
+        await figma.loadFontAsync({ family: "Inter", style: "Regular" });
+        const ocrTextNode = figma.createText();
+        ocrTextNode.characters = data.ocrText.substring(0, 200);
+        const fontSize =
+          Math.min(data.layout.width || 100, data.layout.height || 100) * 0.05;
+        ocrTextNode.fontSize = Math.max(fontSize, 12);
+        ocrTextNode.fills = [{ type: "SOLID", color: { r: 1, g: 1, b: 1 } }];
+        ocrTextNode.x = 10;
+        ocrTextNode.y = 10;
+        ocrTextNode.name = "OCR Text Overlay";
+        (imageNode as FrameNode).appendChild(ocrTextNode);
+        this.safeSetPluginData(ocrTextNode, "ocrText", data.ocrText);
+        this.safeSetPluginData(
+          ocrTextNode,
+          "ocrConfidence",
+          String(data.ocrConfidence)
+        );
+        console.log(
+          `✅ [AI] Added OCR text overlay to image: "${data.ocrText.substring(
+            0,
+            50
+          )}"`
+        );
+      } catch (ocrError) {
+        console.warn("⚠️ [AI] Failed to create OCR text overlay:", ocrError);
+      }
+    }
+
+    return imageNode;
   }
 
   private async createComponent(data: any): Promise<ComponentNode> {
@@ -1236,107 +1502,283 @@ export class NodeBuilder {
   }
 
   private async applyCommonStyles(node: SceneNode, data: any): Promise<void> {
+    // CRITICAL DEBUG: Log all color-related data for diagnosis
+    const backgroundColorSources = {
+      style: data.style?.backgroundColor,
+      direct: data.backgroundColor,
+      fillColor: data.fillColor,
+      cssVariables: data.cssVariables
+        ? Object.keys(data.cssVariables).length
+        : 0,
+    };
+
     console.log(`🎨 Applying common styles to ${data.name}:`, {
       hasBackgrounds: !!data.backgrounds?.length,
       backgroundsCount: data.backgrounds?.length || 0,
       hasFills: !!data.fills?.length,
       fillsCount: data.fills?.length || 0,
+      fillsPreview: data.fills
+        ?.slice(0, 2)
+        .map((f: any) => ({ type: f.type, color: f.color })),
       hasImageHash: !!data.imageHash,
       nodeType: node.type,
       canHaveFills: "fills" in node,
+      backgroundColorSources,
     });
 
-    if (data.backgrounds?.length && "fills" in node) {
-      console.log(
-        `  ✅ Applying ${data.backgrounds.length} background layers to ${data.name}`
-      );
-      const paints = await this.convertBackgroundLayersAsync(
-        data.backgrounds,
-        data.layout
-      );
+    if ("fills" in node) {
+      const paints: Paint[] = [];
 
-      if (paints.length === 0) {
+      // CRITICAL FIX: Check if this is body/html early - schema is source of truth
+      // If schema says no fills (empty array), respect it exactly
+      const isBodyOrHtml = data.htmlTag === "body" || data.htmlTag === "html";
+
+      // For body/html, skip ALL fill processing - schema explicitly says no fills
+      // The schema is the source of truth - if it says no fills, we should not add any
+      if (isBodyOrHtml) {
         console.log(
-          `  ⚪ Backgrounds existed for ${data.name} but produced no paints (likely transparent).`
+          `  ⚪ [BODY/HTML] Schema says no fills for ${data.name}, skipping all fill/background processing`
         );
         (node as SceneNodeWithGeometry).fills = [];
+        // Skip to the rest of the function (strokes, effects, etc.) - don't process fills
       } else {
-        (node as SceneNodeWithGeometry).fills = paints;
-      }
-    } else if (data.fills && "fills" in node) {
-      console.log(`  ✅ Applying ${data.fills.length} fills to ${data.name}`);
-      const paints = await this.convertFillsAsync(data.fills);
+        // Only process fills if NOT body/html
+        const hasDetailedBackgrounds = (data.backgrounds?.length || 0) > 0;
 
-      if (paints.length === 0) {
-        console.log(
-          `  ⚪ Fills existed for ${data.name} but produced no paints (likely transparent).`
-        );
-        (node as SceneNodeWithGeometry).fills = [];
-      } else {
-        (node as SceneNodeWithGeometry).fills = paints;
-      }
-    } else if (data.imageHash && "fills" in node) {
-      const imageFill = {
-        type: "IMAGE" as const,
-        imageHash: data.imageHash,
-        scaleMode: (data.objectFit
-          ? this.mapObjectFitToScaleMode(data.objectFit)
-          : "FILL") as "FILL" | "FIT" | "CROP" | "TILE",
-        visible: true,
-      };
-
-      const fills: Paint[] = [];
-      const placeholderColor = this.getPlaceholderColor(data);
-      fills.push({
-        type: "SOLID",
-        color: placeholderColor,
-        opacity: 1,
-      } as SolidPaint);
-
-      console.log(
-        `🖼️ Applying image fill for ${data.name} with hash ${data.imageHash}`
-      );
-      fills.push(await this.resolveImagePaint(imageFill));
-
-      (node as SceneNodeWithGeometry).fills = fills;
-    } else if ("fills" in node) {
-      // If this node has no own fills/backgrounds but a descendant carries an IMAGE fill,
-      // promote the first image hash so the frame doesn't render empty.
-      const descendantImageHash = this.findFirstImageHash(data);
-      if (descendantImageHash) {
-        const imageFill = {
-          type: "IMAGE" as const,
-          imageHash: descendantImageHash,
-          scaleMode: "FILL" as const,
-          visible: true,
-        };
-        const placeholderColor = this.getPlaceholderColor(data);
-        const paints: Paint[] = [
-          { type: "SOLID", color: placeholderColor, opacity: 1 } as SolidPaint,
-          await this.resolveImagePaint(imageFill),
-        ];
-        console.log(
-          `🪄 Promoting descendant image hash ${descendantImageHash} to ${data.name}`
-        );
-        (node as SceneNodeWithGeometry).fills = paints;
-      } else {
-        // Try to derive a solid fill from CSS backgroundColor before giving up.
-        const parsedColor =
-          this.parseColorString(data.style?.backgroundColor) ||
-          this.parseColorString(data.backgroundColor) ||
-          this.parseColorString(data.fillColor);
-
-        if (parsedColor) {
+        // 1. Process regular fills (solid colors, gradients, images)
+        if (data.fills?.length) {
           console.log(
-            `  🎨 Derived solid fill for ${data.name} from backgroundColor`
+            `  ✅ Processing ${data.fills.length} fills for ${data.name}`
           );
-          (node as SceneNodeWithGeometry).fills = [
-            { type: "SOLID", color: parsedColor, opacity: 1 } as SolidPaint,
-          ];
+          const fillPaints = await this.convertFillsAsync(data.fills);
+
+          // BUGFIX: Only filter IMAGE fills if we actually have background layers AND they contain images.
+          // If backgrounds array exists but is empty or has no images, keep IMAGE fills from fills array.
+          const hasImageBackgrounds =
+            hasDetailedBackgrounds &&
+            data.backgrounds.some(
+              (bg: any) =>
+                bg?.type === "IMAGE" ||
+                bg?.fill?.type === "IMAGE" ||
+                bg?.imageHash
+            );
+
+          // If we have detailed image backgrounds, prefer those over generic IMAGE fills in `fills`.
+          // Otherwise, keep all fills (including IMAGE fills).
+          const filteredFills = fillPaints.filter(
+            (p) => !hasImageBackgrounds || p.type !== "IMAGE"
+          );
+          paints.push(...filteredFills);
+
+          // CRITICAL FIX: If fills were in schema but convertFillsAsync returned nothing,
+          // try fallback immediately (don't wait for all other checks to fail)
+          if (fillPaints.length === 0 && data.fills.length > 0) {
+            console.warn(
+              `  ⚠️ [FILL] ${data.fills.length} fills in schema but convertFillsAsync returned 0 paints for ${data.name}`
+            );
+            // Try fallback color extraction from multiple sources
+            let fallbackColor =
+              this.parseColorString(data.style?.backgroundColor) ||
+              this.parseColorString(data.backgroundColor) ||
+              this.parseColorString(data.fillColor);
+
+            // If still no color, try getPlaceholderColor
+            if (!fallbackColor) {
+              const placeholderColor = this.getPlaceholderColor(data);
+              const isDefaultGrey =
+                Math.abs(placeholderColor.r - 0.92) < 0.01 &&
+                Math.abs(placeholderColor.g - 0.92) < 0.01 &&
+                Math.abs(placeholderColor.b - 0.92) < 0.01;
+              if (!isDefaultGrey) {
+                fallbackColor = placeholderColor;
+              }
+            }
+
+            if (fallbackColor) {
+              console.log(
+                `  🎨 [FALLBACK] Using backgroundColor fallback for ${data.name}:`,
+                fallbackColor
+              );
+              paints.push({
+                type: "SOLID",
+                color: fallbackColor,
+                opacity: 1,
+                visible: true,
+              } as SolidPaint);
+            } else {
+              console.warn(
+                `  ⚠️ [FILL] No fallback color found for ${data.name} after convertFillsAsync failed`
+              );
+            }
+          }
+        }
+
+        // 2. Process detailed background layers (usually images with specific positioning)
+        if (hasDetailedBackgrounds) {
+          console.log(
+            `  ✅ Processing ${data.backgrounds.length} detailed background layers`
+          );
+          const bgPaints = await this.convertBackgroundLayersAsync(
+            data.backgrounds,
+            data.layout
+          );
+          paints.push(...bgPaints);
+        }
+
+        // 3. Handle primary image content (e.g. <img> src), effectively a top-layer "fill"
+        if (data.imageHash) {
+          console.log(`  🖼️ Processing primary image hash for ${data.name}`);
+          const imageFill = {
+            type: "IMAGE" as const,
+            imageHash: data.imageHash,
+            scaleMode: (data.objectFit
+              ? this.mapObjectFitToScaleMode(data.objectFit)
+              : "FILL") as "FILL" | "FIT" | "CROP" | "TILE",
+            visible: true,
+          };
+
+          // If no other fills exist yet, add a placeholder color behind the image
+          if (paints.length === 0) {
+            const placeholderColor = this.getPlaceholderColor(data);
+            paints.push({
+              type: "SOLID",
+              color: placeholderColor,
+              opacity: 1,
+              visible: true,
+            } as SolidPaint);
+          }
+
+          paints.push(await this.resolveImagePaint(imageFill));
+        }
+
+        // 4. Fallback: If still no paints, try promotion or singular color derivation
+        // Note: body/html nodes are already handled above and skip all fill processing
+        if (paints.length === 0) {
+          const descendantImageHash = this.findFirstImageHash(data);
+          if (descendantImageHash) {
+            console.log(
+              `  🪄 Promoting descendant image hash ${descendantImageHash} to ${data.name}`
+            );
+            const placeholderColor = this.getPlaceholderColor(data);
+            paints.push({
+              type: "SOLID",
+              color: placeholderColor,
+              opacity: 1,
+            } as SolidPaint);
+
+            const imageFill = {
+              type: "IMAGE" as const,
+              imageHash: descendantImageHash,
+              scaleMode: "FILL" as const,
+              visible: true,
+            };
+            paints.push(await this.resolveImagePaint(imageFill));
+          } else {
+            // CRITICAL FIX: ALWAYS try to derive a solid fill from CSS backgroundColor
+            // This is the most important fallback - many nodes rely on this
+            // Try multiple sources in order of preference
+            let parsedColor =
+              this.parseColorString(data.style?.backgroundColor) ||
+              this.parseColorString(data.backgroundColor) ||
+              this.parseColorString(data.fillColor);
+
+            // If no color found, try getPlaceholderColor which checks CSS variables and other sources
+            if (!parsedColor) {
+              const placeholderColor = this.getPlaceholderColor(data);
+              const isDefaultGrey =
+                Math.abs(placeholderColor.r - 0.92) < 0.01 &&
+                Math.abs(placeholderColor.g - 0.92) < 0.01 &&
+                Math.abs(placeholderColor.b - 0.92) < 0.01;
+
+              // Only use placeholder if it's not the default grey (meaning it found an actual color)
+              if (!isDefaultGrey) {
+                parsedColor = placeholderColor;
+                console.log(
+                  `  🎨 Using placeholder color for ${data.name} (extracted from CSS variables/data)`
+                );
+              }
+            }
+
+            if (parsedColor) {
+              console.log(
+                `  🎨 Derived solid fill for ${data.name} from backgroundColor (fallback):`,
+                {
+                  source: data.style?.backgroundColor
+                    ? "style.backgroundColor"
+                    : data.backgroundColor
+                    ? "backgroundColor"
+                    : data.fillColor
+                    ? "fillColor"
+                    : "placeholder/getPlaceholderColor",
+                  color: parsedColor,
+                }
+              );
+              paints.push({
+                type: "SOLID",
+                color: parsedColor,
+                opacity: 1,
+                visible: true,
+              } as SolidPaint);
+            } else {
+              // Last resort: Log that we couldn't find any color
+              console.warn(
+                `  ⚠️ [FILL] No color found for ${data.name} - node will be transparent`,
+                {
+                  hasStyle: !!data.style,
+                  styleBg: data.style?.backgroundColor,
+                  directBg: data.backgroundColor,
+                  fillColor: data.fillColor,
+                  cssVariables: data.cssVariables
+                    ? Object.keys(data.cssVariables).length
+                    : 0,
+                }
+              );
+            }
+          }
+        }
+
+        // Final assignment (only for non-body/html nodes)
+        if (paints.length > 0) {
+          (node as SceneNodeWithGeometry).fills = paints;
+          console.log(
+            `  ✅ Applied ${paints.length} fill(s) to ${data.name}:`,
+            paints.map((p) => ({
+              type: p.type,
+              color: p.type === "SOLID" ? (p as SolidPaint).color : undefined,
+              opacity: p.opacity,
+            }))
+          );
+
+          // CRITICAL DEBUG: Verify fills were actually set
+          const verifyFills = (node as SceneNodeWithGeometry).fills;
+          if (!verifyFills || verifyFills.length === 0) {
+            console.error(
+              `  ❌ [CRITICAL] Fills were set but node.fills is now empty for ${data.name}!`
+            );
+          }
         } else {
-          console.log(
-            `  ⚪ No fills/backgrounds for ${data.name}, setting transparent`
-          );
+          // CRITICAL FIX: Check if we should have had fills but didn't get any
+          const hadFillsInSchema = data.fills && data.fills.length > 0;
+          const hadBackgrounds =
+            data.backgrounds && data.backgrounds.length > 0;
+          const hadImageHash = !!data.imageHash;
+
+          if (hadFillsInSchema || hadBackgrounds || hadImageHash) {
+            console.warn(
+              `  ⚠️ [FILL WARNING] ${data.name} had fills/backgrounds in schema but none were applied:`,
+              {
+                fillsCount: data.fills?.length || 0,
+                backgroundsCount: data.backgrounds?.length || 0,
+                hasImageHash: !!data.imageHash,
+                backgroundColor:
+                  data.style?.backgroundColor || data.backgroundColor,
+              }
+            );
+          } else {
+            console.log(
+              `  ⚪ No fills/backgrounds produced for ${data.name}, setting transparent`
+            );
+          }
           (node as SceneNodeWithGeometry).fills = [];
         }
       }
@@ -1984,11 +2426,45 @@ export class NodeBuilder {
     for (const fill of fills) {
       if (!fill) continue;
 
+      // Debug: Log exactly what each fill looks like (only in debug mode to reduce noise)
+      if (this.options?.enableDebugMode) {
+        console.log(
+          `🎨 [FILL DEBUG] Processing fill:`,
+          JSON.stringify(fill, null, 2)
+        );
+      }
+
       if (fill.type === "SOLID" && fill.color) {
-        const { r, g, b } = fill.color;
-        const opacity =
-          fill.opacity !== undefined ? fill.opacity : fill.color.a ?? 1;
-        if (opacity <= 0) {
+        // Sanitize color values to prevent NaN/undefined/out-of-range issues
+        const sanitizeColorComponent = (v: any): number => {
+          if (v === undefined || v === null || !isFinite(v)) return 0;
+          return Math.max(0, Math.min(1, v));
+        };
+        const sanitizeOpacity = (v: any): number => {
+          if (v === undefined || v === null || !isFinite(v)) return 1;
+          return Math.max(0, Math.min(1, v));
+        };
+
+        const r = sanitizeColorComponent(fill.color.r);
+        const g = sanitizeColorComponent(fill.color.g);
+        const b = sanitizeColorComponent(fill.color.b);
+        const opacity = sanitizeOpacity(
+          fill.opacity !== undefined ? fill.opacity : fill.color.a ?? 1
+        );
+
+        // CRITICAL FIX: Only skip if opacity is exactly 0 or very close to 0
+        // Very low opacity colors (like 0.01) should still be applied
+        if (opacity <= 0.001) {
+          if (this.options?.enableDebugMode) {
+            console.log(
+              `⚠️ [FILL DEBUG] Skipping fill with opacity=${opacity}:`,
+              {
+                color: { r, g, b },
+                fillOpacity: fill.opacity,
+                colorA: fill.color.a,
+              }
+            );
+          }
           continue;
         }
 
@@ -2046,6 +2522,29 @@ export class NodeBuilder {
       if (fill.type === "IMAGE") {
         paints.push(await this.resolveImagePaint(fill));
         continue;
+      }
+
+      // Catch-all: Log unhandled fill types
+      console.warn(`⚠️ [FILL DEBUG] Unhandled fill type: "${fill.type}"`, fill);
+    }
+
+    if (fills.length > 0 && paints.length === 0) {
+      const validFills = fills.filter(
+        (f) =>
+          f && f.visible !== false && (f.opacity === undefined || f.opacity > 0)
+      );
+      if (validFills.length > 0) {
+        console.warn(
+          `⚠️ [FIGMA IMPORT] ${fills.length} fills processed but 0 resulted in paints.`
+        );
+        diagnostics.logIssue(
+          context?.tokenId || "unknown",
+          "unknown",
+          "FILLS",
+          `${fills.length} fills processed but 0 resulted in paints`,
+          { validFillsCount: validFills.length },
+          { paintsCount: 0 }
+        );
       }
     }
 
@@ -2186,7 +2685,6 @@ export class NodeBuilder {
       );
       return {
         type: "SOLID",
-        color: { r: 1, g: 0, b: 0 },
         opacity: 0.5,
       } as SolidPaint;
     }
@@ -2194,14 +2692,34 @@ export class NodeBuilder {
     // Check if we already have a Figma image hash cached
     if (this.imagePaintCache.has(hash)) {
       console.log(`  ✅ Using cached Figma image hash for ${hash}`);
-      return {
+      // CRITICAL FIX: Include imageTransform in cached paint if provided
+      let scaleMode = fill.scaleMode || "FILL";
+      if (fill.objectFit) {
+        scaleMode = this.mapObjectFitToScaleMode(fill.objectFit);
+      }
+      const paint: ImagePaint = {
         type: "IMAGE",
         imageHash: this.imagePaintCache.get(hash)!,
-        scaleMode: fill.scaleMode || "FILL",
+        scaleMode,
+        visible: fill.visible !== false,
       };
+      // Add imageTransform if provided
+      if (fill.imageTransform) {
+        paint.imageTransform = fill.imageTransform;
+      } else if (
+        fill.objectPosition &&
+        fill.objectPosition !== "center center" &&
+        fill.objectPosition !== "50% 50%"
+      ) {
+        paint.imageTransform = this.parseObjectPositionToTransform(
+          fill.objectPosition
+        );
+      }
+      return paint;
     }
 
     let image: Image | null = null;
+    let failureReason = "unknown";
 
     // 1. Try to find in assets
     if (this.assets?.images?.[hash]) {
@@ -2221,6 +2739,58 @@ export class NodeBuilder {
         `  📂 Available image hashes:`,
         Object.keys(this.assets?.images || {}).slice(0, 5)
       );
+
+      // Strategy 2: Try normalized hash (remove prefixes)
+      const normalizedHash = hash?.replace(/^(image:|img_)/, "");
+      if (normalizedHash && this.assets?.images?.[normalizedHash]) {
+        console.log(`  🔍 Trying normalized hash: ${normalizedHash}`);
+        try {
+          const asset = this.assets.images[normalizedHash];
+          image = await this.createFigmaImageFromAsset(asset, normalizedHash);
+          console.log(`  ✅ Successfully created image from normalized hash`);
+        } catch (e) {
+          console.warn(`  ⚠️ Normalized hash also failed`, e);
+        }
+      }
+
+      // Strategy 3: Case-insensitive lookup
+      if (!image && this.assets?.images) {
+        const lowerHash = hash?.toLowerCase();
+        for (const [key, value] of Object.entries(this.assets.images)) {
+          if (key.toLowerCase() === lowerHash) {
+            console.log(`  🔍 Found case-insensitive match: ${key}`);
+            try {
+              image = await this.createFigmaImageFromAsset(value, key);
+              console.log(
+                `  ✅ Successfully created image from case-insensitive match`
+              );
+              break;
+            } catch (e) {
+              console.warn(`  ⚠️ Case-insensitive match also failed`, e);
+            }
+          }
+        }
+      }
+    }
+
+    // Strategy 4: Try fill.url if present
+    if (!image && fill.url && fill.url !== hash) {
+      try {
+        console.log(
+          `🌐 [FIGMA] Attempting to fetch image from fill.url: ${fill.url}`
+        );
+        const response = await fetch(fill.url);
+        if (response.ok) {
+          const blob = await response.blob();
+          const buffer = await blob.arrayBuffer();
+          console.log(
+            `  ✅ Got buffer from fill.url, size: ${buffer.byteLength}`
+          );
+          image = figma.createImage(new Uint8Array(buffer));
+        }
+      } catch (e) {
+        console.warn(`  ❌ Failed to fetch from fill.url`, e);
+      }
     }
 
     // 2. If not in assets, and hash looks like a URL, try to fetch it
@@ -2246,6 +2816,14 @@ export class NodeBuilder {
       console.error(
         `❌ resolveImagePaint: Image hash "${hash}" not found in assets and fetch failed`
       );
+      diagnostics.logIssue(
+        "unknown",
+        "unknown",
+        "IMAGE",
+        `Image hash "${hash}" not found in assets and fetch failed`,
+        { hash, url: hash.startsWith("http") ? hash : undefined },
+        { result: "fallback to solid" }
+      );
       return {
         type: "SOLID",
         color: { r: 0.8, g: 0.8, b: 0.8 },
@@ -2261,17 +2839,26 @@ export class NodeBuilder {
       scaleMode = this.mapObjectFitToScaleMode(fill.objectFit);
     }
 
+    // CRITICAL FIX: Use imageTransform from fill if provided, otherwise calculate from objectPosition
+    let imageTransform: Transform2D | undefined = undefined;
+    if (fill.imageTransform) {
+      // Use the pre-calculated transform from the schema
+      imageTransform = fill.imageTransform;
+    } else if (
+      fill.objectPosition &&
+      fill.objectPosition !== "center center" &&
+      fill.objectPosition !== "50% 50%"
+    ) {
+      // Calculate transform from objectPosition if not already provided
+      imageTransform = this.parseObjectPositionToTransform(fill.objectPosition);
+    }
+
     const imagePaint: ImagePaint = {
       type: "IMAGE",
       imageHash: image.hash,
       scaleMode,
       visible: fill.visible !== false,
-      ...(fill.objectPosition &&
-        fill.objectPosition !== "center center" && {
-          imageTransform: this.parseObjectPositionToTransform(
-            fill.objectPosition
-          ),
-        }),
+      ...(imageTransform && { imageTransform }),
     };
 
     return imagePaint;
@@ -2602,10 +3189,35 @@ export class NodeBuilder {
       }
     }
 
+    // CRITICAL FIX: Actually parse and return the background color if it exists
+    // Check multiple sources: style.backgroundColor, backgroundColor, fillColor, cssVariables
     const bg =
-      data?.style?.backgroundColor || data?.backgroundColor || data?.fillColor;
+      data?.style?.backgroundColor ||
+      data?.backgroundColor ||
+      data?.fillColor ||
+      (data?.cssVariables &&
+        Object.values(data.cssVariables).find(
+          (v: any) =>
+            typeof v === "string" &&
+            (v.includes("rgb") || v.includes("#") || v.includes("hsl"))
+        ));
+
     if (bg && typeof bg === "string") {
-      return defaultColor;
+      const parsedColor = this.parseColorString(bg);
+      if (parsedColor) {
+        console.log(
+          `  🎨 [getPlaceholderColor] Extracted color from ${data.name}:`,
+          {
+            source: data.style?.backgroundColor
+              ? "style"
+              : data.backgroundColor
+              ? "direct"
+              : "cssVariable",
+            color: bg,
+          }
+        );
+        return { r: parsedColor.r, g: parsedColor.g, b: parsedColor.b };
+      }
     }
 
     return defaultColor;
@@ -2641,8 +3253,21 @@ export class NodeBuilder {
   private parseColorString(value?: string): RGB | undefined {
     if (!value || typeof value !== "string") return undefined;
 
-    const hex = value.trim();
-    const hexMatch = /^#([0-9a-fA-F]{3,8})$/.exec(hex);
+    const trimmed = value.trim();
+    const lower = trimmed.toLowerCase();
+
+    // Handle transparent/empty - return undefined (no color)
+    if (
+      lower === "transparent" ||
+      lower === "rgba(0, 0, 0, 0)" ||
+      lower === "rgba(0,0,0,0)" ||
+      trimmed === ""
+    ) {
+      return undefined;
+    }
+
+    // Handle hex colors (#rgb, #rrggbb, #rrggbbaa)
+    const hexMatch = /^#([0-9a-fA-F]{3,8})$/.exec(trimmed);
     if (hexMatch) {
       const h = hexMatch[1];
       if (h.length === 3) {
@@ -2660,9 +3285,10 @@ export class NodeBuilder {
       }
     }
 
+    // Handle rgb/rgba - more flexible regex to handle spaces
     const rgbMatch =
-      /^rgba?\\((\\d{1,3})\\s*,\\s*(\\d{1,3})\\s*,\\s*(\\d{1,3})(?:\\s*,\\s*(\\d*\\.?\\d+))?\\)$/i.exec(
-        hex
+      /^rgba?\(\s*(\d{1,3})\s*,\s*(\d{1,3})\s*,\s*(\d{1,3})(?:\s*,\s*(\d*\.?\d+))?\s*\)$/i.exec(
+        trimmed
       );
     if (rgbMatch) {
       const r = Math.min(255, parseInt(rgbMatch[1], 10)) / 255;
@@ -2671,8 +3297,86 @@ export class NodeBuilder {
       const a = rgbMatch[4]
         ? Math.max(0, Math.min(1, parseFloat(rgbMatch[4])))
         : 1;
-      if (a <= 0) return undefined;
+      // CRITICAL FIX: Only skip if alpha is exactly 0 or very close to 0
+      // Very low opacity colors should still be applied
+      if (a <= 0.001) return undefined;
       return { r, g, b };
+    }
+
+    // Handle hsl/hsla (convert to rgb)
+    const hslMatch =
+      /^hsla?\(\s*(\d+)\s*,\s*(\d+)%\s*,\s*(\d+)%(?:\s*,\s*(\d*\.?\d+))?\s*\)$/i.exec(
+        trimmed
+      );
+    if (hslMatch) {
+      const h = parseInt(hslMatch[1], 10) / 360;
+      const s = parseInt(hslMatch[2], 10) / 100;
+      const l = parseInt(hslMatch[3], 10) / 100;
+      const a = hslMatch[4]
+        ? Math.max(0, Math.min(1, parseFloat(hslMatch[4])))
+        : 1;
+      if (a <= 0.001) return undefined;
+
+      // Convert HSL to RGB
+      const c = (1 - Math.abs(2 * l - 1)) * s;
+      const x = c * (1 - Math.abs(((h * 6) % 2) - 1));
+      const m = l - c / 2;
+
+      let r = 0,
+        g = 0,
+        b = 0;
+      if (h < 1 / 6) {
+        r = c;
+        g = x;
+        b = 0;
+      } else if (h < 2 / 6) {
+        r = x;
+        g = c;
+        b = 0;
+      } else if (h < 3 / 6) {
+        r = 0;
+        g = c;
+        b = x;
+      } else if (h < 4 / 6) {
+        r = 0;
+        g = x;
+        b = c;
+      } else if (h < 5 / 6) {
+        r = x;
+        g = 0;
+        b = c;
+      } else {
+        r = c;
+        g = 0;
+        b = x;
+      }
+
+      return {
+        r: Math.max(0, Math.min(1, r + m)),
+        g: Math.max(0, Math.min(1, g + m)),
+        b: Math.max(0, Math.min(1, b + m)),
+      };
+    }
+
+    // Handle named colors (common CSS color names)
+    const namedColors: Record<string, RGB> = {
+      black: { r: 0, g: 0, b: 0 },
+      white: { r: 1, g: 1, b: 1 },
+      red: { r: 1, g: 0, b: 0 },
+      green: { r: 0, g: 0.5, b: 0 },
+      blue: { r: 0, g: 0, b: 1 },
+      yellow: { r: 1, g: 1, b: 0 },
+      cyan: { r: 0, g: 1, b: 1 },
+      magenta: { r: 1, g: 0, b: 1 },
+      gray: { r: 0.5, g: 0.5, b: 0.5 },
+      grey: { r: 0.5, g: 0.5, b: 0.5 },
+      orange: { r: 1, g: 0.65, b: 0 },
+      pink: { r: 1, g: 0.75, b: 0.8 },
+      purple: { r: 0.5, g: 0, b: 0.5 },
+      brown: { r: 0.65, g: 0.16, b: 0.16 },
+    };
+    if (namedColors[lower]) {
+      return namedColors[lower];
     }
 
     return undefined;
