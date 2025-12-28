@@ -4,7 +4,7 @@ Convert any website directly into pixel-perfect, editable Figma designs with Aut
 
 ## ⚡ **Quick Start: URL to Figma in 3 Steps**
 
-### **Step 1: Load the Plugin**
+### **Step 1: Load the Plugin
 1. Open **Figma Desktop**
 2. Go to **Plugins → Development → Import plugin from manifest**
 3. Select `figma-plugin/manifest.json`
