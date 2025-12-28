@@ -1,7 +1,38 @@
+/**
+ * Schema for Auto Layout configuration with pixel-perfect validation
+ */
+export type SchemaAutoLayout = null | {
+  mode: "HORIZONTAL" | "VERTICAL";
+  wrap: boolean;
+  primaryAxisSizingMode: "FIXED" | "AUTO";
+  counterAxisSizingMode: "FIXED" | "AUTO";
+  padding: { top: number; right: number; bottom: number; left: number };
+  itemSpacing: number;
+  alignItems: "MIN" | "CENTER" | "MAX" | "BASELINE" | "SPACE_BETWEEN";
+  justifyContent: "MIN" | "CENTER" | "MAX" | "SPACE_BETWEEN";
+  layoutGrow?: number; // for children
+  layoutAlign?: "STRETCH" | "INHERIT";
+  // crucial: validation gate
+  validation: {
+    safe: boolean;
+    tolerancePx: number;
+    maxChildDeltaPx: number;
+    avgChildDeltaPx: number;
+    reasons: string[]; // if unsafe
+  };
+  evidence: {
+    display: string;
+    flexDirection?: string;
+    gap?: number;
+    childCount: number;
+    usedMainAxis: "x" | "y";
+  };
+};
+
 export interface WebToFigmaSchema {
   version: string;
   metadata: PageMetadata;
-  tree: ElementNode;
+  root: ElementNode;
   assets: AssetRegistry;
   styles: StyleRegistry;
   components?: ComponentRegistry;
@@ -22,6 +53,13 @@ export interface WebToFigmaSchema {
   typography?: TypographyAnalysis;
   mlComponents?: MLComponentDetections;
   spacingScale?: SpacingScaleAnalysis;
+
+  // ENHANCED: Automatic hover state capture for buttons
+  hoverStates?: Array<{
+    id: string;
+    default: Record<string, string>;
+    hover: Record<string, string>;
+  }>;
 }
 
 export interface AssetOptimizationReport {
@@ -67,6 +105,14 @@ export interface PageMetadata {
   };
   fonts: FontDefinition[];
   breakpoint?: "mobile" | "tablet" | "desktop";
+  colorScheme?: "light" | "dark" | "no-preference";
+  colorSchemeDetection?: {
+    prefersColorScheme: "light" | "dark" | "no-preference";
+    documentColorScheme?: string;
+    metaColorScheme?: string;
+    rootBackgroundLuminance?: number;
+    isDarkMode: boolean;
+  };
   mediaQueries?: Array<{
     query: string;
     type: string;
@@ -77,6 +123,7 @@ export interface PageMetadata {
     width: number;
     height?: number;
   }>;
+  captureEngine?: "puppeteer" | "extension";
   captureOptions?: CaptureOptions;
   extractionSummary?: {
     scrollComplete: boolean;
@@ -85,6 +132,34 @@ export interface PageMetadata {
     visibleElements: number;
     enhancedComponentDetection?: boolean;
     componentDetectionMethod?: string;
+    // Auto Layout Metrics
+    autoLayoutCandidates?: number;
+    autoLayoutAppliedSafe?: number;
+    autoLayoutRejected?: number;
+    topRejectReasons?: Array<{ reason: string; count: number }>;
+    // Performance Metrics (Emergency circuit breakers)
+    performanceMetrics?: {
+      validationCount: number;
+      validationTimeouts: number;
+      skippedDueToChildCount: number;
+      skippedDueToTimeout: number;
+      circuitBreakerActivated: boolean;
+    };
+  };
+  metrics?: {
+    timings: {
+      total: number;
+      analysis: number;
+      execution: number;
+      validation: number;
+      fallback: number;
+    };
+    stats: {
+      complexity: number;
+      elements: number;
+      gaps: number;
+      fallbacks: number;
+    };
   };
   readiness?: any; // readiness telemetry (waiting for stable page)
   alignmentDiagnostics?: {
@@ -112,6 +187,12 @@ export interface PageMetadata {
     mode: string;
   };
   captureMode?: "worker" | "main-thread" | "worker-fallback-main-thread";
+  documentBackgroundColor?: string; // The actual background color of the document/body
+  // Partial extraction metadata (for timeout recovery)
+  extractionStatus?: "complete" | "partial";
+  extractionTimeout?: boolean;
+  extractedNodes?: number;
+  extractionGaps?: Array<{ element: any; parentId: string }>;
 }
 
 export interface CaptureOptions {
@@ -148,11 +229,29 @@ export interface ElementNode {
     width: number;
     height: number;
     rotation?: number;
+    // Size of the element before CSS transforms are applied (used for pixel-perfect matrix/skew transforms).
+    untransformedWidth?: number;
+    untransformedHeight?: number;
     minWidth?: number;
     maxWidth?: number;
     minHeight?: number;
     maxHeight?: number;
     boxSizing?: "border-box" | "content-box";
+
+    // Auto Layout (Phase 1)
+    display?: string;
+    flexDirection?: string;
+    justifyContent?: string;
+    alignItems?: string;
+    alignContent?: string;
+    gap?: string;
+    flexWrap?: string;
+
+    // Child Items
+    flexGrow?: string | number;
+    flexShrink?: string | number;
+    flexBasis?: string;
+    alignSelf?: string;
   };
 
   absoluteLayout?: {
@@ -192,22 +291,7 @@ export interface ElementNode {
 
   hasOverlappingElements?: boolean;
 
-  autoLayout?: {
-    layoutMode: "HORIZONTAL" | "VERTICAL" | "NONE";
-    primaryAxisAlignItems: "MIN" | "CENTER" | "MAX" | "SPACE_BETWEEN";
-    counterAxisAlignItems: "MIN" | "CENTER" | "MAX" | "STRETCH";
-    primaryAxisSizingMode?: "FIXED" | "AUTO";
-    counterAxisSizingMode?: "FIXED" | "AUTO";
-    layoutWrap?: "NO_WRAP" | "WRAP";
-    counterAxisSpacing?: number;
-    paddingTop: number;
-    paddingRight: number;
-    paddingBottom: number;
-    paddingLeft: number;
-    itemSpacing: number;
-    layoutGrow?: number;
-    layoutAlign?: "STRETCH" | "INHERIT";
-  };
+  autoLayout?: SchemaAutoLayout;
 
   layoutContext?: {
     display?: string;
@@ -256,6 +340,45 @@ export interface ElementNode {
     padding?: string;
   };
 
+  // CRITICAL: Responsive styles per breakpoint (Builder.io compatibility)
+  // Captures different CSS styles for different viewport sizes
+  responsiveStyles?: {
+    [breakpoint: string]: {
+      [cssProperty: string]: string | number;
+    };
+  };
+
+  // CRITICAL: Component abstraction for common elements (Builder.io compatibility)
+  // Simplifies schema by using component system for Text, Image, etc.
+  component?: {
+    name: string;
+    options: Record<string, any>;
+  };
+
+  // Interactive element detection for prototype frame creation
+  isInteractive?: boolean;
+  interactionType?:
+    | "button"
+    | "link"
+    | "dropdown"
+    | "input"
+    | "textarea"
+    | "checkbox"
+    | "radio"
+    | "accordion"
+    | "tab"
+    | "menu"
+    | "modal"
+    | "interactive";
+  interactionMetadata?: {
+    tagName?: string;
+    role?: string | null;
+    href?: string | null;
+    type?: string | null;
+    hasOnClick?: boolean;
+    tabIndex?: string | null;
+  };
+
   gridLayout?: GridLayoutData;
 
   gridChild?: GridChildData;
@@ -264,20 +387,32 @@ export interface ElementNode {
   strokes?: Stroke[];
   strokeWeight?: number;
   strokeAlign?: "INSIDE" | "OUTSIDE" | "CENTER";
+  borderSides?: {
+    top?: BorderSide;
+    right?: BorderSide;
+    bottom?: BorderSide;
+    left?: BorderSide;
+  };
   effects?: Effect[];
   cornerRadius?: CornerRadius | number;
   opacity?: number;
   blendMode?: BlendMode;
   mixBlendMode?: BlendMode;
+  backgroundBlendMode?: BlendMode;
 
   characters?: string;
   textStyle?: TextStyle;
+  textAutoResize?: "WIDTH_AND_HEIGHT" | "HEIGHT" | "NONE";
 
   vectorData?: {
     svgPath: string;
     svgCode: string;
     fills: Fill[];
   };
+
+  // SVG-specific fields captured by DOM extractor
+  svgContent?: string; // Serialized SVG markup from XMLSerializer
+  svgBaseUrl?: string; // Base URL for resolving relative references in SVG
 
   imageHash?: string;
   imageAssetId?: string; // REQUIRED when type === "IMAGE"
@@ -375,6 +510,39 @@ export interface ElementNode {
   // Text Content
   inlineTextSegments?: InlineTextSegment[]; // REQUIRED for complex text
   domTextNodeIds?: string[]; // underlying DOM node IDs that were merged into this block
+
+  // Enhanced Positioning (Fidelity V2)
+  boundingBox?: {
+    x: number; // Document space
+    y: number;
+    width: number;
+    height: number;
+    viewportX: number; // Viewport space (for fixed)
+    viewportY: number;
+    hasTransform: boolean;
+  };
+
+  computedPosition?: {
+    position: "static" | "relative" | "absolute" | "fixed" | "sticky";
+    transform: string | null;
+    zIndex: number;
+  };
+
+  viewport?: {
+    scrollX: number;
+    scrollY: number;
+    devicePixelRatio: number;
+  };
+
+  // AI-Assisted Fallback Diagnostics
+  mlUIType?: string;
+  mlConfidence?: number;
+}
+
+export interface BorderSide {
+  width: number;
+  style: string;
+  color?: RGBA;
 }
 
 export interface InteractionData {
@@ -398,18 +566,20 @@ export interface InlineTextSegment {
 }
 
 export interface Fill {
-  type: "SOLID" | "GRADIENT_LINEAR" | "GRADIENT_RADIAL" | "IMAGE";
+  type: "SOLID" | "GRADIENT_LINEAR" | "GRADIENT_RADIAL" | "IMAGE" | "SVG";
   visible?: boolean;
   opacity?: number;
   color?: RGBA;
   gradientStops?: GradientStop[];
   gradientTransform?: Transform2D;
   imageHash?: string;
+  svgRef?: string; // Reference to SVG asset ID for vector fills
   scaleMode?: "FILL" | "FIT" | "CROP" | "TILE";
   imageTransform?: Transform2D;
   rotation?: number;
   objectFit?: "fill" | "contain" | "cover" | "none" | "scale-down";
   objectPosition?: string;
+  blendMode?: BlendMode;
 }
 
 export interface GradientStop {
@@ -464,6 +634,7 @@ export interface TextStyle {
   textRendering?: string;
   wordSpacing?: number;
   textIndent?: number;
+  blendMode?: BlendMode;
 }
 
 export interface CornerRadius {
@@ -520,10 +691,13 @@ export interface ImageAssetPartial {
 }
 
 export interface SVGAsset {
+  id: string; // Canonical ID, matches ElementNode.vectorData.svgRef
   hash: string;
   svgCode: string;
   width: number;
   height: number;
+  url?: string; // Original URL if external SVG
+  contentType?: string; // "image/svg+xml"
 }
 
 export interface GradientAsset {
@@ -811,6 +985,9 @@ export interface FilterData {
     | "grayscale"
     | "hueRotate"
     | "invert"
+    | "plugin"
+    | "capture"
+    | "fallback"
     | "opacity"
     | "saturate"
     | "sepia";

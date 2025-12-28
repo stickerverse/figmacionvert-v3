@@ -1,0 +1,2416 @@
+{
+  "startUrl": "https://developers.figma.com/docs/plugins/api/api-reference/",
+  "scopes": [
+    "https://developers.figma.com/docs/plugins/api/"
+  ],
+  "totalPages": 401,
+  "generatedAt": "2025-12-22T03:30:59.634Z",
+  "pages": [
+    {
+      "url": "https://developers.figma.com/docs/plugins/api/api-reference/",
+      "title": "API Reference | Developer Docs",
+      "filePath": "/Users/skirk92/figmacionvert-2/tools/figma-plugin-docpack/out/md/docs__plugins__api__api-reference.md",
+      "linksCount": 8
+    },
+    {
+      "url": "https://developers.figma.com/docs/plugins/api/typings/",
+      "title": "The Typings File | Developer Docs",
+      "filePath": "/Users/skirk92/figmacionvert-2/tools/figma-plugin-docpack/out/md/docs__plugins__api__typings.md",
+      "linksCount": 7
+    },
+    {
+      "url": "https://developers.figma.com/docs/plugins/api/api-errors/",
+      "title": "API Errors | Developer Docs",
+      "filePath": "/Users/skirk92/figmacionvert-2/tools/figma-plugin-docpack/out/md/docs__plugins__api__api-errors.md",
+      "linksCount": 8
+    },
+    {
+      "url": "https://developers.figma.com/docs/plugins/api/nodes/",
+      "title": "Node Types | Developer Docs",
+      "filePath": "/Users/skirk92/figmacionvert-2/tools/figma-plugin-docpack/out/md/docs__plugins__api__nodes.md",
+      "linksCount": 44
+    },
+    {
+      "url": "https://developers.figma.com/docs/plugins/api/global-objects/",
+      "title": "Global Objects | Developer Docs",
+      "filePath": "/Users/skirk92/figmacionvert-2/tools/figma-plugin-docpack/out/md/docs__plugins__api__global-objects.md",
+      "linksCount": 70
+    },
+    {
+      "url": "https://developers.figma.com/docs/plugins/api/data-types/",
+      "title": "Data Types | Developer Docs",
+      "filePath": "/Users/skirk92/figmacionvert-2/tools/figma-plugin-docpack/out/md/docs__plugins__api__data-types.md",
+      "linksCount": 114
+    },
+    {
+      "url": "https://developers.figma.com/docs/plugins/api/figma/",
+      "title": "figma | Developer Docs",
+      "filePath": "/Users/skirk92/figmacionvert-2/tools/figma-plugin-docpack/out/md/docs__plugins__api__figma.md",
+      "linksCount": 120
+    },
+    {
+      "url": "https://developers.figma.com/docs/plugins/api/node-properties/",
+      "title": "Shared Node Properties | Developer Docs",
+      "filePath": "/Users/skirk92/figmacionvert-2/tools/figma-plugin-docpack/out/md/docs__plugins__api__node-properties.md",
+      "linksCount": 196
+    },
+    {
+      "url": "https://developers.figma.com/docs/plugins/api/CodeBlockNode/",
+      "title": "CodeBlockNode | Developer Docs",
+      "filePath": "/Users/skirk92/figmacionvert-2/tools/figma-plugin-docpack/out/md/docs__plugins__api__codeblocknode.md",
+      "linksCount": 79
+    },
+    {
+      "url": "https://developers.figma.com/docs/plugins/api/BooleanOperationNode/",
+      "title": "BooleanOperationNode | Developer Docs",
+      "filePath": "/Users/skirk92/figmacionvert-2/tools/figma-plugin-docpack/out/md/docs__plugins__api__booleanoperationnode.md",
+      "linksCount": 127
+    },
+    {
+      "url": "https://developers.figma.com/docs/plugins/api/ComponentNode/",
+      "title": "ComponentNode | Developer Docs",
+      "filePath": "/Users/skirk92/figmacionvert-2/tools/figma-plugin-docpack/out/md/docs__plugins__api__componentnode.md",
+      "linksCount": 168
+    },
+    {
+      "url": "https://developers.figma.com/docs/plugins/api/InstanceNode/",
+      "title": "InstanceNode | Developer Docs",
+      "filePath": "/Users/skirk92/figmacionvert-2/tools/figma-plugin-docpack/out/md/docs__plugins__api__instancenode.md",
+      "linksCount": 162
+    },
+    {
+      "url": "https://developers.figma.com/docs/plugins/api/ComponentSetNode/",
+      "title": "ComponentSetNode | Developer Docs",
+      "filePath": "/Users/skirk92/figmacionvert-2/tools/figma-plugin-docpack/out/md/docs__plugins__api__componentsetnode.md",
+      "linksCount": 161
+    },
+    {
+      "url": "https://developers.figma.com/docs/plugins/api/ConnectorNode/",
+      "title": "ConnectorNode | Developer Docs",
+      "filePath": "/Users/skirk92/figmacionvert-2/tools/figma-plugin-docpack/out/md/docs__plugins__api__connectornode.md",
+      "linksCount": 92
+    },
+    {
+      "url": "https://developers.figma.com/docs/plugins/api/DocumentNode/",
+      "title": "DocumentNode | Developer Docs",
+      "filePath": "/Users/skirk92/figmacionvert-2/tools/figma-plugin-docpack/out/md/docs__plugins__api__documentnode.md",
+      "linksCount": 66
+    },
+    {
+      "url": "https://developers.figma.com/docs/plugins/api/EllipseNode/",
+      "title": "EllipseNode | Developer Docs",
+      "filePath": "/Users/skirk92/figmacionvert-2/tools/figma-plugin-docpack/out/md/docs__plugins__api__ellipsenode.md",
+      "linksCount": 124
+    },
+    {
+      "url": "https://developers.figma.com/docs/plugins/api/EmbedNode/",
+      "title": "EmbedNode | Developer Docs",
+      "filePath": "/Users/skirk92/figmacionvert-2/tools/figma-plugin-docpack/out/md/docs__plugins__api__embednode.md",
+      "linksCount": 80
+    },
+    {
+      "url": "https://developers.figma.com/docs/plugins/api/FrameNode/",
+      "title": "FrameNode | Developer Docs",
+      "filePath": "/Users/skirk92/figmacionvert-2/tools/figma-plugin-docpack/out/md/docs__plugins__api__framenode.md",
+      "linksCount": 158
+    },
+    {
+      "url": "https://developers.figma.com/docs/plugins/api/GroupNode/",
+      "title": "GroupNode | Developer Docs",
+      "filePath": "/Users/skirk92/figmacionvert-2/tools/figma-plugin-docpack/out/md/docs__plugins__api__groupnode.md",
+      "linksCount": 117
+    },
+    {
+      "url": "https://developers.figma.com/docs/plugins/api/HighlightNode/",
+      "title": "HighlightNode | Developer Docs",
+      "filePath": "/Users/skirk92/figmacionvert-2/tools/figma-plugin-docpack/out/md/docs__plugins__api__highlightnode.md",
+      "linksCount": 123
+    },
+    {
+      "url": "https://developers.figma.com/docs/plugins/api/InteractiveSlideElementNode/",
+      "title": "InteractiveSlideElementNode | Developer Docs",
+      "filePath": "/Users/skirk92/figmacionvert-2/tools/figma-plugin-docpack/out/md/docs__plugins__api__interactiveslideelementnode.md",
+      "linksCount": 79
+    },
+    {
+      "url": "https://developers.figma.com/docs/plugins/api/MediaNode/",
+      "title": "MediaNode | Developer Docs",
+      "filePath": "/Users/skirk92/figmacionvert-2/tools/figma-plugin-docpack/out/md/docs__plugins__api__medianode.md",
+      "linksCount": 82
+    },
+    {
+      "url": "https://developers.figma.com/docs/plugins/api/LinkUnfurlNode/",
+      "title": "LinkUnfurlNode | Developer Docs",
+      "filePath": "/Users/skirk92/figmacionvert-2/tools/figma-plugin-docpack/out/md/docs__plugins__api__linkunfurlnode.md",
+      "linksCount": 80
+    },
+    {
+      "url": "https://developers.figma.com/docs/plugins/api/LineNode/",
+      "title": "LineNode | Developer Docs",
+      "filePath": "/Users/skirk92/figmacionvert-2/tools/figma-plugin-docpack/out/md/docs__plugins__api__linenode.md",
+      "linksCount": 118
+    },
+    {
+      "url": "https://developers.figma.com/docs/plugins/api/PageNode/",
+      "title": "PageNode | Developer Docs",
+      "filePath": "/Users/skirk92/figmacionvert-2/tools/figma-plugin-docpack/out/md/docs__plugins__api__pagenode.md",
+      "linksCount": 88
+    },
+    {
+      "url": "https://developers.figma.com/docs/plugins/api/RemovedNode/",
+      "title": "RemovedNode | Developer Docs",
+      "filePath": "/Users/skirk92/figmacionvert-2/tools/figma-plugin-docpack/out/md/docs__plugins__api__removednode.md",
+      "linksCount": 43
+    },
+    {
+      "url": "https://developers.figma.com/docs/plugins/api/RectangleNode/",
+      "title": "RectangleNode | Developer Docs",
+      "filePath": "/Users/skirk92/figmacionvert-2/tools/figma-plugin-docpack/out/md/docs__plugins__api__rectanglenode.md",
+      "linksCount": 122
+    },
+    {
+      "url": "https://developers.figma.com/docs/plugins/api/PolygonNode/",
+      "title": "PolygonNode | Developer Docs",
+      "filePath": "/Users/skirk92/figmacionvert-2/tools/figma-plugin-docpack/out/md/docs__plugins__api__polygonnode.md",
+      "linksCount": 123
+    },
+    {
+      "url": "https://developers.figma.com/docs/plugins/api/ShapeWithTextNode/",
+      "title": "ShapeWithTextNode | Developer Docs",
+      "filePath": "/Users/skirk92/figmacionvert-2/tools/figma-plugin-docpack/out/md/docs__plugins__api__shapewithtextnode.md",
+      "linksCount": 94
+    },
+    {
+      "url": "https://developers.figma.com/docs/plugins/api/SectionNode/",
+      "title": "SectionNode | Developer Docs",
+      "filePath": "/Users/skirk92/figmacionvert-2/tools/figma-plugin-docpack/out/md/docs__plugins__api__sectionnode.md",
+      "linksCount": 97
+    },
+    {
+      "url": "https://developers.figma.com/docs/plugins/api/SlideGridNode/",
+      "title": "SlideGridNode | Developer Docs",
+      "filePath": "/Users/skirk92/figmacionvert-2/tools/figma-plugin-docpack/out/md/docs__plugins__api__slidegridnode.md",
+      "linksCount": 87
+    },
+    {
+      "url": "https://developers.figma.com/docs/plugins/api/SliceNode/",
+      "title": "SliceNode | Developer Docs",
+      "filePath": "/Users/skirk92/figmacionvert-2/tools/figma-plugin-docpack/out/md/docs__plugins__api__slicenode.md",
+      "linksCount": 98
+    },
+    {
+      "url": "https://developers.figma.com/docs/plugins/api/SlideRowNode/",
+      "title": "SlideRowNode | Developer Docs",
+      "filePath": "/Users/skirk92/figmacionvert-2/tools/figma-plugin-docpack/out/md/docs__plugins__api__sliderownode.md",
+      "linksCount": 88
+    },
+    {
+      "url": "https://developers.figma.com/docs/plugins/api/SlideNode/",
+      "title": "SlideNode | Developer Docs",
+      "filePath": "/Users/skirk92/figmacionvert-2/tools/figma-plugin-docpack/out/md/docs__plugins__api__slidenode.md",
+      "linksCount": 153
+    },
+    {
+      "url": "https://developers.figma.com/docs/plugins/api/StarNode/",
+      "title": "StarNode | Developer Docs",
+      "filePath": "/Users/skirk92/figmacionvert-2/tools/figma-plugin-docpack/out/md/docs__plugins__api__starnode.md",
+      "linksCount": 122
+    },
+    {
+      "url": "https://developers.figma.com/docs/plugins/api/StampNode/",
+      "title": "StampNode | Developer Docs",
+      "filePath": "/Users/skirk92/figmacionvert-2/tools/figma-plugin-docpack/out/md/docs__plugins__api__stampnode.md",
+      "linksCount": 120
+    },
+    {
+      "url": "https://developers.figma.com/docs/plugins/api/StickyNode/",
+      "title": "StickyNode | Developer Docs",
+      "filePath": "/Users/skirk92/figmacionvert-2/tools/figma-plugin-docpack/out/md/docs__plugins__api__stickynode.md",
+      "linksCount": 86
+    },
+    {
+      "url": "https://developers.figma.com/docs/plugins/api/TableCellNode/",
+      "title": "TableCellNode | Developer Docs",
+      "filePath": "/Users/skirk92/figmacionvert-2/tools/figma-plugin-docpack/out/md/docs__plugins__api__tablecellnode.md",
+      "linksCount": 155
+    },
+    {
+      "url": "https://developers.figma.com/docs/plugins/api/TableNode/",
+      "title": "TableNode | Developer Docs",
+      "filePath": "/Users/skirk92/figmacionvert-2/tools/figma-plugin-docpack/out/md/docs__plugins__api__tablenode.md",
+      "linksCount": 94
+    },
+    {
+      "url": "https://developers.figma.com/docs/plugins/api/TextNode/",
+      "title": "TextNode | Developer Docs",
+      "filePath": "/Users/skirk92/figmacionvert-2/tools/figma-plugin-docpack/out/md/docs__plugins__api__textnode.md",
+      "linksCount": 145
+    },
+    {
+      "url": "https://developers.figma.com/docs/plugins/api/TextPathNode/",
+      "title": "TextPathNode | Developer Docs",
+      "filePath": "/Users/skirk92/figmacionvert-2/tools/figma-plugin-docpack/out/md/docs__plugins__api__textpathnode.md",
+      "linksCount": 136
+    },
+    {
+      "url": "https://developers.figma.com/docs/plugins/api/TransformGroupNode/",
+      "title": "TransformGroupNode | Developer Docs",
+      "filePath": "/Users/skirk92/figmacionvert-2/tools/figma-plugin-docpack/out/md/docs__plugins__api__transformgroupnode.md",
+      "linksCount": 116
+    },
+    {
+      "url": "https://developers.figma.com/docs/plugins/api/VectorNode/",
+      "title": "VectorNode | Developer Docs",
+      "filePath": "/Users/skirk92/figmacionvert-2/tools/figma-plugin-docpack/out/md/docs__plugins__api__vectornode.md",
+      "linksCount": 124
+    },
+    {
+      "url": "https://developers.figma.com/docs/plugins/api/WashiTapeNode/",
+      "title": "WashiTapeNode | Developer Docs",
+      "filePath": "/Users/skirk92/figmacionvert-2/tools/figma-plugin-docpack/out/md/docs__plugins__api__washitapenode.md",
+      "linksCount": 117
+    },
+    {
+      "url": "https://developers.figma.com/docs/plugins/api/figma-ui/",
+      "title": "figma.ui | Developer Docs",
+      "filePath": "/Users/skirk92/figmacionvert-2/tools/figma-plugin-docpack/out/md/docs__plugins__api__figma-ui.md",
+      "linksCount": 73
+    },
+    {
+      "url": "https://developers.figma.com/docs/plugins/api/WidgetNode/",
+      "title": "WidgetNode | Developer Docs",
+      "filePath": "/Users/skirk92/figmacionvert-2/tools/figma-plugin-docpack/out/md/docs__plugins__api__widgetnode.md",
+      "linksCount": 81
+    },
+    {
+      "url": "https://developers.figma.com/docs/plugins/api/properties/global-fetch/",
+      "title": "fetch | Developer Docs",
+      "filePath": "/Users/skirk92/figmacionvert-2/tools/figma-plugin-docpack/out/md/docs__plugins__api__properties__global-fetch.md",
+      "linksCount": 69
+    },
+    {
+      "url": "https://developers.figma.com/docs/plugins/api/figma-util/",
+      "title": "figma.util | Developer Docs",
+      "filePath": "/Users/skirk92/figmacionvert-2/tools/figma-plugin-docpack/out/md/docs__plugins__api__figma-util.md",
+      "linksCount": 76
+    },
+    {
+      "url": "https://developers.figma.com/docs/plugins/api/figma-constants/",
+      "title": "figma.constants | Developer Docs",
+      "filePath": "/Users/skirk92/figmacionvert-2/tools/figma-plugin-docpack/out/md/docs__plugins__api__figma-constants.md",
+      "linksCount": 72
+    },
+    {
+      "url": "https://developers.figma.com/docs/plugins/api/figma-timer/",
+      "title": "figma.timer | Developer Docs",
+      "filePath": "/Users/skirk92/figmacionvert-2/tools/figma-plugin-docpack/out/md/docs__plugins__api__figma-timer.md",
+      "linksCount": 70
+    },
+    {
+      "url": "https://developers.figma.com/docs/plugins/api/figma-codegen/",
+      "title": "figma.codegen | Developer Docs",
+      "filePath": "/Users/skirk92/figmacionvert-2/tools/figma-plugin-docpack/out/md/docs__plugins__api__figma-codegen.md",
+      "linksCount": 75
+    },
+    {
+      "url": "https://developers.figma.com/docs/plugins/api/figma-viewport/",
+      "title": "figma.viewport | Developer Docs",
+      "filePath": "/Users/skirk92/figmacionvert-2/tools/figma-plugin-docpack/out/md/docs__plugins__api__figma-viewport.md",
+      "linksCount": 74
+    },
+    {
+      "url": "https://developers.figma.com/docs/plugins/api/figma-clientStorage/",
+      "title": "figma.clientStorage | Developer Docs",
+      "filePath": "/Users/skirk92/figmacionvert-2/tools/figma-plugin-docpack/out/md/docs__plugins__api__figma-clientstorage.md",
+      "linksCount": 71
+    },
+    {
+      "url": "https://developers.figma.com/docs/plugins/api/figma-parameters/",
+      "title": "figma.parameters | Developer Docs",
+      "filePath": "/Users/skirk92/figmacionvert-2/tools/figma-plugin-docpack/out/md/docs__plugins__api__figma-parameters.md",
+      "linksCount": 69
+    },
+    {
+      "url": "https://developers.figma.com/docs/plugins/api/figma-textreview/",
+      "title": "figma.textreview | Developer Docs",
+      "filePath": "/Users/skirk92/figmacionvert-2/tools/figma-plugin-docpack/out/md/docs__plugins__api__figma-textreview.md",
+      "linksCount": 69
+    },
+    {
+      "url": "https://developers.figma.com/docs/plugins/api/figma-payments/",
+      "title": "figma.payments | Developer Docs",
+      "filePath": "/Users/skirk92/figmacionvert-2/tools/figma-plugin-docpack/out/md/docs__plugins__api__figma-payments.md",
+      "linksCount": 69
+    },
+    {
+      "url": "https://developers.figma.com/docs/plugins/api/figma-buzz/",
+      "title": "figma.buzz | Developer Docs",
+      "filePath": "/Users/skirk92/figmacionvert-2/tools/figma-plugin-docpack/out/md/docs__plugins__api__figma-buzz.md",
+      "linksCount": 83
+    },
+    {
+      "url": "https://developers.figma.com/docs/plugins/api/figma-variables/",
+      "title": "figma.variables | Developer Docs",
+      "filePath": "/Users/skirk92/figmacionvert-2/tools/figma-plugin-docpack/out/md/docs__plugins__api__figma-variables.md",
+      "linksCount": 90
+    },
+    {
+      "url": "https://developers.figma.com/docs/plugins/api/figma-annotations/",
+      "title": "figma.annotations | Developer Docs",
+      "filePath": "/Users/skirk92/figmacionvert-2/tools/figma-plugin-docpack/out/md/docs__plugins__api__figma-annotations.md",
+      "linksCount": 74
+    },
+    {
+      "url": "https://developers.figma.com/docs/plugins/api/figma-teamlibrary/",
+      "title": "figma.teamLibrary | Developer Docs",
+      "filePath": "/Users/skirk92/figmacionvert-2/tools/figma-plugin-docpack/out/md/docs__plugins__api__figma-teamlibrary.md",
+      "linksCount": 76
+    },
+    {
+      "url": "https://developers.figma.com/docs/plugins/api/properties/figma-mode/",
+      "title": "mode | Developer Docs",
+      "filePath": "/Users/skirk92/figmacionvert-2/tools/figma-plugin-docpack/out/md/docs__plugins__api__properties__figma-mode.md",
+      "linksCount": 70
+    },
+    {
+      "url": "https://developers.figma.com/docs/plugins/api/properties/figma-skipinvisibleinstancechildren/",
+      "title": "skipInvisibleInstanceChildren | Developer Docs",
+      "filePath": "/Users/skirk92/figmacionvert-2/tools/figma-plugin-docpack/out/md/docs__plugins__api__properties__figma-skipinvisibleinstancechildren.md",
+      "linksCount": 74
+    },
+    {
+      "url": "https://developers.figma.com/docs/plugins/api/properties/figma-closeplugin/",
+      "title": "closePlugin | Developer Docs",
+      "filePath": "/Users/skirk92/figmacionvert-2/tools/figma-plugin-docpack/out/md/docs__plugins__api__properties__figma-closeplugin.md",
+      "linksCount": 69
+    },
+    {
+      "url": "https://developers.figma.com/docs/plugins/api/properties/figma-notify/",
+      "title": "notify | Developer Docs",
+      "filePath": "/Users/skirk92/figmacionvert-2/tools/figma-plugin-docpack/out/md/docs__plugins__api__properties__figma-notify.md",
+      "linksCount": 69
+    },
+    {
+      "url": "https://developers.figma.com/docs/plugins/api/properties/figma-saveversionhistoryasync/",
+      "title": "saveVersionHistoryAsync | Developer Docs",
+      "filePath": "/Users/skirk92/figmacionvert-2/tools/figma-plugin-docpack/out/md/docs__plugins__api__properties__figma-saveversionhistoryasync.md",
+      "linksCount": 69
+    },
+    {
+      "url": "https://developers.figma.com/docs/plugins/api/properties/figma-commitundo/",
+      "title": "commitUndo | Developer Docs",
+      "filePath": "/Users/skirk92/figmacionvert-2/tools/figma-plugin-docpack/out/md/docs__plugins__api__properties__figma-commitundo.md",
+      "linksCount": 69
+    },
+    {
+      "url": "https://developers.figma.com/docs/plugins/api/properties/figma-openexternal/",
+      "title": "openExternal | Developer Docs",
+      "filePath": "/Users/skirk92/figmacionvert-2/tools/figma-plugin-docpack/out/md/docs__plugins__api__properties__figma-openexternal.md",
+      "linksCount": 69
+    },
+    {
+      "url": "https://developers.figma.com/docs/plugins/api/properties/figma-showui/",
+      "title": "showUI | Developer Docs",
+      "filePath": "/Users/skirk92/figmacionvert-2/tools/figma-plugin-docpack/out/md/docs__plugins__api__properties__figma-showui.md",
+      "linksCount": 69
+    },
+    {
+      "url": "https://developers.figma.com/docs/plugins/api/properties/figma-mixed/",
+      "title": "mixed | Developer Docs",
+      "filePath": "/Users/skirk92/figmacionvert-2/tools/figma-plugin-docpack/out/md/docs__plugins__api__properties__figma-mixed.md",
+      "linksCount": 69
+    },
+    {
+      "url": "https://developers.figma.com/docs/plugins/api/properties/figma-off/",
+      "title": "off | Developer Docs",
+      "filePath": "/Users/skirk92/figmacionvert-2/tools/figma-plugin-docpack/out/md/docs__plugins__api__properties__figma-off.md",
+      "linksCount": 77
+    },
+    {
+      "url": "https://developers.figma.com/docs/plugins/api/properties/figma-createrectangle/",
+      "title": "createRectangle | Developer Docs",
+      "filePath": "/Users/skirk92/figmacionvert-2/tools/figma-plugin-docpack/out/md/docs__plugins__api__properties__figma-createrectangle.md",
+      "linksCount": 70
+    },
+    {
+      "url": "https://developers.figma.com/docs/plugins/api/properties/figma-on/",
+      "title": "on | Developer Docs",
+      "filePath": "/Users/skirk92/figmacionvert-2/tools/figma-plugin-docpack/out/md/docs__plugins__api__properties__figma-on.md",
+      "linksCount": 80
+    },
+    {
+      "url": "https://developers.figma.com/docs/plugins/api/properties/figma-createline/",
+      "title": "createLine | Developer Docs",
+      "filePath": "/Users/skirk92/figmacionvert-2/tools/figma-plugin-docpack/out/md/docs__plugins__api__properties__figma-createline.md",
+      "linksCount": 70
+    },
+    {
+      "url": "https://developers.figma.com/docs/plugins/api/properties/figma-createpolygon/",
+      "title": "createPolygon | Developer Docs",
+      "filePath": "/Users/skirk92/figmacionvert-2/tools/figma-plugin-docpack/out/md/docs__plugins__api__properties__figma-createpolygon.md",
+      "linksCount": 70
+    },
+    {
+      "url": "https://developers.figma.com/docs/plugins/api/properties/figma-createellipse/",
+      "title": "createEllipse | Developer Docs",
+      "filePath": "/Users/skirk92/figmacionvert-2/tools/figma-plugin-docpack/out/md/docs__plugins__api__properties__figma-createellipse.md",
+      "linksCount": 70
+    },
+    {
+      "url": "https://developers.figma.com/docs/plugins/api/properties/figma-createstar/",
+      "title": "createStar | Developer Docs",
+      "filePath": "/Users/skirk92/figmacionvert-2/tools/figma-plugin-docpack/out/md/docs__plugins__api__properties__figma-createstar.md",
+      "linksCount": 70
+    },
+    {
+      "url": "https://developers.figma.com/docs/plugins/api/properties/figma-createvector/",
+      "title": "createVector | Developer Docs",
+      "filePath": "/Users/skirk92/figmacionvert-2/tools/figma-plugin-docpack/out/md/docs__plugins__api__properties__figma-createvector.md",
+      "linksCount": 70
+    },
+    {
+      "url": "https://developers.figma.com/docs/plugins/api/properties/figma-createtext/",
+      "title": "createText | Developer Docs",
+      "filePath": "/Users/skirk92/figmacionvert-2/tools/figma-plugin-docpack/out/md/docs__plugins__api__properties__figma-createtext.md",
+      "linksCount": 71
+    },
+    {
+      "url": "https://developers.figma.com/docs/plugins/api/properties/figma-createframe/",
+      "title": "createFrame | Developer Docs",
+      "filePath": "/Users/skirk92/figmacionvert-2/tools/figma-plugin-docpack/out/md/docs__plugins__api__properties__figma-createframe.md",
+      "linksCount": 70
+    },
+    {
+      "url": "https://developers.figma.com/docs/plugins/api/properties/figma-createcomponent/",
+      "title": "createComponent | Developer Docs",
+      "filePath": "/Users/skirk92/figmacionvert-2/tools/figma-plugin-docpack/out/md/docs__plugins__api__properties__figma-createcomponent.md",
+      "linksCount": 70
+    },
+    {
+      "url": "https://developers.figma.com/docs/plugins/api/properties/figma-createpage/",
+      "title": "createPage | Developer Docs",
+      "filePath": "/Users/skirk92/figmacionvert-2/tools/figma-plugin-docpack/out/md/docs__plugins__api__properties__figma-createpage.md",
+      "linksCount": 70
+    },
+    {
+      "url": "https://developers.figma.com/docs/plugins/api/properties/figma-createcomponentfromnode/",
+      "title": "createComponentFromNode | Developer Docs",
+      "filePath": "/Users/skirk92/figmacionvert-2/tools/figma-plugin-docpack/out/md/docs__plugins__api__properties__figma-createcomponentfromnode.md",
+      "linksCount": 70
+    },
+    {
+      "url": "https://developers.figma.com/docs/plugins/api/properties/figma-createpagedivider/",
+      "title": "createPageDivider | Developer Docs",
+      "filePath": "/Users/skirk92/figmacionvert-2/tools/figma-plugin-docpack/out/md/docs__plugins__api__properties__figma-createpagedivider.md",
+      "linksCount": 70
+    },
+    {
+      "url": "https://developers.figma.com/docs/plugins/api/properties/figma-createslice/",
+      "title": "createSlice | Developer Docs",
+      "filePath": "/Users/skirk92/figmacionvert-2/tools/figma-plugin-docpack/out/md/docs__plugins__api__properties__figma-createslice.md",
+      "linksCount": 70
+    },
+    {
+      "url": "https://developers.figma.com/docs/plugins/api/properties/figma-createsticky/",
+      "title": "createSticky | Developer Docs",
+      "filePath": "/Users/skirk92/figmacionvert-2/tools/figma-plugin-docpack/out/md/docs__plugins__api__properties__figma-createsticky.md",
+      "linksCount": 70
+    },
+    {
+      "url": "https://developers.figma.com/docs/plugins/api/properties/figma-createslide/",
+      "title": "createSlide | Developer Docs",
+      "filePath": "/Users/skirk92/figmacionvert-2/tools/figma-plugin-docpack/out/md/docs__plugins__api__properties__figma-createslide.md",
+      "linksCount": 70
+    },
+    {
+      "url": "https://developers.figma.com/docs/plugins/api/properties/figma-createsliderow/",
+      "title": "createSlideRow | Developer Docs",
+      "filePath": "/Users/skirk92/figmacionvert-2/tools/figma-plugin-docpack/out/md/docs__plugins__api__properties__figma-createsliderow.md",
+      "linksCount": 70
+    },
+    {
+      "url": "https://developers.figma.com/docs/plugins/api/properties/figma-createconnector/",
+      "title": "createConnector | Developer Docs",
+      "filePath": "/Users/skirk92/figmacionvert-2/tools/figma-plugin-docpack/out/md/docs__plugins__api__properties__figma-createconnector.md",
+      "linksCount": 70
+    },
+    {
+      "url": "https://developers.figma.com/docs/plugins/api/properties/figma-createtable/",
+      "title": "createTable | Developer Docs",
+      "filePath": "/Users/skirk92/figmacionvert-2/tools/figma-plugin-docpack/out/md/docs__plugins__api__properties__figma-createtable.md",
+      "linksCount": 70
+    },
+    {
+      "url": "https://developers.figma.com/docs/plugins/api/properties/figma-createshapewithtext/",
+      "title": "createShapeWithText | Developer Docs",
+      "filePath": "/Users/skirk92/figmacionvert-2/tools/figma-plugin-docpack/out/md/docs__plugins__api__properties__figma-createshapewithtext.md",
+      "linksCount": 70
+    },
+    {
+      "url": "https://developers.figma.com/docs/plugins/api/properties/figma-createnodefromjsxasync/",
+      "title": "createNodeFromJSXAsync | Developer Docs",
+      "filePath": "/Users/skirk92/figmacionvert-2/tools/figma-plugin-docpack/out/md/docs__plugins__api__properties__figma-createnodefromjsxasync.md",
+      "linksCount": 69
+    },
+    {
+      "url": "https://developers.figma.com/docs/plugins/api/properties/figma-createbooleanoperation/",
+      "title": "createBooleanOperation | Developer Docs",
+      "filePath": "/Users/skirk92/figmacionvert-2/tools/figma-plugin-docpack/out/md/docs__plugins__api__properties__figma-createbooleanoperation.md",
+      "linksCount": 70
+    },
+    {
+      "url": "https://developers.figma.com/docs/plugins/api/properties/figma-createimage/",
+      "title": "createImage | Developer Docs",
+      "filePath": "/Users/skirk92/figmacionvert-2/tools/figma-plugin-docpack/out/md/docs__plugins__api__properties__figma-createimage.md",
+      "linksCount": 70
+    },
+    {
+      "url": "https://developers.figma.com/docs/plugins/api/properties/figma-createimageasync/",
+      "title": "createImageAsync | Developer Docs",
+      "filePath": "/Users/skirk92/figmacionvert-2/tools/figma-plugin-docpack/out/md/docs__plugins__api__properties__figma-createimageasync.md",
+      "linksCount": 70
+    },
+    {
+      "url": "https://developers.figma.com/docs/plugins/api/properties/figma-createvideoasync/",
+      "title": "createVideoAsync | Developer Docs",
+      "filePath": "/Users/skirk92/figmacionvert-2/tools/figma-plugin-docpack/out/md/docs__plugins__api__properties__figma-createvideoasync.md",
+      "linksCount": 70
+    },
+    {
+      "url": "https://developers.figma.com/docs/plugins/api/properties/figma-loadfontasync/",
+      "title": "loadFontAsync | Developer Docs",
+      "filePath": "/Users/skirk92/figmacionvert-2/tools/figma-plugin-docpack/out/md/docs__plugins__api__properties__figma-loadfontasync.md",
+      "linksCount": 70
+    },
+    {
+      "url": "https://developers.figma.com/docs/plugins/api/properties/figma-creategif/",
+      "title": "createGif | Developer Docs",
+      "filePath": "/Users/skirk92/figmacionvert-2/tools/figma-plugin-docpack/out/md/docs__plugins__api__properties__figma-creategif.md",
+      "linksCount": 70
+    },
+    {
+      "url": "https://developers.figma.com/docs/plugins/api/properties/figma-createlinkpreviewasync/",
+      "title": "createLinkPreviewAsync | Developer Docs",
+      "filePath": "/Users/skirk92/figmacionvert-2/tools/figma-plugin-docpack/out/md/docs__plugins__api__properties__figma-createlinkpreviewasync.md",
+      "linksCount": 71
+    },
+    {
+      "url": "https://developers.figma.com/docs/plugins/api/properties/figma-group/",
+      "title": "group | Developer Docs",
+      "filePath": "/Users/skirk92/figmacionvert-2/tools/figma-plugin-docpack/out/md/docs__plugins__api__properties__figma-group.md",
+      "linksCount": 71
+    },
+    {
+      "url": "https://developers.figma.com/docs/plugins/api/properties/figma-combineasvariants/",
+      "title": "combineAsVariants | Developer Docs",
+      "filePath": "/Users/skirk92/figmacionvert-2/tools/figma-plugin-docpack/out/md/docs__plugins__api__properties__figma-combineasvariants.md",
+      "linksCount": 71
+    },
+    {
+      "url": "https://developers.figma.com/docs/plugins/api/properties/figma-flatten/",
+      "title": "flatten | Developer Docs",
+      "filePath": "/Users/skirk92/figmacionvert-2/tools/figma-plugin-docpack/out/md/docs__plugins__api__properties__figma-flatten.md",
+      "linksCount": 70
+    },
+    {
+      "url": "https://developers.figma.com/docs/plugins/api/properties/figma-ungroup/",
+      "title": "ungroup | Developer Docs",
+      "filePath": "/Users/skirk92/figmacionvert-2/tools/figma-plugin-docpack/out/md/docs__plugins__api__properties__figma-ungroup.md",
+      "linksCount": 69
+    },
+    {
+      "url": "https://developers.figma.com/docs/plugins/api/properties/figma-setslidegrid/",
+      "title": "setSlideGrid | Developer Docs",
+      "filePath": "/Users/skirk92/figmacionvert-2/tools/figma-plugin-docpack/out/md/docs__plugins__api__properties__figma-setslidegrid.md",
+      "linksCount": 70
+    },
+    {
+      "url": "https://developers.figma.com/docs/plugins/api/properties/figma-getslidegrid/",
+      "title": "getSlideGrid | Developer Docs",
+      "filePath": "/Users/skirk92/figmacionvert-2/tools/figma-plugin-docpack/out/md/docs__plugins__api__properties__figma-getslidegrid.md",
+      "linksCount": 70
+    },
+    {
+      "url": "https://developers.figma.com/docs/plugins/api/properties/figma-createcanvasrow/",
+      "title": "createCanvasRow | Developer Docs",
+      "filePath": "/Users/skirk92/figmacionvert-2/tools/figma-plugin-docpack/out/md/docs__plugins__api__properties__figma-createcanvasrow.md",
+      "linksCount": 69
+    },
+    {
+      "url": "https://developers.figma.com/docs/plugins/api/properties/figma-getcanvasgrid/",
+      "title": "getCanvasGrid | Developer Docs",
+      "filePath": "/Users/skirk92/figmacionvert-2/tools/figma-plugin-docpack/out/md/docs__plugins__api__properties__figma-getcanvasgrid.md",
+      "linksCount": 69
+    },
+    {
+      "url": "https://developers.figma.com/docs/plugins/api/properties/figma-setcanvasgrid/",
+      "title": "setCanvasGrid | Developer Docs",
+      "filePath": "/Users/skirk92/figmacionvert-2/tools/figma-plugin-docpack/out/md/docs__plugins__api__properties__figma-setcanvasgrid.md",
+      "linksCount": 69
+    },
+    {
+      "url": "https://developers.figma.com/docs/plugins/api/properties/figma-movenodestocoord/",
+      "title": "moveNodesToCoord | Developer Docs",
+      "filePath": "/Users/skirk92/figmacionvert-2/tools/figma-plugin-docpack/out/md/docs__plugins__api__properties__figma-movenodestocoord.md",
+      "linksCount": 69
+    },
+    {
+      "url": "https://developers.figma.com/docs/plugins/api/ActiveUser/",
+      "title": "ActiveUser | Developer Docs",
+      "filePath": "/Users/skirk92/figmacionvert-2/tools/figma-plugin-docpack/out/md/docs__plugins__api__activeuser.md",
+      "linksCount": 113
+    },
+    {
+      "url": "https://developers.figma.com/docs/plugins/api/Action/",
+      "title": "Action | Developer Docs",
+      "filePath": "/Users/skirk92/figmacionvert-2/tools/figma-plugin-docpack/out/md/docs__plugins__api__action.md",
+      "linksCount": 113
+    },
+    {
+      "url": "https://developers.figma.com/docs/plugins/api/AnnotationCategory/",
+      "title": "AnnotationCategory | Developer Docs",
+      "filePath": "/Users/skirk92/figmacionvert-2/tools/figma-plugin-docpack/out/md/docs__plugins__api__annotationcategory.md",
+      "linksCount": 113
+    },
+    {
+      "url": "https://developers.figma.com/docs/plugins/api/Annotation/",
+      "title": "Annotation | Developer Docs",
+      "filePath": "/Users/skirk92/figmacionvert-2/tools/figma-plugin-docpack/out/md/docs__plugins__api__annotation.md",
+      "linksCount": 124
+    },
+    {
+      "url": "https://developers.figma.com/docs/plugins/api/AnnotationCategoryColor/",
+      "title": "AnnotationCategoryColor | Developer Docs",
+      "filePath": "/Users/skirk92/figmacionvert-2/tools/figma-plugin-docpack/out/md/docs__plugins__api__annotationcategorycolor.md",
+      "linksCount": 113
+    },
+    {
+      "url": "https://developers.figma.com/docs/plugins/api/AnnotationProperty/",
+      "title": "AnnotationProperty | Developer Docs",
+      "filePath": "/Users/skirk92/figmacionvert-2/tools/figma-plugin-docpack/out/md/docs__plugins__api__annotationproperty.md",
+      "linksCount": 113
+    },
+    {
+      "url": "https://developers.figma.com/docs/plugins/api/ArcData/",
+      "title": "ArcData | Developer Docs",
+      "filePath": "/Users/skirk92/figmacionvert-2/tools/figma-plugin-docpack/out/md/docs__plugins__api__arcdata.md",
+      "linksCount": 113
+    },
+    {
+      "url": "https://developers.figma.com/docs/plugins/api/BaseUser/",
+      "title": "BaseUser | Developer Docs",
+      "filePath": "/Users/skirk92/figmacionvert-2/tools/figma-plugin-docpack/out/md/docs__plugins__api__baseuser.md",
+      "linksCount": 113
+    },
+    {
+      "url": "https://developers.figma.com/docs/plugins/api/BuzzTextField/",
+      "title": "BuzzTextField | Developer Docs",
+      "filePath": "/Users/skirk92/figmacionvert-2/tools/figma-plugin-docpack/out/md/docs__plugins__api__buzztextfield.md",
+      "linksCount": 115
+    },
+    {
+      "url": "https://developers.figma.com/docs/plugins/api/BuzzMediaField/",
+      "title": "BuzzMediaField | Developer Docs",
+      "filePath": "/Users/skirk92/figmacionvert-2/tools/figma-plugin-docpack/out/md/docs__plugins__api__buzzmediafield.md",
+      "linksCount": 114
+    },
+    {
+      "url": "https://developers.figma.com/docs/plugins/api/BlendMode/",
+      "title": "BlendMode | Developer Docs",
+      "filePath": "/Users/skirk92/figmacionvert-2/tools/figma-plugin-docpack/out/md/docs__plugins__api__blendmode.md",
+      "linksCount": 113
+    },
+    {
+      "url": "https://developers.figma.com/docs/plugins/api/BuzzAssetType/",
+      "title": "BuzzAssetType | Developer Docs",
+      "filePath": "/Users/skirk92/figmacionvert-2/tools/figma-plugin-docpack/out/md/docs__plugins__api__buzzassettype.md",
+      "linksCount": 115
+    },
+    {
+      "url": "https://developers.figma.com/docs/plugins/api/CanvasViewChangeEvent/",
+      "title": "CanvasViewChangeEvent | Developer Docs",
+      "filePath": "/Users/skirk92/figmacionvert-2/tools/figma-plugin-docpack/out/md/docs__plugins__api__canvasviewchangeevent.md",
+      "linksCount": 113
+    },
+    {
+      "url": "https://developers.figma.com/docs/plugins/api/CodeLanguage/",
+      "title": "CodeLanguage | Developer Docs",
+      "filePath": "/Users/skirk92/figmacionvert-2/tools/figma-plugin-docpack/out/md/docs__plugins__api__codelanguage.md",
+      "linksCount": 113
+    },
+    {
+      "url": "https://developers.figma.com/docs/plugins/api/CodegenEvent/",
+      "title": "CodegenEvent | Developer Docs",
+      "filePath": "/Users/skirk92/figmacionvert-2/tools/figma-plugin-docpack/out/md/docs__plugins__api__codegenevent.md",
+      "linksCount": 113
+    },
+    {
+      "url": "https://developers.figma.com/docs/plugins/api/CodegenPreference/",
+      "title": "CodegenPreference | Developer Docs",
+      "filePath": "/Users/skirk92/figmacionvert-2/tools/figma-plugin-docpack/out/md/docs__plugins__api__codegenpreference.md",
+      "linksCount": 113
+    },
+    {
+      "url": "https://developers.figma.com/docs/plugins/api/CodegenPreferencesEvent/",
+      "title": "CodegenPreferencesEvent | Developer Docs",
+      "filePath": "/Users/skirk92/figmacionvert-2/tools/figma-plugin-docpack/out/md/docs__plugins__api__codegenpreferencesevent.md",
+      "linksCount": 113
+    },
+    {
+      "url": "https://developers.figma.com/docs/plugins/api/CodegenResult/",
+      "title": "CodegenResult | Developer Docs",
+      "filePath": "/Users/skirk92/figmacionvert-2/tools/figma-plugin-docpack/out/md/docs__plugins__api__codegenresult.md",
+      "linksCount": 113
+    },
+    {
+      "url": "https://developers.figma.com/docs/plugins/api/CodeSyntaxPlatform/",
+      "title": "CodeSyntaxPlatform | Developer Docs",
+      "filePath": "/Users/skirk92/figmacionvert-2/tools/figma-plugin-docpack/out/md/docs__plugins__api__codesyntaxplatform.md",
+      "linksCount": 113
+    },
+    {
+      "url": "https://developers.figma.com/docs/plugins/api/ColorPalette/",
+      "title": "ColorPalette | Developer Docs",
+      "filePath": "/Users/skirk92/figmacionvert-2/tools/figma-plugin-docpack/out/md/docs__plugins__api__colorpalette.md",
+      "linksCount": 113
+    },
+    {
+      "url": "https://developers.figma.com/docs/plugins/api/ConnectorEndpoint/",
+      "title": "ConnectorEndpoint | Developer Docs",
+      "filePath": "/Users/skirk92/figmacionvert-2/tools/figma-plugin-docpack/out/md/docs__plugins__api__connectorendpoint.md",
+      "linksCount": 114
+    },
+    {
+      "url": "https://developers.figma.com/docs/plugins/api/ColorPalettes/",
+      "title": "ColorPalettes | Developer Docs",
+      "filePath": "/Users/skirk92/figmacionvert-2/tools/figma-plugin-docpack/out/md/docs__plugins__api__colorpalettes.md",
+      "linksCount": 113
+    },
+    {
+      "url": "https://developers.figma.com/docs/plugins/api/Constraints/",
+      "title": "Constraints | Developer Docs",
+      "filePath": "/Users/skirk92/figmacionvert-2/tools/figma-plugin-docpack/out/md/docs__plugins__api__constraints.md",
+      "linksCount": 113
+    },
+    {
+      "url": "https://developers.figma.com/docs/plugins/api/ConnectorStrokeCap/",
+      "title": "ConnectorStrokeCap | Developer Docs",
+      "filePath": "/Users/skirk92/figmacionvert-2/tools/figma-plugin-docpack/out/md/docs__plugins__api__connectorstrokecap.md",
+      "linksCount": 113
+    },
+    {
+      "url": "https://developers.figma.com/docs/plugins/api/ComponentProperties/",
+      "title": "ComponentProperties | Developer Docs",
+      "filePath": "/Users/skirk92/figmacionvert-2/tools/figma-plugin-docpack/out/md/docs__plugins__api__componentproperties.md",
+      "linksCount": 114
+    },
+    {
+      "url": "https://developers.figma.com/docs/plugins/api/ComponentPropertyDefinitions/",
+      "title": "ComponentPropertyDefinitions | Developer Docs",
+      "filePath": "/Users/skirk92/figmacionvert-2/tools/figma-plugin-docpack/out/md/docs__plugins__api__componentpropertydefinitions.md",
+      "linksCount": 114
+    },
+    {
+      "url": "https://developers.figma.com/docs/plugins/api/ComponentPropertyOptions/",
+      "title": "ComponentPropertyOptions | Developer Docs",
+      "filePath": "/Users/skirk92/figmacionvert-2/tools/figma-plugin-docpack/out/md/docs__plugins__api__componentpropertyoptions.md",
+      "linksCount": 113
+    },
+    {
+      "url": "https://developers.figma.com/docs/plugins/api/ComponentPropertyType/",
+      "title": "ComponentPropertyType | Developer Docs",
+      "filePath": "/Users/skirk92/figmacionvert-2/tools/figma-plugin-docpack/out/md/docs__plugins__api__componentpropertytype.md",
+      "linksCount": 113
+    },
+    {
+      "url": "https://developers.figma.com/docs/plugins/api/DetachedInfo/",
+      "title": "DetachedInfo | Developer Docs",
+      "filePath": "/Users/skirk92/figmacionvert-2/tools/figma-plugin-docpack/out/md/docs__plugins__api__detachedinfo.md",
+      "linksCount": 113
+    },
+    {
+      "url": "https://developers.figma.com/docs/plugins/api/DevResource/",
+      "title": "DevResource | Developer Docs",
+      "filePath": "/Users/skirk92/figmacionvert-2/tools/figma-plugin-docpack/out/md/docs__plugins__api__devresource.md",
+      "linksCount": 113
+    },
+    {
+      "url": "https://developers.figma.com/docs/plugins/api/DevStatus/",
+      "title": "DevStatus | Developer Docs",
+      "filePath": "/Users/skirk92/figmacionvert-2/tools/figma-plugin-docpack/out/md/docs__plugins__api__devstatus.md",
+      "linksCount": 113
+    },
+    {
+      "url": "https://developers.figma.com/docs/plugins/api/DocumentChange/",
+      "title": "DocumentChange | Developer Docs",
+      "filePath": "/Users/skirk92/figmacionvert-2/tools/figma-plugin-docpack/out/md/docs__plugins__api__documentchange.md",
+      "linksCount": 114
+    },
+    {
+      "url": "https://developers.figma.com/docs/plugins/api/DocumentChangeEvent/",
+      "title": "DocumentChangeEvent | Developer Docs",
+      "filePath": "/Users/skirk92/figmacionvert-2/tools/figma-plugin-docpack/out/md/docs__plugins__api__documentchangeevent.md",
+      "linksCount": 113
+    },
+    {
+      "url": "https://developers.figma.com/docs/plugins/api/Effect/",
+      "title": "Effect | Developer Docs",
+      "filePath": "/Users/skirk92/figmacionvert-2/tools/figma-plugin-docpack/out/md/docs__plugins__api__effect.md",
+      "linksCount": 115
+    },
+    {
+      "url": "https://developers.figma.com/docs/plugins/api/DocumentationLink/",
+      "title": "DocumentationLink | Developer Docs",
+      "filePath": "/Users/skirk92/figmacionvert-2/tools/figma-plugin-docpack/out/md/docs__plugins__api__documentationlink.md",
+      "linksCount": 113
+    },
+    {
+      "url": "https://developers.figma.com/docs/plugins/api/DropEvent/",
+      "title": "DropEvent | Developer Docs",
+      "filePath": "/Users/skirk92/figmacionvert-2/tools/figma-plugin-docpack/out/md/docs__plugins__api__dropevent.md",
+      "linksCount": 113
+    },
+    {
+      "url": "https://developers.figma.com/docs/plugins/api/EmbedData/",
+      "title": "EmbedData | Developer Docs",
+      "filePath": "/Users/skirk92/figmacionvert-2/tools/figma-plugin-docpack/out/md/docs__plugins__api__embeddata.md",
+      "linksCount": 113
+    },
+    {
+      "url": "https://developers.figma.com/docs/plugins/api/ExportSettings/",
+      "title": "ExportSettings | Developer Docs",
+      "filePath": "/Users/skirk92/figmacionvert-2/tools/figma-plugin-docpack/out/md/docs__plugins__api__exportsettings.md",
+      "linksCount": 115
+    },
+    {
+      "url": "https://developers.figma.com/docs/plugins/api/FindAllCriteria/",
+      "title": "FindAllCriteria | Developer Docs",
+      "filePath": "/Users/skirk92/figmacionvert-2/tools/figma-plugin-docpack/out/md/docs__plugins__api__findallcriteria.md",
+      "linksCount": 114
+    },
+    {
+      "url": "https://developers.figma.com/docs/plugins/api/FontName/",
+      "title": "FontName | Developer Docs",
+      "filePath": "/Users/skirk92/figmacionvert-2/tools/figma-plugin-docpack/out/md/docs__plugins__api__fontname.md",
+      "linksCount": 113
+    },
+    {
+      "url": "https://developers.figma.com/docs/plugins/api/FontStyle/",
+      "title": "FontStyle | Developer Docs",
+      "filePath": "/Users/skirk92/figmacionvert-2/tools/figma-plugin-docpack/out/md/docs__plugins__api__fontstyle.md",
+      "linksCount": 113
+    },
+    {
+      "url": "https://developers.figma.com/docs/plugins/api/Guide/",
+      "title": "Guide | Developer Docs",
+      "filePath": "/Users/skirk92/figmacionvert-2/tools/figma-plugin-docpack/out/md/docs__plugins__api__guide.md",
+      "linksCount": 113
+    },
+    {
+      "url": "https://developers.figma.com/docs/plugins/api/GridTrackSize/",
+      "title": "GridTrackSize | Developer Docs",
+      "filePath": "/Users/skirk92/figmacionvert-2/tools/figma-plugin-docpack/out/md/docs__plugins__api__gridtracksize.md",
+      "linksCount": 113
+    },
+    {
+      "url": "https://developers.figma.com/docs/plugins/api/HandleMirroring/",
+      "title": "HandleMirroring | Developer Docs",
+      "filePath": "/Users/skirk92/figmacionvert-2/tools/figma-plugin-docpack/out/md/docs__plugins__api__handlemirroring.md",
+      "linksCount": 113
+    },
+    {
+      "url": "https://developers.figma.com/docs/plugins/api/Image/",
+      "title": "Image | Developer Docs",
+      "filePath": "/Users/skirk92/figmacionvert-2/tools/figma-plugin-docpack/out/md/docs__plugins__api__image.md",
+      "linksCount": 115
+    },
+    {
+      "url": "https://developers.figma.com/docs/plugins/api/HyperlinkTarget/",
+      "title": "HyperlinkTarget | Developer Docs",
+      "filePath": "/Users/skirk92/figmacionvert-2/tools/figma-plugin-docpack/out/md/docs__plugins__api__hyperlinktarget.md",
+      "linksCount": 113
+    },
+    {
+      "url": "https://developers.figma.com/docs/plugins/api/InferredAutoLayoutResult/",
+      "title": "InferredAutoLayoutResult | Developer Docs",
+      "filePath": "/Users/skirk92/figmacionvert-2/tools/figma-plugin-docpack/out/md/docs__plugins__api__inferredautolayoutresult.md",
+      "linksCount": 127
+    },
+    {
+      "url": "https://developers.figma.com/docs/plugins/api/InheritedStyleField/",
+      "title": "InheritedStyleField | Developer Docs",
+      "filePath": "/Users/skirk92/figmacionvert-2/tools/figma-plugin-docpack/out/md/docs__plugins__api__inheritedstylefield.md",
+      "linksCount": 113
+    },
+    {
+      "url": "https://developers.figma.com/docs/plugins/api/InstanceSwapPreferredValue/",
+      "title": "InstanceSwapPreferredValue | Developer Docs",
+      "filePath": "/Users/skirk92/figmacionvert-2/tools/figma-plugin-docpack/out/md/docs__plugins__api__instanceswappreferredvalue.md",
+      "linksCount": 113
+    },
+    {
+      "url": "https://developers.figma.com/docs/plugins/api/LabelSublayer/",
+      "title": "LabelSublayer | Developer Docs",
+      "filePath": "/Users/skirk92/figmacionvert-2/tools/figma-plugin-docpack/out/md/docs__plugins__api__labelsublayer.md",
+      "linksCount": 121
+    },
+    {
+      "url": "https://developers.figma.com/docs/plugins/api/LayoutGrid/",
+      "title": "LayoutGrid | Developer Docs",
+      "filePath": "/Users/skirk92/figmacionvert-2/tools/figma-plugin-docpack/out/md/docs__plugins__api__layoutgrid.md",
+      "linksCount": 113
+    },
+    {
+      "url": "https://developers.figma.com/docs/plugins/api/LeadingTrim/",
+      "title": "LeadingTrim | Developer Docs",
+      "filePath": "/Users/skirk92/figmacionvert-2/tools/figma-plugin-docpack/out/md/docs__plugins__api__leadingtrim.md",
+      "linksCount": 113
+    },
+    {
+      "url": "https://developers.figma.com/docs/plugins/api/LineHeight/",
+      "title": "LineHeight | Developer Docs",
+      "filePath": "/Users/skirk92/figmacionvert-2/tools/figma-plugin-docpack/out/md/docs__plugins__api__lineheight.md",
+      "linksCount": 113
+    },
+    {
+      "url": "https://developers.figma.com/docs/plugins/api/LetterSpacing/",
+      "title": "LetterSpacing | Developer Docs",
+      "filePath": "/Users/skirk92/figmacionvert-2/tools/figma-plugin-docpack/out/md/docs__plugins__api__letterspacing.md",
+      "linksCount": 113
+    },
+    {
+      "url": "https://developers.figma.com/docs/plugins/api/MaskType/",
+      "title": "MaskType | Developer Docs",
+      "filePath": "/Users/skirk92/figmacionvert-2/tools/figma-plugin-docpack/out/md/docs__plugins__api__masktype.md",
+      "linksCount": 113
+    },
+    {
+      "url": "https://developers.figma.com/docs/plugins/api/LinkUnfurlData/",
+      "title": "LinkUnfurlData | Developer Docs",
+      "filePath": "/Users/skirk92/figmacionvert-2/tools/figma-plugin-docpack/out/md/docs__plugins__api__linkunfurldata.md",
+      "linksCount": 113
+    },
+    {
+      "url": "https://developers.figma.com/docs/plugins/api/MediaData/",
+      "title": "MediaData | Developer Docs",
+      "filePath": "/Users/skirk92/figmacionvert-2/tools/figma-plugin-docpack/out/md/docs__plugins__api__mediadata.md",
+      "linksCount": 113
+    },
+    {
+      "url": "https://developers.figma.com/docs/plugins/api/MeasurementOffset/",
+      "title": "MeasurementOffset | Developer Docs",
+      "filePath": "/Users/skirk92/figmacionvert-2/tools/figma-plugin-docpack/out/md/docs__plugins__api__measurementoffset.md",
+      "linksCount": 113
+    },
+    {
+      "url": "https://developers.figma.com/docs/plugins/api/MeasurementSide/",
+      "title": "MeasurementSide | Developer Docs",
+      "filePath": "/Users/skirk92/figmacionvert-2/tools/figma-plugin-docpack/out/md/docs__plugins__api__measurementside.md",
+      "linksCount": 113
+    },
+    {
+      "url": "https://developers.figma.com/docs/plugins/api/Measurement/",
+      "title": "Measurement | Developer Docs",
+      "filePath": "/Users/skirk92/figmacionvert-2/tools/figma-plugin-docpack/out/md/docs__plugins__api__measurement.md",
+      "linksCount": 125
+    },
+    {
+      "url": "https://developers.figma.com/docs/plugins/api/NodeChangeEvent/",
+      "title": "NodeChangeEvent | Developer Docs",
+      "filePath": "/Users/skirk92/figmacionvert-2/tools/figma-plugin-docpack/out/md/docs__plugins__api__nodechangeevent.md",
+      "linksCount": 113
+    },
+    {
+      "url": "https://developers.figma.com/docs/plugins/api/NodeChange/",
+      "title": "NodeChange | Developer Docs",
+      "filePath": "/Users/skirk92/figmacionvert-2/tools/figma-plugin-docpack/out/md/docs__plugins__api__nodechange.md",
+      "linksCount": 114
+    },
+    {
+      "url": "https://developers.figma.com/docs/plugins/api/OpenTypeFeature/",
+      "title": "OpenTypeFeature | Developer Docs",
+      "filePath": "/Users/skirk92/figmacionvert-2/tools/figma-plugin-docpack/out/md/docs__plugins__api__opentypefeature.md",
+      "linksCount": 114
+    },
+    {
+      "url": "https://developers.figma.com/docs/plugins/api/OverflowDirection/",
+      "title": "OverflowDirection | Developer Docs",
+      "filePath": "/Users/skirk92/figmacionvert-2/tools/figma-plugin-docpack/out/md/docs__plugins__api__overflowdirection.md",
+      "linksCount": 113
+    },
+    {
+      "url": "https://developers.figma.com/docs/plugins/api/Overlay/",
+      "title": "Overlay | Developer Docs",
+      "filePath": "/Users/skirk92/figmacionvert-2/tools/figma-plugin-docpack/out/md/docs__plugins__api__overlay.md",
+      "linksCount": 113
+    },
+    {
+      "url": "https://developers.figma.com/docs/plugins/api/NodeChangeProperty/",
+      "title": "NodeChangeProperty | Developer Docs",
+      "filePath": "/Users/skirk92/figmacionvert-2/tools/figma-plugin-docpack/out/md/docs__plugins__api__nodechangeproperty.md",
+      "linksCount": 113
+    },
+    {
+      "url": "https://developers.figma.com/docs/plugins/api/PublishStatus/",
+      "title": "PublishStatus | Developer Docs",
+      "filePath": "/Users/skirk92/figmacionvert-2/tools/figma-plugin-docpack/out/md/docs__plugins__api__publishstatus.md",
+      "linksCount": 113
+    },
+    {
+      "url": "https://developers.figma.com/docs/plugins/api/Paint/",
+      "title": "Paint | Developer Docs",
+      "filePath": "/Users/skirk92/figmacionvert-2/tools/figma-plugin-docpack/out/md/docs__plugins__api__paint.md",
+      "linksCount": 118
+    },
+    {
+      "url": "https://developers.figma.com/docs/plugins/api/Reaction/",
+      "title": "Reaction | Developer Docs",
+      "filePath": "/Users/skirk92/figmacionvert-2/tools/figma-plugin-docpack/out/md/docs__plugins__api__reaction.md",
+      "linksCount": 113
+    },
+    {
+      "url": "https://developers.figma.com/docs/plugins/api/RunEvent/",
+      "title": "RunEvent | Developer Docs",
+      "filePath": "/Users/skirk92/figmacionvert-2/tools/figma-plugin-docpack/out/md/docs__plugins__api__runevent.md",
+      "linksCount": 113
+    },
+    {
+      "url": "https://developers.figma.com/docs/plugins/api/RGB/",
+      "title": "RGB/RGBA | Developer Docs",
+      "filePath": "/Users/skirk92/figmacionvert-2/tools/figma-plugin-docpack/out/md/docs__plugins__api__rgb.md",
+      "linksCount": 114
+    },
+    {
+      "url": "https://developers.figma.com/docs/plugins/api/Rect/",
+      "title": "Rect | Developer Docs",
+      "filePath": "/Users/skirk92/figmacionvert-2/tools/figma-plugin-docpack/out/md/docs__plugins__api__rect.md",
+      "linksCount": 113
+    },
+    {
+      "url": "https://developers.figma.com/docs/plugins/api/SlideTransition/",
+      "title": "SlideTransition | Developer Docs",
+      "filePath": "/Users/skirk92/figmacionvert-2/tools/figma-plugin-docpack/out/md/docs__plugins__api__slidetransition.md",
+      "linksCount": 113
+    },
+    {
+      "url": "https://developers.figma.com/docs/plugins/api/SlidesViewChangeEvent/",
+      "title": "SlidesViewChangeEvent | Developer Docs",
+      "filePath": "/Users/skirk92/figmacionvert-2/tools/figma-plugin-docpack/out/md/docs__plugins__api__slidesviewchangeevent.md",
+      "linksCount": 114
+    },
+    {
+      "url": "https://developers.figma.com/docs/plugins/api/StrokeJoin/",
+      "title": "StrokeJoin | Developer Docs",
+      "filePath": "/Users/skirk92/figmacionvert-2/tools/figma-plugin-docpack/out/md/docs__plugins__api__strokejoin.md",
+      "linksCount": 113
+    },
+    {
+      "url": "https://developers.figma.com/docs/plugins/api/StrokeCap/",
+      "title": "StrokeCap | Developer Docs",
+      "filePath": "/Users/skirk92/figmacionvert-2/tools/figma-plugin-docpack/out/md/docs__plugins__api__strokecap.md",
+      "linksCount": 113
+    },
+    {
+      "url": "https://developers.figma.com/docs/plugins/api/StyleChange/",
+      "title": "StyleChange | Developer Docs",
+      "filePath": "/Users/skirk92/figmacionvert-2/tools/figma-plugin-docpack/out/md/docs__plugins__api__stylechange.md",
+      "linksCount": 113
+    },
+    {
+      "url": "https://developers.figma.com/docs/plugins/api/StyleChangeEvent/",
+      "title": "StyleChangeEvent | Developer Docs",
+      "filePath": "/Users/skirk92/figmacionvert-2/tools/figma-plugin-docpack/out/md/docs__plugins__api__stylechangeevent.md",
+      "linksCount": 113
+    },
+    {
+      "url": "https://developers.figma.com/docs/plugins/api/StyleChangeProperty/",
+      "title": "StyleChangeProperty | Developer Docs",
+      "filePath": "/Users/skirk92/figmacionvert-2/tools/figma-plugin-docpack/out/md/docs__plugins__api__stylechangeproperty.md",
+      "linksCount": 113
+    },
+    {
+      "url": "https://developers.figma.com/docs/plugins/api/StyleConsumers/",
+      "title": "StyleConsumers | Developer Docs",
+      "filePath": "/Users/skirk92/figmacionvert-2/tools/figma-plugin-docpack/out/md/docs__plugins__api__styleconsumers.md",
+      "linksCount": 113
+    },
+    {
+      "url": "https://developers.figma.com/docs/plugins/api/TextDecoration/",
+      "title": "TextDecoration | Developer Docs",
+      "filePath": "/Users/skirk92/figmacionvert-2/tools/figma-plugin-docpack/out/md/docs__plugins__api__textdecoration.md",
+      "linksCount": 113
+    },
+    {
+      "url": "https://developers.figma.com/docs/plugins/api/TextDecorationStyle/",
+      "title": "TextDecorationStyle | Developer Docs",
+      "filePath": "/Users/skirk92/figmacionvert-2/tools/figma-plugin-docpack/out/md/docs__plugins__api__textdecorationstyle.md",
+      "linksCount": 113
+    },
+    {
+      "url": "https://developers.figma.com/docs/plugins/api/StyledTextSegment/",
+      "title": "StyledTextSegment | Developer Docs",
+      "filePath": "/Users/skirk92/figmacionvert-2/tools/figma-plugin-docpack/out/md/docs__plugins__api__styledtextsegment.md",
+      "linksCount": 115
+    },
+    {
+      "url": "https://developers.figma.com/docs/plugins/api/TextCase/",
+      "title": "TextCase | Developer Docs",
+      "filePath": "/Users/skirk92/figmacionvert-2/tools/figma-plugin-docpack/out/md/docs__plugins__api__textcase.md",
+      "linksCount": 113
+    },
+    {
+      "url": "https://developers.figma.com/docs/plugins/api/TextDecorationOffset/",
+      "title": "TextDecorationOffset | Developer Docs",
+      "filePath": "/Users/skirk92/figmacionvert-2/tools/figma-plugin-docpack/out/md/docs__plugins__api__textdecorationoffset.md",
+      "linksCount": 113
+    },
+    {
+      "url": "https://developers.figma.com/docs/plugins/api/TextDecorationThickness/",
+      "title": "TextDecorationThickness | Developer Docs",
+      "filePath": "/Users/skirk92/figmacionvert-2/tools/figma-plugin-docpack/out/md/docs__plugins__api__textdecorationthickness.md",
+      "linksCount": 113
+    },
+    {
+      "url": "https://developers.figma.com/docs/plugins/api/TextDecorationColor/",
+      "title": "TextDecorationColor | Developer Docs",
+      "filePath": "/Users/skirk92/figmacionvert-2/tools/figma-plugin-docpack/out/md/docs__plugins__api__textdecorationcolor.md",
+      "linksCount": 113
+    },
+    {
+      "url": "https://developers.figma.com/docs/plugins/api/TextListOptions/",
+      "title": "TextListOptions | Developer Docs",
+      "filePath": "/Users/skirk92/figmacionvert-2/tools/figma-plugin-docpack/out/md/docs__plugins__api__textlistoptions.md",
+      "linksCount": 113
+    },
+    {
+      "url": "https://developers.figma.com/docs/plugins/api/TextReviewEvent/",
+      "title": "TextReviewEvent | Developer Docs",
+      "filePath": "/Users/skirk92/figmacionvert-2/tools/figma-plugin-docpack/out/md/docs__plugins__api__textreviewevent.md",
+      "linksCount": 113
+    },
+    {
+      "url": "https://developers.figma.com/docs/plugins/api/TextReviewRange/",
+      "title": "TextReviewRange | Developer Docs",
+      "filePath": "/Users/skirk92/figmacionvert-2/tools/figma-plugin-docpack/out/md/docs__plugins__api__textreviewrange.md",
+      "linksCount": 113
+    },
+    {
+      "url": "https://developers.figma.com/docs/plugins/api/TextStyleOverrides/",
+      "title": "TextStyleOverrides | Developer Docs",
+      "filePath": "/Users/skirk92/figmacionvert-2/tools/figma-plugin-docpack/out/md/docs__plugins__api__textstyleoverrides.md",
+      "linksCount": 114
+    },
+    {
+      "url": "https://developers.figma.com/docs/plugins/api/TextSublayer/",
+      "title": "TextSublayer | Developer Docs",
+      "filePath": "/Users/skirk92/figmacionvert-2/tools/figma-plugin-docpack/out/md/docs__plugins__api__textsublayer.md",
+      "linksCount": 122
+    },
+    {
+      "url": "https://developers.figma.com/docs/plugins/api/Trigger/",
+      "title": "Trigger | Developer Docs",
+      "filePath": "/Users/skirk92/figmacionvert-2/tools/figma-plugin-docpack/out/md/docs__plugins__api__trigger.md",
+      "linksCount": 113
+    },
+    {
+      "url": "https://developers.figma.com/docs/plugins/api/Transform/",
+      "title": "Transform | Developer Docs",
+      "filePath": "/Users/skirk92/figmacionvert-2/tools/figma-plugin-docpack/out/md/docs__plugins__api__transform.md",
+      "linksCount": 114
+    },
+    {
+      "url": "https://developers.figma.com/docs/plugins/api/Transition/",
+      "title": "Transition | Developer Docs",
+      "filePath": "/Users/skirk92/figmacionvert-2/tools/figma-plugin-docpack/out/md/docs__plugins__api__transition.md",
+      "linksCount": 113
+    },
+    {
+      "url": "https://developers.figma.com/docs/plugins/api/User/",
+      "title": "User | Developer Docs",
+      "filePath": "/Users/skirk92/figmacionvert-2/tools/figma-plugin-docpack/out/md/docs__plugins__api__user.md",
+      "linksCount": 113
+    },
+    {
+      "url": "https://developers.figma.com/docs/plugins/api/Vector/",
+      "title": "Vector | Developer Docs",
+      "filePath": "/Users/skirk92/figmacionvert-2/tools/figma-plugin-docpack/out/md/docs__plugins__api__vector.md",
+      "linksCount": 113
+    },
+    {
+      "url": "https://developers.figma.com/docs/plugins/api/Variable/",
+      "title": "Variable | Developer Docs",
+      "filePath": "/Users/skirk92/figmacionvert-2/tools/figma-plugin-docpack/out/md/docs__plugins__api__variable.md",
+      "linksCount": 136
+    },
+    {
+      "url": "https://developers.figma.com/docs/plugins/api/VectorPath/",
+      "title": "VectorPath | Developer Docs",
+      "filePath": "/Users/skirk92/figmacionvert-2/tools/figma-plugin-docpack/out/md/docs__plugins__api__vectorpath.md",
+      "linksCount": 116
+    },
+    {
+      "url": "https://developers.figma.com/docs/plugins/api/LibraryVariable/",
+      "title": "LibraryVariable | Developer Docs",
+      "filePath": "/Users/skirk92/figmacionvert-2/tools/figma-plugin-docpack/out/md/docs__plugins__api__libraryvariable.md",
+      "linksCount": 116
+    },
+    {
+      "url": "https://developers.figma.com/docs/plugins/api/Video/",
+      "title": "Video | Developer Docs",
+      "filePath": "/Users/skirk92/figmacionvert-2/tools/figma-plugin-docpack/out/md/docs__plugins__api__video.md",
+      "linksCount": 114
+    },
+    {
+      "url": "https://developers.figma.com/docs/plugins/api/VectorNetwork/",
+      "title": "VectorNetwork | Developer Docs",
+      "filePath": "/Users/skirk92/figmacionvert-2/tools/figma-plugin-docpack/out/md/docs__plugins__api__vectornetwork.md",
+      "linksCount": 116
+    },
+    {
+      "url": "https://developers.figma.com/docs/plugins/api/BaseStyle/",
+      "title": "BaseStyle | Developer Docs",
+      "filePath": "/Users/skirk92/figmacionvert-2/tools/figma-plugin-docpack/out/md/docs__plugins__api__basestyle.md",
+      "linksCount": 121
+    },
+    {
+      "url": "https://developers.figma.com/docs/plugins/api/EffectStyle/",
+      "title": "EffectStyle | Developer Docs",
+      "filePath": "/Users/skirk92/figmacionvert-2/tools/figma-plugin-docpack/out/md/docs__plugins__api__effectstyle.md",
+      "linksCount": 122
+    },
+    {
+      "url": "https://developers.figma.com/docs/plugins/api/GridStyle/",
+      "title": "GridStyle | Developer Docs",
+      "filePath": "/Users/skirk92/figmacionvert-2/tools/figma-plugin-docpack/out/md/docs__plugins__api__gridstyle.md",
+      "linksCount": 122
+    },
+    {
+      "url": "https://developers.figma.com/docs/plugins/api/PaintStyle/",
+      "title": "PaintStyle | Developer Docs",
+      "filePath": "/Users/skirk92/figmacionvert-2/tools/figma-plugin-docpack/out/md/docs__plugins__api__paintstyle.md",
+      "linksCount": 122
+    },
+    {
+      "url": "https://developers.figma.com/docs/plugins/api/TextStyle/",
+      "title": "TextStyle | Developer Docs",
+      "filePath": "/Users/skirk92/figmacionvert-2/tools/figma-plugin-docpack/out/md/docs__plugins__api__textstyle.md",
+      "linksCount": 123
+    },
+    {
+      "url": "https://developers.figma.com/docs/plugins/api/properties/nodes-y/",
+      "title": "y | Developer Docs",
+      "filePath": "/Users/skirk92/figmacionvert-2/tools/figma-plugin-docpack/out/md/docs__plugins__api__properties__nodes-y.md",
+      "linksCount": 130
+    },
+    {
+      "url": "https://developers.figma.com/docs/plugins/api/properties/DocumentNode-findall/",
+      "title": "findAll | Developer Docs",
+      "filePath": "/Users/skirk92/figmacionvert-2/tools/figma-plugin-docpack/out/md/docs__plugins__api__properties__documentnode-findall.md",
+      "linksCount": 49
+    },
+    {
+      "url": "https://developers.figma.com/docs/plugins/api/properties/figma-variables-importvariablebykeyasync/",
+      "title": "importVariableByKeyAsync | Developer Docs",
+      "filePath": "/Users/skirk92/figmacionvert-2/tools/figma-plugin-docpack/out/md/docs__plugins__api__properties__figma-variables-importvariablebykeyasync.md",
+      "linksCount": 80
+    },
+    {
+      "url": "https://developers.figma.com/docs/plugins/api/properties/DocumentNode-findone/",
+      "title": "findOne | Developer Docs",
+      "filePath": "/Users/skirk92/figmacionvert-2/tools/figma-plugin-docpack/out/md/docs__plugins__api__properties__documentnode-findone.md",
+      "linksCount": 49
+    },
+    {
+      "url": "https://developers.figma.com/docs/plugins/api/properties/DocumentNode-findwidgetnodesbywidgetid/",
+      "title": "findWidgetNodesByWidgetId | Developer Docs",
+      "filePath": "/Users/skirk92/figmacionvert-2/tools/figma-plugin-docpack/out/md/docs__plugins__api__properties__documentnode-findwidgetnodesbywidgetid.md",
+      "linksCount": 48
+    },
+    {
+      "url": "https://developers.figma.com/docs/plugins/api/properties/nodes-adddevresourceasync/",
+      "title": "addDevResourceAsync | Developer Docs",
+      "filePath": "/Users/skirk92/figmacionvert-2/tools/figma-plugin-docpack/out/md/docs__plugins__api__properties__nodes-adddevresourceasync.md",
+      "linksCount": 132
+    },
+    {
+      "url": "https://developers.figma.com/docs/plugins/api/properties/nodes-children/",
+      "title": "children | Developer Docs",
+      "filePath": "/Users/skirk92/figmacionvert-2/tools/figma-plugin-docpack/out/md/docs__plugins__api__properties__nodes-children.md",
+      "linksCount": 109
+    },
+    {
+      "url": "https://developers.figma.com/docs/plugins/api/properties/nodes-appendchild/",
+      "title": "appendChild | Developer Docs",
+      "filePath": "/Users/skirk92/figmacionvert-2/tools/figma-plugin-docpack/out/md/docs__plugins__api__properties__nodes-appendchild.md",
+      "linksCount": 109
+    },
+    {
+      "url": "https://developers.figma.com/docs/plugins/api/properties/TextNode-characters/",
+      "title": "characters | Developer Docs",
+      "filePath": "/Users/skirk92/figmacionvert-2/tools/figma-plugin-docpack/out/md/docs__plugins__api__properties__textnode-characters.md",
+      "linksCount": 100
+    },
+    {
+      "url": "https://developers.figma.com/docs/plugins/api/properties/nodes-appendchildat/",
+      "title": "appendChildAt | Developer Docs",
+      "filePath": "/Users/skirk92/figmacionvert-2/tools/figma-plugin-docpack/out/md/docs__plugins__api__properties__nodes-appendchildat.md",
+      "linksCount": 102
+    },
+    {
+      "url": "https://developers.figma.com/docs/plugins/api/properties/ExplicitVariableModesMixin-clearexplicitvariablemodeforcollection/",
+      "title": "clearExplicitVariableModeForCollection | Developer Docs",
+      "filePath": "/Users/skirk92/figmacionvert-2/tools/figma-plugin-docpack/out/md/docs__plugins__api__properties__explicitvariablemodesmixin-clearexplicitvariablemodeforcollection.md",
+      "linksCount": 132
+    },
+    {
+      "url": "https://developers.figma.com/docs/plugins/api/properties/ComponentPropertiesMixin-componentpropertydefinitions/",
+      "title": "componentPropertyDefinitions | Developer Docs",
+      "filePath": "/Users/skirk92/figmacionvert-2/tools/figma-plugin-docpack/out/md/docs__plugins__api__properties__componentpropertiesmixin-componentpropertydefinitions.md",
+      "linksCount": 100
+    },
+    {
+      "url": "https://developers.figma.com/docs/plugins/api/properties/nodes-cornerradius/",
+      "title": "cornerRadius | Developer Docs",
+      "filePath": "/Users/skirk92/figmacionvert-2/tools/figma-plugin-docpack/out/md/docs__plugins__api__properties__nodes-cornerradius.md",
+      "linksCount": 110
+    },
+    {
+      "url": "https://developers.figma.com/docs/plugins/api/properties/nodes-constraints/",
+      "title": "constraints | Developer Docs",
+      "filePath": "/Users/skirk92/figmacionvert-2/tools/figma-plugin-docpack/out/md/docs__plugins__api__properties__nodes-constraints.md",
+      "linksCount": 113
+    },
+    {
+      "url": "https://developers.figma.com/docs/plugins/api/properties/nodes-cornersmoothing/",
+      "title": "cornerSmoothing | Developer Docs",
+      "filePath": "/Users/skirk92/figmacionvert-2/tools/figma-plugin-docpack/out/md/docs__plugins__api__properties__nodes-cornersmoothing.md",
+      "linksCount": 109
+    },
+    {
+      "url": "https://developers.figma.com/docs/plugins/api/properties/nodes-counteraxisaligncontent/",
+      "title": "counterAxisAlignContent | Developer Docs",
+      "filePath": "/Users/skirk92/figmacionvert-2/tools/figma-plugin-docpack/out/md/docs__plugins__api__properties__nodes-counteraxisaligncontent.md",
+      "linksCount": 103
+    },
+    {
+      "url": "https://developers.figma.com/docs/plugins/api/properties/nodes-counteraxisalignitems/",
+      "title": "counterAxisAlignItems | Developer Docs",
+      "filePath": "/Users/skirk92/figmacionvert-2/tools/figma-plugin-docpack/out/md/docs__plugins__api__properties__nodes-counteraxisalignitems.md",
+      "linksCount": 103
+    },
+    {
+      "url": "https://developers.figma.com/docs/plugins/api/properties/nodes-counteraxissizingmode/",
+      "title": "counterAxisSizingMode | Developer Docs",
+      "filePath": "/Users/skirk92/figmacionvert-2/tools/figma-plugin-docpack/out/md/docs__plugins__api__properties__nodes-counteraxissizingmode.md",
+      "linksCount": 103
+    },
+    {
+      "url": "https://developers.figma.com/docs/plugins/api/properties/TextNode-deletecharacters/",
+      "title": "deleteCharacters | Developer Docs",
+      "filePath": "/Users/skirk92/figmacionvert-2/tools/figma-plugin-docpack/out/md/docs__plugins__api__properties__textnode-deletecharacters.md",
+      "linksCount": 101
+    },
+    {
+      "url": "https://developers.figma.com/docs/plugins/api/properties/nodes-counteraxisspacing/",
+      "title": "counterAxisSpacing | Developer Docs",
+      "filePath": "/Users/skirk92/figmacionvert-2/tools/figma-plugin-docpack/out/md/docs__plugins__api__properties__nodes-counteraxisspacing.md",
+      "linksCount": 103
+    },
+    {
+      "url": "https://developers.figma.com/docs/plugins/api/properties/nodes-description/",
+      "title": "description | Developer Docs",
+      "filePath": "/Users/skirk92/figmacionvert-2/tools/figma-plugin-docpack/out/md/docs__plugins__api__properties__nodes-description.md",
+      "linksCount": 103
+    },
+    {
+      "url": "https://developers.figma.com/docs/plugins/api/properties/nodes-deletedevresourceasync/",
+      "title": "deleteDevResourceAsync | Developer Docs",
+      "filePath": "/Users/skirk92/figmacionvert-2/tools/figma-plugin-docpack/out/md/docs__plugins__api__properties__nodes-deletedevresourceasync.md",
+      "linksCount": 132
+    },
+    {
+      "url": "https://developers.figma.com/docs/plugins/api/properties/nodes-descriptionmarkdown/",
+      "title": "descriptionMarkdown | Developer Docs",
+      "filePath": "/Users/skirk92/figmacionvert-2/tools/figma-plugin-docpack/out/md/docs__plugins__api__properties__nodes-descriptionmarkdown.md",
+      "linksCount": 103
+    },
+    {
+      "url": "https://developers.figma.com/docs/plugins/api/properties/nodes-documentationlinks/",
+      "title": "documentationLinks | Developer Docs",
+      "filePath": "/Users/skirk92/figmacionvert-2/tools/figma-plugin-docpack/out/md/docs__plugins__api__properties__nodes-documentationlinks.md",
+      "linksCount": 104
+    },
+    {
+      "url": "https://developers.figma.com/docs/plugins/api/properties/nodes-exportasync/",
+      "title": "exportAsync | Developer Docs",
+      "filePath": "/Users/skirk92/figmacionvert-2/tools/figma-plugin-docpack/out/md/docs__plugins__api__properties__nodes-exportasync.md",
+      "linksCount": 132
+    },
+    {
+      "url": "https://developers.figma.com/docs/plugins/api/properties/nodes-editdevresourceasync/",
+      "title": "editDevResourceAsync | Developer Docs",
+      "filePath": "/Users/skirk92/figmacionvert-2/tools/figma-plugin-docpack/out/md/docs__plugins__api__properties__nodes-editdevresourceasync.md",
+      "linksCount": 132
+    },
+    {
+      "url": "https://developers.figma.com/docs/plugins/api/properties/nodes-fillstyleid/",
+      "title": "fillStyleId | Developer Docs",
+      "filePath": "/Users/skirk92/figmacionvert-2/tools/figma-plugin-docpack/out/md/docs__plugins__api__properties__nodes-fillstyleid.md",
+      "linksCount": 122
+    },
+    {
+      "url": "https://developers.figma.com/docs/plugins/api/properties/nodes-fills/",
+      "title": "fills | Developer Docs",
+      "filePath": "/Users/skirk92/figmacionvert-2/tools/figma-plugin-docpack/out/md/docs__plugins__api__properties__nodes-fills.md",
+      "linksCount": 124
+    },
+    {
+      "url": "https://developers.figma.com/docs/plugins/api/properties/nodes-findallwithcriteria/",
+      "title": "findAllWithCriteria | Developer Docs",
+      "filePath": "/Users/skirk92/figmacionvert-2/tools/figma-plugin-docpack/out/md/docs__plugins__api__properties__nodes-findallwithcriteria.md",
+      "linksCount": 111
+    },
+    {
+      "url": "https://developers.figma.com/docs/plugins/api/properties/nodes-findall/",
+      "title": "findAll | Developer Docs",
+      "filePath": "/Users/skirk92/figmacionvert-2/tools/figma-plugin-docpack/out/md/docs__plugins__api__properties__nodes-findall.md",
+      "linksCount": 109
+    },
+    {
+      "url": "https://developers.figma.com/docs/plugins/api/properties/nodes-findwidgetnodesbywidgetid/",
+      "title": "findWidgetNodesByWidgetId | Developer Docs",
+      "filePath": "/Users/skirk92/figmacionvert-2/tools/figma-plugin-docpack/out/md/docs__plugins__api__properties__nodes-findwidgetnodesbywidgetid.md",
+      "linksCount": 110
+    },
+    {
+      "url": "https://developers.figma.com/docs/plugins/api/properties/nodes-findone/",
+      "title": "findOne | Developer Docs",
+      "filePath": "/Users/skirk92/figmacionvert-2/tools/figma-plugin-docpack/out/md/docs__plugins__api__properties__nodes-findone.md",
+      "linksCount": 109
+    },
+    {
+      "url": "https://developers.figma.com/docs/plugins/api/properties/nodes-findchild/",
+      "title": "findChild | Developer Docs",
+      "filePath": "/Users/skirk92/figmacionvert-2/tools/figma-plugin-docpack/out/md/docs__plugins__api__properties__nodes-findchild.md",
+      "linksCount": 109
+    },
+    {
+      "url": "https://developers.figma.com/docs/plugins/api/properties/nodes-findchildren/",
+      "title": "findChildren | Developer Docs",
+      "filePath": "/Users/skirk92/figmacionvert-2/tools/figma-plugin-docpack/out/md/docs__plugins__api__properties__nodes-findchildren.md",
+      "linksCount": 109
+    },
+    {
+      "url": "https://developers.figma.com/docs/plugins/api/properties/nodes-getdevresourcesasync/",
+      "title": "getDevResourcesAsync | Developer Docs",
+      "filePath": "/Users/skirk92/figmacionvert-2/tools/figma-plugin-docpack/out/md/docs__plugins__api__properties__nodes-getdevresourcesasync.md",
+      "linksCount": 133
+    },
+    {
+      "url": "https://developers.figma.com/docs/plugins/api/properties/TextNode-getstyledtextsegments/",
+      "title": "getStyledTextSegments | Developer Docs",
+      "filePath": "/Users/skirk92/figmacionvert-2/tools/figma-plugin-docpack/out/md/docs__plugins__api__properties__textnode-getstyledtextsegments.md",
+      "linksCount": 101
+    },
+    {
+      "url": "https://developers.figma.com/docs/plugins/api/properties/nodes-gridchildhorizontalalign/",
+      "title": "gridChildHorizontalAlign | Developer Docs",
+      "filePath": "/Users/skirk92/figmacionvert-2/tools/figma-plugin-docpack/out/md/docs__plugins__api__properties__nodes-gridchildhorizontalalign.md",
+      "linksCount": 117
+    },
+    {
+      "url": "https://developers.figma.com/docs/plugins/api/properties/nodes-gridchildverticalalign/",
+      "title": "gridChildVerticalAlign | Developer Docs",
+      "filePath": "/Users/skirk92/figmacionvert-2/tools/figma-plugin-docpack/out/md/docs__plugins__api__properties__nodes-gridchildverticalalign.md",
+      "linksCount": 117
+    },
+    {
+      "url": "https://developers.figma.com/docs/plugins/api/properties/nodes-gridcolumnanchorindex/",
+      "title": "gridColumnAnchorIndex | Developer Docs",
+      "filePath": "/Users/skirk92/figmacionvert-2/tools/figma-plugin-docpack/out/md/docs__plugins__api__properties__nodes-gridcolumnanchorindex.md",
+      "linksCount": 117
+    },
+    {
+      "url": "https://developers.figma.com/docs/plugins/api/properties/nodes-gridcolumncount/",
+      "title": "gridColumnCount | Developer Docs",
+      "filePath": "/Users/skirk92/figmacionvert-2/tools/figma-plugin-docpack/out/md/docs__plugins__api__properties__nodes-gridcolumncount.md",
+      "linksCount": 103
+    },
+    {
+      "url": "https://developers.figma.com/docs/plugins/api/properties/nodes-gridcolumnsizes/",
+      "title": "gridColumnSizes | Developer Docs",
+      "filePath": "/Users/skirk92/figmacionvert-2/tools/figma-plugin-docpack/out/md/docs__plugins__api__properties__nodes-gridcolumnsizes.md",
+      "linksCount": 103
+    },
+    {
+      "url": "https://developers.figma.com/docs/plugins/api/properties/nodes-gridcolumngap/",
+      "title": "gridColumnGap | Developer Docs",
+      "filePath": "/Users/skirk92/figmacionvert-2/tools/figma-plugin-docpack/out/md/docs__plugins__api__properties__nodes-gridcolumngap.md",
+      "linksCount": 102
+    },
+    {
+      "url": "https://developers.figma.com/docs/plugins/api/properties/nodes-gridrowanchorindex/",
+      "title": "gridRowAnchorIndex | Developer Docs",
+      "filePath": "/Users/skirk92/figmacionvert-2/tools/figma-plugin-docpack/out/md/docs__plugins__api__properties__nodes-gridrowanchorindex.md",
+      "linksCount": 117
+    },
+    {
+      "url": "https://developers.figma.com/docs/plugins/api/properties/nodes-gridrowcount/",
+      "title": "gridRowCount | Developer Docs",
+      "filePath": "/Users/skirk92/figmacionvert-2/tools/figma-plugin-docpack/out/md/docs__plugins__api__properties__nodes-gridrowcount.md",
+      "linksCount": 103
+    },
+    {
+      "url": "https://developers.figma.com/docs/plugins/api/properties/nodes-gridrowgap/",
+      "title": "gridRowGap | Developer Docs",
+      "filePath": "/Users/skirk92/figmacionvert-2/tools/figma-plugin-docpack/out/md/docs__plugins__api__properties__nodes-gridrowgap.md",
+      "linksCount": 102
+    },
+    {
+      "url": "https://developers.figma.com/docs/plugins/api/properties/nodes-gridcolumnspan/",
+      "title": "gridColumnSpan | Developer Docs",
+      "filePath": "/Users/skirk92/figmacionvert-2/tools/figma-plugin-docpack/out/md/docs__plugins__api__properties__nodes-gridcolumnspan.md",
+      "linksCount": 117
+    },
+    {
+      "url": "https://developers.figma.com/docs/plugins/api/properties/nodes-gridrowsizes/",
+      "title": "gridRowSizes | Developer Docs",
+      "filePath": "/Users/skirk92/figmacionvert-2/tools/figma-plugin-docpack/out/md/docs__plugins__api__properties__nodes-gridrowsizes.md",
+      "linksCount": 103
+    },
+    {
+      "url": "https://developers.figma.com/docs/plugins/api/properties/nodes-id/",
+      "title": "id | Developer Docs",
+      "filePath": "/Users/skirk92/figmacionvert-2/tools/figma-plugin-docpack/out/md/docs__plugins__api__properties__nodes-id.md",
+      "linksCount": 133
+    },
+    {
+      "url": "https://developers.figma.com/docs/plugins/api/properties/nodes-gridrowspan/",
+      "title": "gridRowSpan | Developer Docs",
+      "filePath": "/Users/skirk92/figmacionvert-2/tools/figma-plugin-docpack/out/md/docs__plugins__api__properties__nodes-gridrowspan.md",
+      "linksCount": 117
+    },
+    {
+      "url": "https://developers.figma.com/docs/plugins/api/properties/nodes-inferredvariables/",
+      "title": "inferredVariables | Developer Docs",
+      "filePath": "/Users/skirk92/figmacionvert-2/tools/figma-plugin-docpack/out/md/docs__plugins__api__properties__nodes-inferredvariables.md",
+      "linksCount": 132
+    },
+    {
+      "url": "https://developers.figma.com/docs/plugins/api/properties/TextNode-insertcharacters/",
+      "title": "insertCharacters | Developer Docs",
+      "filePath": "/Users/skirk92/figmacionvert-2/tools/figma-plugin-docpack/out/md/docs__plugins__api__properties__textnode-insertcharacters.md",
+      "linksCount": 101
+    },
+    {
+      "url": "https://developers.figma.com/docs/plugins/api/properties/nodes-insertchild/",
+      "title": "insertChild | Developer Docs",
+      "filePath": "/Users/skirk92/figmacionvert-2/tools/figma-plugin-docpack/out/md/docs__plugins__api__properties__nodes-insertchild.md",
+      "linksCount": 109
+    },
+    {
+      "url": "https://developers.figma.com/docs/plugins/api/properties/nodes-ismask/",
+      "title": "isMask | Developer Docs",
+      "filePath": "/Users/skirk92/figmacionvert-2/tools/figma-plugin-docpack/out/md/docs__plugins__api__properties__nodes-ismask.md",
+      "linksCount": 116
+    },
+    {
+      "url": "https://developers.figma.com/docs/plugins/api/properties/nodes-itemreversezindex/",
+      "title": "itemReverseZIndex | Developer Docs",
+      "filePath": "/Users/skirk92/figmacionvert-2/tools/figma-plugin-docpack/out/md/docs__plugins__api__properties__nodes-itemreversezindex.md",
+      "linksCount": 103
+    },
+    {
+      "url": "https://developers.figma.com/docs/plugins/api/properties/nodes-layoutgrow/",
+      "title": "layoutGrow | Developer Docs",
+      "filePath": "/Users/skirk92/figmacionvert-2/tools/figma-plugin-docpack/out/md/docs__plugins__api__properties__nodes-layoutgrow.md",
+      "linksCount": 118
+    },
+    {
+      "url": "https://developers.figma.com/docs/plugins/api/properties/nodes-itemspacing/",
+      "title": "itemSpacing | Developer Docs",
+      "filePath": "/Users/skirk92/figmacionvert-2/tools/figma-plugin-docpack/out/md/docs__plugins__api__properties__nodes-itemspacing.md",
+      "linksCount": 103
+    },
+    {
+      "url": "https://developers.figma.com/docs/plugins/api/properties/nodes-layoutalign/",
+      "title": "layoutAlign | Developer Docs",
+      "filePath": "/Users/skirk92/figmacionvert-2/tools/figma-plugin-docpack/out/md/docs__plugins__api__properties__nodes-layoutalign.md",
+      "linksCount": 118
+    },
+    {
+      "url": "https://developers.figma.com/docs/plugins/api/properties/nodes-layoutmode/",
+      "title": "layoutMode | Developer Docs",
+      "filePath": "/Users/skirk92/figmacionvert-2/tools/figma-plugin-docpack/out/md/docs__plugins__api__properties__nodes-layoutmode.md",
+      "linksCount": 103
+    },
+    {
+      "url": "https://developers.figma.com/docs/plugins/api/properties/nodes-layoutpositioning/",
+      "title": "layoutPositioning | Developer Docs",
+      "filePath": "/Users/skirk92/figmacionvert-2/tools/figma-plugin-docpack/out/md/docs__plugins__api__properties__nodes-layoutpositioning.md",
+      "linksCount": 118
+    },
+    {
+      "url": "https://developers.figma.com/docs/plugins/api/properties/nodes-layoutsizinghorizontal/",
+      "title": "layoutSizingHorizontal | Developer Docs",
+      "filePath": "/Users/skirk92/figmacionvert-2/tools/figma-plugin-docpack/out/md/docs__plugins__api__properties__nodes-layoutsizinghorizontal.md",
+      "linksCount": 117
+    },
+    {
+      "url": "https://developers.figma.com/docs/plugins/api/properties/nodes-layoutsizingvertical/",
+      "title": "layoutSizingVertical | Developer Docs",
+      "filePath": "/Users/skirk92/figmacionvert-2/tools/figma-plugin-docpack/out/md/docs__plugins__api__properties__nodes-layoutsizingvertical.md",
+      "linksCount": 117
+    },
+    {
+      "url": "https://developers.figma.com/docs/plugins/api/properties/nodes-layoutwrap/",
+      "title": "layoutWrap | Developer Docs",
+      "filePath": "/Users/skirk92/figmacionvert-2/tools/figma-plugin-docpack/out/md/docs__plugins__api__properties__nodes-layoutwrap.md",
+      "linksCount": 103
+    },
+    {
+      "url": "https://developers.figma.com/docs/plugins/api/properties/nodes-locked/",
+      "title": "locked | Developer Docs",
+      "filePath": "/Users/skirk92/figmacionvert-2/tools/figma-plugin-docpack/out/md/docs__plugins__api__properties__nodes-locked.md",
+      "linksCount": 130
+    },
+    {
+      "url": "https://developers.figma.com/docs/plugins/api/properties/nodes-name/",
+      "title": "name | Developer Docs",
+      "filePath": "/Users/skirk92/figmacionvert-2/tools/figma-plugin-docpack/out/md/docs__plugins__api__properties__nodes-name.md",
+      "linksCount": 132
+    },
+    {
+      "url": "https://developers.figma.com/docs/plugins/api/properties/nodes-numberoffixedchildren/",
+      "title": "numberOfFixedChildren | Developer Docs",
+      "filePath": "/Users/skirk92/figmacionvert-2/tools/figma-plugin-docpack/out/md/docs__plugins__api__properties__nodes-numberoffixedchildren.md",
+      "linksCount": 100
+    },
+    {
+      "url": "https://developers.figma.com/docs/plugins/api/properties/TextNode-opentypefeatures/",
+      "title": "openTypeFeatures | Developer Docs",
+      "filePath": "/Users/skirk92/figmacionvert-2/tools/figma-plugin-docpack/out/md/docs__plugins__api__properties__textnode-opentypefeatures.md",
+      "linksCount": 102
+    },
+    {
+      "url": "https://developers.figma.com/docs/plugins/api/properties/nodes-overflowdirection/",
+      "title": "overflowDirection | Developer Docs",
+      "filePath": "/Users/skirk92/figmacionvert-2/tools/figma-plugin-docpack/out/md/docs__plugins__api__properties__nodes-overflowdirection.md",
+      "linksCount": 101
+    },
+    {
+      "url": "https://developers.figma.com/docs/plugins/api/properties/nodes-primaryaxissizingmode/",
+      "title": "primaryAxisSizingMode | Developer Docs",
+      "filePath": "/Users/skirk92/figmacionvert-2/tools/figma-plugin-docpack/out/md/docs__plugins__api__properties__nodes-primaryaxissizingmode.md",
+      "linksCount": 103
+    },
+    {
+      "url": "https://developers.figma.com/docs/plugins/api/properties/nodes-primaryaxisalignitems/",
+      "title": "primaryAxisAlignItems | Developer Docs",
+      "filePath": "/Users/skirk92/figmacionvert-2/tools/figma-plugin-docpack/out/md/docs__plugins__api__properties__nodes-primaryaxisalignitems.md",
+      "linksCount": 103
+    },
+    {
+      "url": "https://developers.figma.com/docs/plugins/api/properties/nodes-parent/",
+      "title": "parent | Developer Docs",
+      "filePath": "/Users/skirk92/figmacionvert-2/tools/figma-plugin-docpack/out/md/docs__plugins__api__properties__nodes-parent.md",
+      "linksCount": 132
+    },
+    {
+      "url": "https://developers.figma.com/docs/plugins/api/properties/nodes-reactions/",
+      "title": "reactions | Developer Docs",
+      "filePath": "/Users/skirk92/figmacionvert-2/tools/figma-plugin-docpack/out/md/docs__plugins__api__properties__nodes-reactions.md",
+      "linksCount": 115
+    },
+    {
+      "url": "https://developers.figma.com/docs/plugins/api/properties/nodes-relativetransform/",
+      "title": "relativeTransform | Developer Docs",
+      "filePath": "/Users/skirk92/figmacionvert-2/tools/figma-plugin-docpack/out/md/docs__plugins__api__properties__nodes-relativetransform.md",
+      "linksCount": 131
+    },
+    {
+      "url": "https://developers.figma.com/docs/plugins/api/properties/nodes-removed/",
+      "title": "removed | Developer Docs",
+      "filePath": "/Users/skirk92/figmacionvert-2/tools/figma-plugin-docpack/out/md/docs__plugins__api__properties__nodes-removed.md",
+      "linksCount": 132
+    },
+    {
+      "url": "https://developers.figma.com/docs/plugins/api/properties/nodes-remove/",
+      "title": "remove | Developer Docs",
+      "filePath": "/Users/skirk92/figmacionvert-2/tools/figma-plugin-docpack/out/md/docs__plugins__api__properties__nodes-remove.md",
+      "linksCount": 132
+    },
+    {
+      "url": "https://developers.figma.com/docs/plugins/api/properties/nodes-rescale/",
+      "title": "rescale | Developer Docs",
+      "filePath": "/Users/skirk92/figmacionvert-2/tools/figma-plugin-docpack/out/md/docs__plugins__api__properties__nodes-rescale.md",
+      "linksCount": 117
+    },
+    {
+      "url": "https://developers.figma.com/docs/plugins/api/properties/nodes-resizewithoutconstraints/",
+      "title": "resizeWithoutConstraints | Developer Docs",
+      "filePath": "/Users/skirk92/figmacionvert-2/tools/figma-plugin-docpack/out/md/docs__plugins__api__properties__nodes-resizewithoutconstraints.md",
+      "linksCount": 117
+    },
+    {
+      "url": "https://developers.figma.com/docs/plugins/api/properties/nodes-resize/",
+      "title": "resize | Developer Docs",
+      "filePath": "/Users/skirk92/figmacionvert-2/tools/figma-plugin-docpack/out/md/docs__plugins__api__properties__nodes-resize.md",
+      "linksCount": 118
+    },
+    {
+      "url": "https://developers.figma.com/docs/plugins/api/properties/nodes-resolvedvariablemodes/",
+      "title": "resolvedVariableModes | Developer Docs",
+      "filePath": "/Users/skirk92/figmacionvert-2/tools/figma-plugin-docpack/out/md/docs__plugins__api__properties__nodes-resolvedvariablemodes.md",
+      "linksCount": 130
+    },
+    {
+      "url": "https://developers.figma.com/docs/plugins/api/properties/ExplicitVariableModesMixin-setexplicitvariablemodeforcollection/",
+      "title": "setExplicitVariableModeForCollection | Developer Docs",
+      "filePath": "/Users/skirk92/figmacionvert-2/tools/figma-plugin-docpack/out/md/docs__plugins__api__properties__explicitvariablemodesmixin-setexplicitvariablemodeforcollection.md",
+      "linksCount": 132
+    },
+    {
+      "url": "https://developers.figma.com/docs/plugins/api/properties/nodes-setboundvariable/",
+      "title": "setBoundVariable | Developer Docs",
+      "filePath": "/Users/skirk92/figmacionvert-2/tools/figma-plugin-docpack/out/md/docs__plugins__api__properties__nodes-setboundvariable.md",
+      "linksCount": 133
+    },
+    {
+      "url": "https://developers.figma.com/docs/plugins/api/properties/nodes-rotation/",
+      "title": "rotation | Developer Docs",
+      "filePath": "/Users/skirk92/figmacionvert-2/tools/figma-plugin-docpack/out/md/docs__plugins__api__properties__nodes-rotation.md",
+      "linksCount": 117
+    },
+    {
+      "url": "https://developers.figma.com/docs/plugins/api/properties/nodes-setgridchildposition/",
+      "title": "setGridChildPosition | Developer Docs",
+      "filePath": "/Users/skirk92/figmacionvert-2/tools/figma-plugin-docpack/out/md/docs__plugins__api__properties__nodes-setgridchildposition.md",
+      "linksCount": 117
+    },
+    {
+      "url": "https://developers.figma.com/docs/plugins/api/properties/nodes-setplugindata/",
+      "title": "setPluginData | Developer Docs",
+      "filePath": "/Users/skirk92/figmacionvert-2/tools/figma-plugin-docpack/out/md/docs__plugins__api__properties__nodes-setplugindata.md",
+      "linksCount": 138
+    },
+    {
+      "url": "https://developers.figma.com/docs/plugins/api/properties/nodes-setrelaunchdata/",
+      "title": "setRelaunchData | Developer Docs",
+      "filePath": "/Users/skirk92/figmacionvert-2/tools/figma-plugin-docpack/out/md/docs__plugins__api__properties__nodes-setrelaunchdata.md",
+      "linksCount": 132
+    },
+    {
+      "url": "https://developers.figma.com/docs/plugins/api/properties/nodes-setsharedplugindata/",
+      "title": "setSharedPluginData | Developer Docs",
+      "filePath": "/Users/skirk92/figmacionvert-2/tools/figma-plugin-docpack/out/md/docs__plugins__api__properties__nodes-setsharedplugindata.md",
+      "linksCount": 138
+    },
+    {
+      "url": "https://developers.figma.com/docs/plugins/api/properties/nodes-strokealign/",
+      "title": "strokeAlign | Developer Docs",
+      "filePath": "/Users/skirk92/figmacionvert-2/tools/figma-plugin-docpack/out/md/docs__plugins__api__properties__nodes-strokealign.md",
+      "linksCount": 116
+    },
+    {
+      "url": "https://developers.figma.com/docs/plugins/api/properties/nodes-strokecap/",
+      "title": "strokeCap | Developer Docs",
+      "filePath": "/Users/skirk92/figmacionvert-2/tools/figma-plugin-docpack/out/md/docs__plugins__api__properties__nodes-strokecap.md",
+      "linksCount": 116
+    },
+    {
+      "url": "https://developers.figma.com/docs/plugins/api/properties/nodes-strokejoin/",
+      "title": "strokeJoin | Developer Docs",
+      "filePath": "/Users/skirk92/figmacionvert-2/tools/figma-plugin-docpack/out/md/docs__plugins__api__properties__nodes-strokejoin.md",
+      "linksCount": 118
+    },
+    {
+      "url": "https://developers.figma.com/docs/plugins/api/properties/nodes-strokesincludedinlayout/",
+      "title": "strokesIncludedInLayout | Developer Docs",
+      "filePath": "/Users/skirk92/figmacionvert-2/tools/figma-plugin-docpack/out/md/docs__plugins__api__properties__nodes-strokesincludedinlayout.md",
+      "linksCount": 103
+    },
+    {
+      "url": "https://developers.figma.com/docs/plugins/api/properties/nodes-stucknodes/",
+      "title": "stuckNodes | Developer Docs",
+      "filePath": "/Users/skirk92/figmacionvert-2/tools/figma-plugin-docpack/out/md/docs__plugins__api__properties__nodes-stucknodes.md",
+      "linksCount": 130
+    },
+    {
+      "url": "https://developers.figma.com/docs/plugins/api/properties/nodes-targetaspectratio/",
+      "title": "targetAspectRatio | Developer Docs",
+      "filePath": "/Users/skirk92/figmacionvert-2/tools/figma-plugin-docpack/out/md/docs__plugins__api__properties__nodes-targetaspectratio.md",
+      "linksCount": 117
+    },
+    {
+      "url": "https://developers.figma.com/docs/plugins/api/properties/nodes-tostring/",
+      "title": "toString | Developer Docs",
+      "filePath": "/Users/skirk92/figmacionvert-2/tools/figma-plugin-docpack/out/md/docs__plugins__api__properties__nodes-tostring.md",
+      "linksCount": 132
+    },
+    {
+      "url": "https://developers.figma.com/docs/plugins/api/properties/nodes-stuckto/",
+      "title": "stuckTo | Developer Docs",
+      "filePath": "/Users/skirk92/figmacionvert-2/tools/figma-plugin-docpack/out/md/docs__plugins__api__properties__nodes-stuckto.md",
+      "linksCount": 101
+    },
+    {
+      "url": "https://developers.figma.com/docs/plugins/api/properties/nodes-variantproperties/",
+      "title": "variantProperties | Developer Docs",
+      "filePath": "/Users/skirk92/figmacionvert-2/tools/figma-plugin-docpack/out/md/docs__plugins__api__properties__nodes-variantproperties.md",
+      "linksCount": 99
+    },
+    {
+      "url": "https://developers.figma.com/docs/plugins/api/properties/nodes-visible/",
+      "title": "visible | Developer Docs",
+      "filePath": "/Users/skirk92/figmacionvert-2/tools/figma-plugin-docpack/out/md/docs__plugins__api__properties__nodes-visible.md",
+      "linksCount": 130
+    },
+    {
+      "url": "https://developers.figma.com/docs/plugins/api/properties/nodes-x/",
+      "title": "x | Developer Docs",
+      "filePath": "/Users/skirk92/figmacionvert-2/tools/figma-plugin-docpack/out/md/docs__plugins__api__properties__nodes-x.md",
+      "linksCount": 130
+    },
+    {
+      "url": "https://developers.figma.com/docs/plugins/api/VariableAlias/",
+      "title": "VariableAlias | Developer Docs",
+      "filePath": "/Users/skirk92/figmacionvert-2/tools/figma-plugin-docpack/out/md/docs__plugins__api__variablealias.md",
+      "linksCount": 129
+    },
+    {
+      "url": "https://developers.figma.com/docs/plugins/api/VariableBindableNodeField/",
+      "title": "VariableBindableNodeField | Developer Docs",
+      "filePath": "/Users/skirk92/figmacionvert-2/tools/figma-plugin-docpack/out/md/docs__plugins__api__variablebindablenodefield.md",
+      "linksCount": 129
+    },
+    {
+      "url": "https://developers.figma.com/docs/plugins/api/VariableBindableTextField/",
+      "title": "VariableBindableTextField | Developer Docs",
+      "filePath": "/Users/skirk92/figmacionvert-2/tools/figma-plugin-docpack/out/md/docs__plugins__api__variablebindabletextfield.md",
+      "linksCount": 129
+    },
+    {
+      "url": "https://developers.figma.com/docs/plugins/api/VariableCollection/",
+      "title": "VariableCollection | Developer Docs",
+      "filePath": "/Users/skirk92/figmacionvert-2/tools/figma-plugin-docpack/out/md/docs__plugins__api__variablecollection.md",
+      "linksCount": 133
+    },
+    {
+      "url": "https://developers.figma.com/docs/plugins/api/properties/WidgetNode-setwidgetsyncedstate/",
+      "title": "setWidgetSyncedState | Developer Docs",
+      "filePath": "/Users/skirk92/figmacionvert-2/tools/figma-plugin-docpack/out/md/docs__plugins__api__properties__widgetnode-setwidgetsyncedstate.md",
+      "linksCount": 45
+    },
+    {
+      "url": "https://developers.figma.com/docs/plugins/api/properties/InstanceNode-scalefactor/",
+      "title": "scaleFactor | Developer Docs",
+      "filePath": "/Users/skirk92/figmacionvert-2/tools/figma-plugin-docpack/out/md/docs__plugins__api__properties__instancenode-scalefactor.md",
+      "linksCount": 44
+    },
+    {
+      "url": "https://developers.figma.com/docs/plugins/api/properties/InstanceNode-swapcomponent/",
+      "title": "swapComponent | Developer Docs",
+      "filePath": "/Users/skirk92/figmacionvert-2/tools/figma-plugin-docpack/out/md/docs__plugins__api__properties__instancenode-swapcomponent.md",
+      "linksCount": 44
+    },
+    {
+      "url": "https://developers.figma.com/docs/plugins/api/properties/DocumentNode-findchildren/",
+      "title": "findChildren | Developer Docs",
+      "filePath": "/Users/skirk92/figmacionvert-2/tools/figma-plugin-docpack/out/md/docs__plugins__api__properties__documentnode-findchildren.md",
+      "linksCount": 47
+    },
+    {
+      "url": "https://developers.figma.com/docs/plugins/api/properties/ConnectorNode-rotation/",
+      "title": "rotation | Developer Docs",
+      "filePath": "/Users/skirk92/figmacionvert-2/tools/figma-plugin-docpack/out/md/docs__plugins__api__properties__connectornode-rotation.md",
+      "linksCount": 44
+    },
+    {
+      "url": "https://developers.figma.com/docs/plugins/api/properties/DocumentNode-findchild/",
+      "title": "findChild | Developer Docs",
+      "filePath": "/Users/skirk92/figmacionvert-2/tools/figma-plugin-docpack/out/md/docs__plugins__api__properties__documentnode-findchild.md",
+      "linksCount": 47
+    },
+    {
+      "url": "https://developers.figma.com/docs/plugins/api/properties/MediaNode-resize/",
+      "title": "resize | Developer Docs",
+      "filePath": "/Users/skirk92/figmacionvert-2/tools/figma-plugin-docpack/out/md/docs__plugins__api__properties__medianode-resize.md",
+      "linksCount": 44
+    },
+    {
+      "url": "https://developers.figma.com/docs/plugins/api/properties/PageNode-guides/",
+      "title": "guides | Developer Docs",
+      "filePath": "/Users/skirk92/figmacionvert-2/tools/figma-plugin-docpack/out/md/docs__plugins__api__properties__pagenode-guides.md",
+      "linksCount": 51
+    },
+    {
+      "url": "https://developers.figma.com/docs/plugins/api/properties/MediaNode-resizewithoutconstraints/",
+      "title": "resizeWithoutConstraints | Developer Docs",
+      "filePath": "/Users/skirk92/figmacionvert-2/tools/figma-plugin-docpack/out/md/docs__plugins__api__properties__medianode-resizewithoutconstraints.md",
+      "linksCount": 44
+    },
+    {
+      "url": "https://developers.figma.com/docs/plugins/api/properties/PageNode-selectedtextrange/",
+      "title": "selectedTextRange | Developer Docs",
+      "filePath": "/Users/skirk92/figmacionvert-2/tools/figma-plugin-docpack/out/md/docs__plugins__api__properties__pagenode-selectedtextrange.md",
+      "linksCount": 50
+    },
+    {
+      "url": "https://developers.figma.com/docs/plugins/api/properties/PageNode-selection/",
+      "title": "selection | Developer Docs",
+      "filePath": "/Users/skirk92/figmacionvert-2/tools/figma-plugin-docpack/out/md/docs__plugins__api__properties__pagenode-selection.md",
+      "linksCount": 50
+    },
+    {
+      "url": "https://developers.figma.com/docs/plugins/api/properties/PageNode-flowstartingpoints/",
+      "title": "flowStartingPoints | Developer Docs",
+      "filePath": "/Users/skirk92/figmacionvert-2/tools/figma-plugin-docpack/out/md/docs__plugins__api__properties__pagenode-flowstartingpoints.md",
+      "linksCount": 50
+    },
+    {
+      "url": "https://developers.figma.com/docs/plugins/api/properties/PageNode-focusedslide/",
+      "title": "focusedSlide | Developer Docs",
+      "filePath": "/Users/skirk92/figmacionvert-2/tools/figma-plugin-docpack/out/md/docs__plugins__api__properties__pagenode-focusedslide.md",
+      "linksCount": 50
+    },
+    {
+      "url": "https://developers.figma.com/docs/plugins/api/properties/PageNode-on/",
+      "title": "on | Developer Docs",
+      "filePath": "/Users/skirk92/figmacionvert-2/tools/figma-plugin-docpack/out/md/docs__plugins__api__properties__pagenode-on.md",
+      "linksCount": 52
+    },
+    {
+      "url": "https://developers.figma.com/docs/plugins/api/properties/PageNode-off/",
+      "title": "off | Developer Docs",
+      "filePath": "/Users/skirk92/figmacionvert-2/tools/figma-plugin-docpack/out/md/docs__plugins__api__properties__pagenode-off.md",
+      "linksCount": 51
+    },
+    {
+      "url": "https://developers.figma.com/docs/plugins/api/properties/PageNode-focusednode/",
+      "title": "focusedNode | Developer Docs",
+      "filePath": "/Users/skirk92/figmacionvert-2/tools/figma-plugin-docpack/out/md/docs__plugins__api__properties__pagenode-focusednode.md",
+      "linksCount": 50
+    },
+    {
+      "url": "https://developers.figma.com/docs/plugins/api/properties/ShapeWithTextNode-resize/",
+      "title": "resize | Developer Docs",
+      "filePath": "/Users/skirk92/figmacionvert-2/tools/figma-plugin-docpack/out/md/docs__plugins__api__properties__shapewithtextnode-resize.md",
+      "linksCount": 45
+    },
+    {
+      "url": "https://developers.figma.com/docs/plugins/api/properties/ShapeWithTextNode-rotation/",
+      "title": "rotation | Developer Docs",
+      "filePath": "/Users/skirk92/figmacionvert-2/tools/figma-plugin-docpack/out/md/docs__plugins__api__properties__shapewithtextnode-rotation.md",
+      "linksCount": 46
+    },
+    {
+      "url": "https://developers.figma.com/docs/plugins/api/properties/ShapeWithTextNode-rescale/",
+      "title": "rescale | Developer Docs",
+      "filePath": "/Users/skirk92/figmacionvert-2/tools/figma-plugin-docpack/out/md/docs__plugins__api__properties__shapewithtextnode-rescale.md",
+      "linksCount": 45
+    },
+    {
+      "url": "https://developers.figma.com/docs/plugins/api/properties/SectionNode-resizewithoutconstraints/",
+      "title": "resizeWithoutConstraints | Developer Docs",
+      "filePath": "/Users/skirk92/figmacionvert-2/tools/figma-plugin-docpack/out/md/docs__plugins__api__properties__sectionnode-resizewithoutconstraints.md",
+      "linksCount": 43
+    },
+    {
+      "url": "https://developers.figma.com/docs/plugins/api/properties/TableNode-insertrow/",
+      "title": "insertRow | Developer Docs",
+      "filePath": "/Users/skirk92/figmacionvert-2/tools/figma-plugin-docpack/out/md/docs__plugins__api__properties__tablenode-insertrow.md",
+      "linksCount": 51
+    },
+    {
+      "url": "https://developers.figma.com/docs/plugins/api/properties/TableNode-removerow/",
+      "title": "removeRow | Developer Docs",
+      "filePath": "/Users/skirk92/figmacionvert-2/tools/figma-plugin-docpack/out/md/docs__plugins__api__properties__tablenode-removerow.md",
+      "linksCount": 51
+    },
+    {
+      "url": "https://developers.figma.com/docs/plugins/api/properties/TableNode-cellat/",
+      "title": "cellAt | Developer Docs",
+      "filePath": "/Users/skirk92/figmacionvert-2/tools/figma-plugin-docpack/out/md/docs__plugins__api__properties__tablenode-cellat.md",
+      "linksCount": 51
+    },
+    {
+      "url": "https://developers.figma.com/docs/plugins/api/properties/TableNode-insertcolumn/",
+      "title": "insertColumn | Developer Docs",
+      "filePath": "/Users/skirk92/figmacionvert-2/tools/figma-plugin-docpack/out/md/docs__plugins__api__properties__tablenode-insertcolumn.md",
+      "linksCount": 51
+    },
+    {
+      "url": "https://developers.figma.com/docs/plugins/api/properties/TableNode-moverow/",
+      "title": "moveRow | Developer Docs",
+      "filePath": "/Users/skirk92/figmacionvert-2/tools/figma-plugin-docpack/out/md/docs__plugins__api__properties__tablenode-moverow.md",
+      "linksCount": 51
+    },
+    {
+      "url": "https://developers.figma.com/docs/plugins/api/properties/TableNode-removecolumn/",
+      "title": "removeColumn | Developer Docs",
+      "filePath": "/Users/skirk92/figmacionvert-2/tools/figma-plugin-docpack/out/md/docs__plugins__api__properties__tablenode-removecolumn.md",
+      "linksCount": 51
+    },
+    {
+      "url": "https://developers.figma.com/docs/plugins/api/properties/TableNode-resizerow/",
+      "title": "resizeRow | Developer Docs",
+      "filePath": "/Users/skirk92/figmacionvert-2/tools/figma-plugin-docpack/out/md/docs__plugins__api__properties__tablenode-resizerow.md",
+      "linksCount": 51
+    },
+    {
+      "url": "https://developers.figma.com/docs/plugins/api/properties/TableNode-movecolumn/",
+      "title": "moveColumn | Developer Docs",
+      "filePath": "/Users/skirk92/figmacionvert-2/tools/figma-plugin-docpack/out/md/docs__plugins__api__properties__tablenode-movecolumn.md",
+      "linksCount": 51
+    },
+    {
+      "url": "https://developers.figma.com/docs/plugins/api/properties/TableNode-resizecolumn/",
+      "title": "resizeColumn | Developer Docs",
+      "filePath": "/Users/skirk92/figmacionvert-2/tools/figma-plugin-docpack/out/md/docs__plugins__api__properties__tablenode-resizecolumn.md",
+      "linksCount": 51
+    },
+    {
+      "url": "https://developers.figma.com/docs/plugins/api/properties/TextNode-textautoresize/",
+      "title": "textAutoResize | Developer Docs",
+      "filePath": "/Users/skirk92/figmacionvert-2/tools/figma-plugin-docpack/out/md/docs__plugins__api__properties__textnode-textautoresize.md",
+      "linksCount": 46
+    },
+    {
+      "url": "https://developers.figma.com/docs/plugins/api/properties/TextNode-texttruncation/",
+      "title": "textTruncation | Developer Docs",
+      "filePath": "/Users/skirk92/figmacionvert-2/tools/figma-plugin-docpack/out/md/docs__plugins__api__properties__textnode-texttruncation.md",
+      "linksCount": 46
+    },
+    {
+      "url": "https://developers.figma.com/docs/plugins/api/properties/TextNode-maxlines/",
+      "title": "maxLines | Developer Docs",
+      "filePath": "/Users/skirk92/figmacionvert-2/tools/figma-plugin-docpack/out/md/docs__plugins__api__properties__textnode-maxlines.md",
+      "linksCount": 46
+    },
+    {
+      "url": "https://developers.figma.com/docs/plugins/api/properties/figma-ui-onmessage/",
+      "title": "onmessage | Developer Docs",
+      "filePath": "/Users/skirk92/figmacionvert-2/tools/figma-plugin-docpack/out/md/docs__plugins__api__properties__figma-ui-onmessage.md",
+      "linksCount": 72
+    },
+    {
+      "url": "https://developers.figma.com/docs/plugins/api/properties/figma-ui-postmessage/",
+      "title": "postMessage | Developer Docs",
+      "filePath": "/Users/skirk92/figmacionvert-2/tools/figma-plugin-docpack/out/md/docs__plugins__api__properties__figma-ui-postmessage.md",
+      "linksCount": 72
+    },
+    {
+      "url": "https://developers.figma.com/docs/plugins/api/properties/TextPathNode-autorename/",
+      "title": "autoRename | Developer Docs",
+      "filePath": "/Users/skirk92/figmacionvert-2/tools/figma-plugin-docpack/out/md/docs__plugins__api__properties__textpathnode-autorename.md",
+      "linksCount": 43
+    },
+    {
+      "url": "https://developers.figma.com/docs/plugins/api/properties/TextNode-autorename/",
+      "title": "autoRename | Developer Docs",
+      "filePath": "/Users/skirk92/figmacionvert-2/tools/figma-plugin-docpack/out/md/docs__plugins__api__properties__textnode-autorename.md",
+      "linksCount": 46
+    },
+    {
+      "url": "https://developers.figma.com/docs/plugins/api/properties/figma-ui-on/",
+      "title": "on | Developer Docs",
+      "filePath": "/Users/skirk92/figmacionvert-2/tools/figma-plugin-docpack/out/md/docs__plugins__api__properties__figma-ui-on.md",
+      "linksCount": 72
+    },
+    {
+      "url": "https://developers.figma.com/docs/plugins/api/properties/WidgetNode-clonewidget/",
+      "title": "cloneWidget | Developer Docs",
+      "filePath": "/Users/skirk92/figmacionvert-2/tools/figma-plugin-docpack/out/md/docs__plugins__api__properties__widgetnode-clonewidget.md",
+      "linksCount": 44
+    },
+    {
+      "url": "https://developers.figma.com/docs/plugins/api/properties/figma-util-rgba/",
+      "title": "rgba | Developer Docs",
+      "filePath": "/Users/skirk92/figmacionvert-2/tools/figma-plugin-docpack/out/md/docs__plugins__api__properties__figma-util-rgba.md",
+      "linksCount": 74
+    },
+    {
+      "url": "https://developers.figma.com/docs/plugins/api/properties/figma-util-rgb/",
+      "title": "rgb | Developer Docs",
+      "filePath": "/Users/skirk92/figmacionvert-2/tools/figma-plugin-docpack/out/md/docs__plugins__api__properties__figma-util-rgb.md",
+      "linksCount": 74
+    },
+    {
+      "url": "https://developers.figma.com/docs/plugins/api/properties/figma-util-solidpaint/",
+      "title": "solidPaint | Developer Docs",
+      "filePath": "/Users/skirk92/figmacionvert-2/tools/figma-plugin-docpack/out/md/docs__plugins__api__properties__figma-util-solidpaint.md",
+      "linksCount": 75
+    },
+    {
+      "url": "https://developers.figma.com/docs/plugins/api/properties/figma-util-normalizemarkdown/",
+      "title": "normalizeMarkdown | Developer Docs",
+      "filePath": "/Users/skirk92/figmacionvert-2/tools/figma-plugin-docpack/out/md/docs__plugins__api__properties__figma-util-normalizemarkdown.md",
+      "linksCount": 73
+    },
+    {
+      "url": "https://developers.figma.com/docs/plugins/api/properties/figma-constants-colors/",
+      "title": "colors | Developer Docs",
+      "filePath": "/Users/skirk92/figmacionvert-2/tools/figma-plugin-docpack/out/md/docs__plugins__api__properties__figma-constants-colors.md",
+      "linksCount": 71
+    },
+    {
+      "url": "https://developers.figma.com/docs/plugins/api/properties/figma-viewport-slidesview/",
+      "title": "slidesView | Developer Docs",
+      "filePath": "/Users/skirk92/figmacionvert-2/tools/figma-plugin-docpack/out/md/docs__plugins__api__properties__figma-viewport-slidesview.md",
+      "linksCount": 72
+    },
+    {
+      "url": "https://developers.figma.com/docs/plugins/api/properties/figma-viewport-zoom/",
+      "title": "zoom | Developer Docs",
+      "filePath": "/Users/skirk92/figmacionvert-2/tools/figma-plugin-docpack/out/md/docs__plugins__api__properties__figma-viewport-zoom.md",
+      "linksCount": 72
+    },
+    {
+      "url": "https://developers.figma.com/docs/plugins/api/properties/figma-codegen-on/",
+      "title": "on | Developer Docs",
+      "filePath": "/Users/skirk92/figmacionvert-2/tools/figma-plugin-docpack/out/md/docs__plugins__api__properties__figma-codegen-on.md",
+      "linksCount": 74
+    },
+    {
+      "url": "https://developers.figma.com/docs/plugins/api/properties/figma-buzz-createframe/",
+      "title": "createFrame | Developer Docs",
+      "filePath": "/Users/skirk92/figmacionvert-2/tools/figma-plugin-docpack/out/md/docs__plugins__api__properties__figma-buzz-createframe.md",
+      "linksCount": 77
+    },
+    {
+      "url": "https://developers.figma.com/docs/plugins/api/properties/figma-viewport-canvasview/",
+      "title": "canvasView | Developer Docs",
+      "filePath": "/Users/skirk92/figmacionvert-2/tools/figma-plugin-docpack/out/md/docs__plugins__api__properties__figma-viewport-canvasview.md",
+      "linksCount": 72
+    },
+    {
+      "url": "https://developers.figma.com/docs/plugins/api/properties/figma-buzz-getbuzzassettypefornode/",
+      "title": "getBuzzAssetTypeForNode | Developer Docs",
+      "filePath": "/Users/skirk92/figmacionvert-2/tools/figma-plugin-docpack/out/md/docs__plugins__api__properties__figma-buzz-getbuzzassettypefornode.md",
+      "linksCount": 77
+    },
+    {
+      "url": "https://developers.figma.com/docs/plugins/api/properties/figma-buzz-createinstance/",
+      "title": "createInstance | Developer Docs",
+      "filePath": "/Users/skirk92/figmacionvert-2/tools/figma-plugin-docpack/out/md/docs__plugins__api__properties__figma-buzz-createinstance.md",
+      "linksCount": 78
+    },
+    {
+      "url": "https://developers.figma.com/docs/plugins/api/properties/figma-buzz-setbuzzassettypefornode/",
+      "title": "setBuzzAssetTypeForNode | Developer Docs",
+      "filePath": "/Users/skirk92/figmacionvert-2/tools/figma-plugin-docpack/out/md/docs__plugins__api__properties__figma-buzz-setbuzzassettypefornode.md",
+      "linksCount": 77
+    },
+    {
+      "url": "https://developers.figma.com/docs/plugins/api/properties/figma-annotations-addannotationcategoryasync/",
+      "title": "addAnnotationCategoryAsync | Developer Docs",
+      "filePath": "/Users/skirk92/figmacionvert-2/tools/figma-plugin-docpack/out/md/docs__plugins__api__properties__figma-annotations-addannotationcategoryasync.md",
+      "linksCount": 73
+    },
+    {
+      "url": "https://developers.figma.com/docs/plugins/api/properties/figma-buzz-smartresize/",
+      "title": "smartResize | Developer Docs",
+      "filePath": "/Users/skirk92/figmacionvert-2/tools/figma-plugin-docpack/out/md/docs__plugins__api__properties__figma-buzz-smartresize.md",
+      "linksCount": 76
+    },
+    {
+      "url": "https://developers.figma.com/docs/plugins/api/properties/figma-buzz-gettextcontent/",
+      "title": "getTextContent | Developer Docs",
+      "filePath": "/Users/skirk92/figmacionvert-2/tools/figma-plugin-docpack/out/md/docs__plugins__api__properties__figma-buzz-gettextcontent.md",
+      "linksCount": 77
+    },
+    {
+      "url": "https://developers.figma.com/docs/plugins/api/properties/figma-buzz-getmediacontent/",
+      "title": "getMediaContent | Developer Docs",
+      "filePath": "/Users/skirk92/figmacionvert-2/tools/figma-plugin-docpack/out/md/docs__plugins__api__properties__figma-buzz-getmediacontent.md",
+      "linksCount": 77
+    },
+    {
+      "url": "https://developers.figma.com/docs/plugins/api/properties/figma-variables-getvariablebyidasync/",
+      "title": "getVariableByIdAsync | Developer Docs",
+      "filePath": "/Users/skirk92/figmacionvert-2/tools/figma-plugin-docpack/out/md/docs__plugins__api__properties__figma-variables-getvariablebyidasync.md",
+      "linksCount": 80
+    },
+    {
+      "url": "https://developers.figma.com/docs/plugins/api/properties/figma-variables-getvariablecollectionbyidasync/",
+      "title": "getVariableCollectionByIdAsync | Developer Docs",
+      "filePath": "/Users/skirk92/figmacionvert-2/tools/figma-plugin-docpack/out/md/docs__plugins__api__properties__figma-variables-getvariablecollectionbyidasync.md",
+      "linksCount": 80
+    },
+    {
+      "url": "https://developers.figma.com/docs/plugins/api/properties/figma-variables-getvariablebyid/",
+      "title": "getVariableById | Developer Docs",
+      "filePath": "/Users/skirk92/figmacionvert-2/tools/figma-plugin-docpack/out/md/docs__plugins__api__properties__figma-variables-getvariablebyid.md",
+      "linksCount": 80
+    },
+    {
+      "url": "https://developers.figma.com/docs/plugins/api/properties/figma-variables-getvariablecollectionbyid/",
+      "title": "getVariableCollectionById | Developer Docs",
+      "filePath": "/Users/skirk92/figmacionvert-2/tools/figma-plugin-docpack/out/md/docs__plugins__api__properties__figma-variables-getvariablecollectionbyid.md",
+      "linksCount": 80
+    },
+    {
+      "url": "https://developers.figma.com/docs/plugins/api/properties/figma-variables-getlocalvariablesasync/",
+      "title": "getLocalVariablesAsync | Developer Docs",
+      "filePath": "/Users/skirk92/figmacionvert-2/tools/figma-plugin-docpack/out/md/docs__plugins__api__properties__figma-variables-getlocalvariablesasync.md",
+      "linksCount": 81
+    },
+    {
+      "url": "https://developers.figma.com/docs/plugins/api/properties/figma-variables-getlocalvariables/",
+      "title": "getLocalVariables | Developer Docs",
+      "filePath": "/Users/skirk92/figmacionvert-2/tools/figma-plugin-docpack/out/md/docs__plugins__api__properties__figma-variables-getlocalvariables.md",
+      "linksCount": 81
+    },
+    {
+      "url": "https://developers.figma.com/docs/plugins/api/properties/figma-variables-createvariable/",
+      "title": "createVariable | Developer Docs",
+      "filePath": "/Users/skirk92/figmacionvert-2/tools/figma-plugin-docpack/out/md/docs__plugins__api__properties__figma-variables-createvariable.md",
+      "linksCount": 82
+    },
+    {
+      "url": "https://developers.figma.com/docs/plugins/api/properties/figma-variables-createvariablecollection/",
+      "title": "createVariableCollection | Developer Docs",
+      "filePath": "/Users/skirk92/figmacionvert-2/tools/figma-plugin-docpack/out/md/docs__plugins__api__properties__figma-variables-createvariablecollection.md",
+      "linksCount": 80
+    },
+    {
+      "url": "https://developers.figma.com/docs/plugins/api/properties/figma-variables-extendlibrarycollectionbykeyasync/",
+      "title": "extendLibraryCollectionByKeyAsync | Developer Docs",
+      "filePath": "/Users/skirk92/figmacionvert-2/tools/figma-plugin-docpack/out/md/docs__plugins__api__properties__figma-variables-extendlibrarycollectionbykeyasync.md",
+      "linksCount": 80
+    },
+    {
+      "url": "https://developers.figma.com/docs/plugins/api/VariableBindablePaintField/",
+      "title": "VariableBindablePaintField | Developer Docs",
+      "filePath": "/Users/skirk92/figmacionvert-2/tools/figma-plugin-docpack/out/md/docs__plugins__api__variablebindablepaintfield.md",
+      "linksCount": 129
+    },
+    {
+      "url": "https://developers.figma.com/docs/plugins/api/VariableResolvedDataType/",
+      "title": "VariableResolvedDataType | Developer Docs",
+      "filePath": "/Users/skirk92/figmacionvert-2/tools/figma-plugin-docpack/out/md/docs__plugins__api__variableresolveddatatype.md",
+      "linksCount": 129
+    },
+    {
+      "url": "https://developers.figma.com/docs/plugins/api/ExtendedVariableCollection/",
+      "title": "ExtendedVariableCollection | Developer Docs",
+      "filePath": "/Users/skirk92/figmacionvert-2/tools/figma-plugin-docpack/out/md/docs__plugins__api__extendedvariablecollection.md",
+      "linksCount": 131
+    },
+    {
+      "url": "https://developers.figma.com/docs/plugins/api/properties/figma-annotations-getannotationcategorybyidasync/",
+      "title": "getAnnotationCategoryByIdAsync | Developer Docs",
+      "filePath": "/Users/skirk92/figmacionvert-2/tools/figma-plugin-docpack/out/md/docs__plugins__api__properties__figma-annotations-getannotationcategorybyidasync.md",
+      "linksCount": 72
+    },
+    {
+      "url": "https://developers.figma.com/docs/plugins/api/properties/figma-teamlibrary-getvariablesinlibrarycollectionasync/",
+      "title": "getVariablesInLibraryCollectionAsync | Developer Docs",
+      "filePath": "/Users/skirk92/figmacionvert-2/tools/figma-plugin-docpack/out/md/docs__plugins__api__properties__figma-teamlibrary-getvariablesinlibrarycollectionasync.md",
+      "linksCount": 74
+    },
+    {
+      "url": "https://developers.figma.com/docs/plugins/api/VariableBindableEffectField/",
+      "title": "VariableBindableEffectField | Developer Docs",
+      "filePath": "/Users/skirk92/figmacionvert-2/tools/figma-plugin-docpack/out/md/docs__plugins__api__variablebindableeffectfield.md",
+      "linksCount": 129
+    },
+    {
+      "url": "https://developers.figma.com/docs/plugins/api/VariableBindableLayoutGridField/",
+      "title": "VariableBindableLayoutGridField | Developer Docs",
+      "filePath": "/Users/skirk92/figmacionvert-2/tools/figma-plugin-docpack/out/md/docs__plugins__api__variablebindablelayoutgridfield.md",
+      "linksCount": 129
+    },
+    {
+      "url": "https://developers.figma.com/docs/plugins/api/properties/figma-teamlibrary-getavailablelibraryvariablecollectionsasync/",
+      "title": "getAvailableLibraryVariableCollectionsAsync | Developer Docs",
+      "filePath": "/Users/skirk92/figmacionvert-2/tools/figma-plugin-docpack/out/md/docs__plugins__api__properties__figma-teamlibrary-getavailablelibraryvariablecollectionsasync.md",
+      "linksCount": 73
+    },
+    {
+      "url": "https://developers.figma.com/docs/plugins/api/LibraryVariableCollection/",
+      "title": "LibraryVariableCollection | Developer Docs",
+      "filePath": "/Users/skirk92/figmacionvert-2/tools/figma-plugin-docpack/out/md/docs__plugins__api__libraryvariablecollection.md",
+      "linksCount": 114
+    },
+    {
+      "url": "https://developers.figma.com/docs/plugins/api/VariableBindableColorStopField/",
+      "title": "VariableBindableColorStopField | Developer Docs",
+      "filePath": "/Users/skirk92/figmacionvert-2/tools/figma-plugin-docpack/out/md/docs__plugins__api__variablebindablecolorstopfield.md",
+      "linksCount": 129
+    },
+    {
+      "url": "https://developers.figma.com/docs/plugins/api/properties/Variable-hiddenfrompublishing/",
+      "title": "hiddenFromPublishing | Developer Docs",
+      "filePath": "/Users/skirk92/figmacionvert-2/tools/figma-plugin-docpack/out/md/docs__plugins__api__properties__variable-hiddenfrompublishing.md",
+      "linksCount": 133
+    },
+    {
+      "url": "https://developers.figma.com/docs/plugins/api/properties/Variable-scopes/",
+      "title": "scopes | Developer Docs",
+      "filePath": "/Users/skirk92/figmacionvert-2/tools/figma-plugin-docpack/out/md/docs__plugins__api__properties__variable-scopes.md",
+      "linksCount": 133
+    },
+    {
+      "url": "https://developers.figma.com/docs/plugins/api/properties/Variable-resolveforconsumer/",
+      "title": "resolveForConsumer | Developer Docs",
+      "filePath": "/Users/skirk92/figmacionvert-2/tools/figma-plugin-docpack/out/md/docs__plugins__api__properties__variable-resolveforconsumer.md",
+      "linksCount": 133
+    },
+    {
+      "url": "https://developers.figma.com/docs/plugins/api/VariableBindablePaintStyleField/",
+      "title": "VariableBindablePaintStyleField | Developer Docs",
+      "filePath": "/Users/skirk92/figmacionvert-2/tools/figma-plugin-docpack/out/md/docs__plugins__api__variablebindablepaintstylefield.md",
+      "linksCount": 129
+    },
+    {
+      "url": "https://developers.figma.com/docs/plugins/api/properties/Variable-setvariablecodesyntax/",
+      "title": "setVariableCodeSyntax | Developer Docs",
+      "filePath": "/Users/skirk92/figmacionvert-2/tools/figma-plugin-docpack/out/md/docs__plugins__api__properties__variable-setvariablecodesyntax.md",
+      "linksCount": 133
+    },
+    {
+      "url": "https://developers.figma.com/docs/plugins/api/VariableBindableEffectStyleField/",
+      "title": "VariableBindableEffectStyleField | Developer Docs",
+      "filePath": "/Users/skirk92/figmacionvert-2/tools/figma-plugin-docpack/out/md/docs__plugins__api__variablebindableeffectstylefield.md",
+      "linksCount": 129
+    },
+    {
+      "url": "https://developers.figma.com/docs/plugins/api/VariableBindableGridStyleField/",
+      "title": "VariableBindableGridStyleField | Developer Docs",
+      "filePath": "/Users/skirk92/figmacionvert-2/tools/figma-plugin-docpack/out/md/docs__plugins__api__variablebindablegridstylefield.md",
+      "linksCount": 129
+    },
+    {
+      "url": "https://developers.figma.com/docs/plugins/api/VariableValue/",
+      "title": "VariableValue | Developer Docs",
+      "filePath": "/Users/skirk92/figmacionvert-2/tools/figma-plugin-docpack/out/md/docs__plugins__api__variablevalue.md",
+      "linksCount": 129
+    },
+    {
+      "url": "https://developers.figma.com/docs/plugins/api/properties/TextStyle-setboundvariable/",
+      "title": "setBoundVariable | Developer Docs",
+      "filePath": "/Users/skirk92/figmacionvert-2/tools/figma-plugin-docpack/out/md/docs__plugins__api__properties__textstyle-setboundvariable.md",
+      "linksCount": 129
+    },
+    {
+      "url": "https://developers.figma.com/docs/plugins/api/VariableScope/",
+      "title": "VariableScope | Developer Docs",
+      "filePath": "/Users/skirk92/figmacionvert-2/tools/figma-plugin-docpack/out/md/docs__plugins__api__variablescope.md",
+      "linksCount": 129
+    },
+    {
+      "url": "https://developers.figma.com/docs/plugins/api/properties/VectorPath-data/",
+      "title": "data | Developer Docs",
+      "filePath": "/Users/skirk92/figmacionvert-2/tools/figma-plugin-docpack/out/md/docs__plugins__api__properties__vectorpath-data.md",
+      "linksCount": 115
+    },
+    {
+      "url": "https://developers.figma.com/docs/plugins/api/properties/VectorPath-windingrule/",
+      "title": "windingRule | Developer Docs",
+      "filePath": "/Users/skirk92/figmacionvert-2/tools/figma-plugin-docpack/out/md/docs__plugins__api__properties__vectorpath-windingrule.md",
+      "linksCount": 115
+    }
+  ]
+}

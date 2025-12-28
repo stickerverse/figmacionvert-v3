@@ -3,6 +3,17 @@
  * Converts hoverStates captured by Puppeteer into Figma component variants
  */
 
+// Helper function to safely set plugin data
+function safeSetPluginData(node: SceneNode, key: string, value: string): void {
+  try {
+    if ("setPluginData" in node) {
+      (node as any).setPluginData(key, value);
+    }
+  } catch (error) {
+    console.warn(`⚠️ Failed to set plugin data ${key}:`, error);
+  }
+}
+
 interface HoverState {
   id: string;
   default: Record<string, string>;
@@ -116,6 +127,72 @@ async function createVariantFromHoverState(
     if (index >= 0) {
       (frame.parent as ChildrenMixin).insertChild(index, instance);
       frame.remove();
+    }
+  }
+
+  // CRITICAL: Set up prototype interaction with onHover trigger
+  // This makes the hover state work when hovering in Figma
+  try {
+    if (hoverVariant) {
+      // Use Figma's reactions property to set up hover interaction
+      // ON_HOVER trigger -> CHANGE_TO action to switch to hover variant
+      // Note: reactions is a property on ComponentInstance nodes
+      if (instance.type === "INSTANCE" && "reactions" in instance) {
+        try {
+          // Set up the hover reaction
+          (instance as any).reactions = [
+            {
+              trigger: {
+                type: "ON_HOVER",
+              },
+              action: {
+                type: "CHANGE_TO",
+                destination: hoverVariant,
+              },
+            },
+          ];
+          console.log(
+            `✅ [HOVER] Set up onHover interaction for ${frame.name} (will switch to hover variant on hover)`
+          );
+        } catch (reactionError) {
+          console.warn(
+            `⚠️ [HOVER] Could not set reactions property directly:`,
+            reactionError
+          );
+          // Fallback: Store in plugin data
+          safeSetPluginData(instance, "hoverVariantId", hoverVariant.id);
+          safeSetPluginData(
+            instance,
+            "hoverInteraction",
+            JSON.stringify({
+              trigger: "ON_HOVER",
+              action: "CHANGE_TO",
+              destination: hoverVariant.id,
+            })
+          );
+        }
+      } else {
+        // Fallback: Store in plugin data if reactions API not available
+        safeSetPluginData(instance, "hoverVariantId", hoverVariant.id);
+        safeSetPluginData(
+          instance,
+          "hoverInteraction",
+          JSON.stringify({
+            trigger: "ON_HOVER",
+            action: "CHANGE_TO",
+            destination: hoverVariant.id,
+          })
+        );
+        console.log(
+          `ℹ️ [HOVER] Stored hover interaction in plugin data for ${frame.name} (instance type: ${instance.type})`
+        );
+      }
+    }
+  } catch (error) {
+    console.warn(`⚠️ [HOVER] Failed to set up prototype interaction:`, error);
+    // Fallback: Store in plugin data
+    if (hoverVariant) {
+      safeSetPluginData(instance, "hoverVariantId", hoverVariant.id);
     }
   }
 

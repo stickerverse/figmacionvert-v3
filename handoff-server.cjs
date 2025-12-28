@@ -1,11 +1,287 @@
 const express = require("express");
 const cors = require("cors");
 const { v4: uuid } = require("uuid");
-const puppeteer = require("puppeteer");
 const fs = require("fs");
 const https = require("https");
 const http = require("http");
 const path = require("path");
+
+// #region agent log
+try {
+  fs.appendFileSync(
+    "/Users/skirk92/figmacionvert-2/.cursor/debug.log",
+    JSON.stringify({
+      id: "log_" + Date.now() + "_server_startup_marker",
+      timestamp: Date.now(),
+      location: "handoff-server.cjs:startup",
+      message: "Handoff server process started (marker)",
+      data: {
+        pid: process.pid,
+        node: process.version,
+        schemaStatsInstrumentation: true,
+      },
+      sessionId: "debug-session",
+      runId: "run3",
+      hypothesisId: "H_SERVER_NOT_RESTARTED",
+    }) + "\n"
+  );
+} catch (e) {}
+// #endregion
+let sharp = null;
+try {
+  sharp = require("sharp");
+} catch (e) {
+  sharp = null;
+  console.warn("[handoff] sharp not available (image downscaling disabled)");
+}
+
+const fetchFn =
+  typeof globalThis.fetch === "function"
+    ? globalThis.fetch.bind(globalThis)
+    : (() => {
+        try {
+          // Optional dependency; only used if the runtime doesn't provide fetch().
+          // eslint-disable-next-line @typescript-eslint/no-var-requires
+          return require("node-fetch");
+        } catch {
+          return null;
+        }
+      })();
+
+/**
+ * Migrate legacy 'tree' property to canonical 'root' property
+ * Ensures all schemas use the canonical hierarchy entry point
+ */
+function migrateSchemaHierarchy(schema) {
+  if (!schema) return schema;
+  
+  // Migration case: tree exists but root doesn't
+  if (schema.tree && !schema.root) {
+    console.log("[handoff] 🔄 Migrating legacy 'tree' property to canonical 'root'");
+    schema.root = schema.tree;
+    delete schema.tree;
+  }
+  
+  // Validation case: ensure we have root
+  if (!schema.root && !schema.tree) {
+    console.warn("[handoff] ⚠️ Schema has neither 'root' nor 'tree' property");
+    return schema;
+  }
+  
+  // Legacy compatibility: if only tree exists, use it as root
+  if (schema.tree && !schema.root) {
+    schema.root = schema.tree;
+    delete schema.tree;
+  }
+  
+  return schema;
+}
+
+async function hydrateMissingImageAssets(schema, opts = {}) {
+  const assets = schema?.assets;
+  const images = assets?.images;
+  if (!images || typeof images !== "object") return { hydrated: 0, failed: 0 };
+
+  const pageUrl =
+    opts.pageUrl || schema?.metadata?.url || schema?.meta?.url || "";
+
+  const concurrency = Math.max(1, Number(opts.concurrency || 6));
+  const timeoutMs = Math.max(1000, Number(opts.timeoutMs || 20000));
+  const maxBytes = Math.max(
+    256 * 1024,
+    Number(opts.maxBytes || 12 * 1024 * 1024)
+  );
+
+  if (!fetchFn) {
+    console.warn("[handoff] fetch() unavailable; cannot hydrate images");
+    return { hydrated: 0, failed: Object.keys(images).length };
+  }
+
+  const headersBase = {
+    Accept: "image/png,image/jpeg,image/webp,image/gif,image/svg+xml,*/*;q=0.8",
+    "User-Agent":
+      "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+    ...(opts.cookieHeader ? { Cookie: opts.cookieHeader } : {}),
+    ...(pageUrl ? { Referer: pageUrl } : {}),
+  };
+
+  const inferMimeFromUrl = (url) => {
+    try {
+      const u = new URL(url);
+      const pathname = (u.pathname || "").toLowerCase();
+      const ext = pathname.split(".").pop() || "";
+      const byExt = {
+        png: "image/png",
+        jpg: "image/jpeg",
+        jpeg: "image/jpeg",
+        gif: "image/gif",
+        webp: "image/webp",
+        svg: "image/svg+xml",
+        avif: "image/avif",
+      };
+      if (byExt[ext]) return byExt[ext];
+
+      // Common format query params (Akamai/imgix-like)
+      const qp =
+        (u.searchParams.get("fm") ||
+          u.searchParams.get("format") ||
+          u.searchParams.get("fmt") ||
+          u.searchParams.get("auto") ||
+          "") + "";
+      const qpl = qp.toLowerCase();
+      if (qpl.includes("avif")) return "image/avif";
+      if (qpl.includes("webp")) return "image/webp";
+      if (qpl.includes("png")) return "image/png";
+      if (qpl.includes("jpg") || qpl.includes("jpeg")) return "image/jpeg";
+      if (qpl.includes("svg")) return "image/svg+xml";
+      return "";
+    } catch {
+      return "";
+    }
+  };
+
+  const keys = Object.keys(images);
+  const queue = keys.filter((k) => {
+    const asset = images[k] || {};
+    const base64Candidate = asset.base64 || asset.data || asset.screenshot;
+    const hasInline =
+      typeof base64Candidate === "string" && base64Candidate.length > 0;
+    const urlCandidate = asset.url || asset.absoluteUrl || asset.originalUrl;
+    const hasUrl = typeof urlCandidate === "string" && urlCandidate.length > 0;
+    return !hasInline && hasUrl;
+  });
+
+  if (queue.length === 0) {
+    return { hydrated: 0, failed: 0 };
+  }
+
+  console.log(
+    `[headless] Hydrating ${queue.length}/${keys.length} image asset(s) missing inline data...`
+  );
+
+  let hydrated = 0;
+  let failed = 0;
+
+  const runOne = async (key) => {
+    const asset = images[key] || {};
+    const url = asset.url || asset.absoluteUrl || asset.originalUrl;
+    if (!url) return;
+
+    const controller =
+      typeof AbortController === "function" ? new AbortController() : null;
+    const timeout = setTimeout(() => {
+      try {
+        controller?.abort();
+      } catch {}
+    }, timeoutMs);
+
+    try {
+      // Prefer a prefetched buffer from Puppeteer response interception when available.
+      const prefetched = opts.prefetchedImages?.get?.(url) || null;
+      const headerContentType = prefetched?.contentType
+        ? String(prefetched.contentType).toLowerCase()
+        : "";
+      const inferredContentType = inferMimeFromUrl(url);
+      let contentType = headerContentType || inferredContentType;
+      let buffer;
+
+      if (prefetched?.buffer && Buffer.isBuffer(prefetched.buffer)) {
+        buffer = prefetched.buffer;
+      } else {
+        const resp = await fetchFn(url, {
+          headers: {
+            ...headersBase,
+            "Accept-Language": "en-US,en;q=0.9",
+            "Cache-Control": "no-cache",
+            Pragma: "no-cache",
+          },
+          signal: controller ? controller.signal : undefined,
+        });
+        if (!resp.ok) {
+          throw new Error(`HTTP ${resp.status}`);
+        }
+
+        const respContentType = (
+          resp.headers?.get?.("content-type") || ""
+        ).toLowerCase();
+        contentType = respContentType || contentType;
+        buffer = Buffer.from(await resp.arrayBuffer());
+      }
+
+      if (buffer.length === 0) throw new Error("Empty response");
+      if (buffer.length > maxBytes) {
+        throw new Error(
+          `Image too large: ${(buffer.length / 1024 / 1024).toFixed(1)}MB`
+        );
+      }
+
+      if (
+        contentType.includes("image/svg") ||
+        inferredContentType.includes("image/svg") ||
+        /\.svg(\?|#|$)/i.test(url)
+      ) {
+        asset.svgCode = buffer.toString("utf8");
+        asset.mimeType = "image/svg+xml";
+        hydrated++;
+        return;
+      }
+
+      let out = buffer;
+      let outMime = contentType || asset.mimeType || "";
+
+      // Figma plugin cannot reliably decode AVIF; transcode on the server when possible.
+      if (outMime.includes("image/avif")) {
+        if (!sharp) {
+          throw new Error(
+            "AVIF received but sharp is unavailable for transcode"
+          );
+        }
+        out = await sharp(out).jpeg({ quality: 85 }).toBuffer();
+        outMime = "image/jpeg";
+      }
+
+      const base64 = out.toString("base64");
+      asset.data = base64;
+      asset.base64 = base64;
+      asset.mimeType = outMime || asset.mimeType;
+
+      // Fill missing dimensions opportunistically
+      if (
+        sharp &&
+        (!asset.width || !asset.height) &&
+        !outMime.includes("svg") &&
+        out.length > 0
+      ) {
+        try {
+          const meta = await sharp(out).metadata();
+          if (meta?.width && !asset.width) asset.width = meta.width;
+          if (meta?.height && !asset.height) asset.height = meta.height;
+        } catch {}
+      }
+
+      hydrated++;
+    } catch (e) {
+      failed++;
+      const msg = e instanceof Error ? e.message : String(e);
+      asset.error = asset.error || `hydrate_failed: ${msg}`;
+    } finally {
+      clearTimeout(timeout);
+    }
+  };
+
+  const workers = new Array(concurrency).fill(0).map(async () => {
+    while (queue.length > 0) {
+      const key = queue.shift();
+      if (!key) return;
+      await runOne(key);
+    }
+  });
+
+  await Promise.all(workers);
+
+  console.log("[headless] Image hydration complete", { hydrated, failed });
+  return { hydrated, failed };
+}
 // Optional AI analyzers - load gracefully
 let createVisionAnalyzer,
   extractColorPalette,
@@ -70,6 +346,8 @@ const BODY_LIMIT =
 const MAX_JOB_SIZE_MB = Number(process.env.HANDOFF_MAX_JOB_MB || "5000");
 const STORAGE_FILE =
   process.env.HANDOFF_STORAGE_PATH || path.join(__dirname, "handoff-jobs.json");
+const DEBUG_JOBS_DIR =
+  process.env.HANDOFF_DEBUG_JOBS_DIR || path.join(__dirname, "jobs-debug");
 const API_KEYS = (process.env.HANDOFF_API_KEYS || "")
   .split(",")
   .map((k) => k.trim())
@@ -91,6 +369,102 @@ const telemetry = {
   lastDeliveredJobId: null,
 };
 
+// Circuit breaker for expensive/unstable ML (YOLO) runs
+const ML_CIRCUIT_BREAKER_TIMEOUTS = 2; // consecutive timeouts before opening circuit
+const ML_CIRCUIT_BREAKER_COOLDOWN_MS = 5 * 60 * 1000; // 5 minutes
+const mlCircuit = {
+  consecutiveTimeouts: 0,
+  openUntil: 0,
+};
+
+/**
+ * Save job schema and screenshot to disk for debugging
+ * Creates organized directory structure: jobs-debug/YYYY-MM-DD/job-{id}/
+ */
+function saveJobForDebugging(jobId, payload, metadata = {}) {
+  try {
+    const now = new Date();
+    const dateStr = now.toISOString().split("T")[0]; // YYYY-MM-DD
+    const timestamp = now.toISOString().replace(/[:.]/g, "-");
+    
+    // Create directory structure: jobs-debug/YYYY-MM-DD/job-{id}/
+    const jobDir = path.join(DEBUG_JOBS_DIR, dateStr, `job-${jobId}`);
+    if (!fs.existsSync(jobDir)) {
+      fs.mkdirSync(jobDir, { recursive: true });
+    }
+
+    // Extract screenshot if available
+    const screenshot = payload?.screenshot || 
+                       payload?.metadata?.screenshot || 
+                       payload?.meta?.screenshot;
+
+    // Save full schema JSON
+    const schemaPath = path.join(jobDir, "schema.json");
+    const schemaToSave = {
+      jobId,
+      timestamp: now.toISOString(),
+      metadata: {
+        ...metadata,
+        url: payload?.metadata?.url || payload?.meta?.url || metadata.url || "unknown",
+        captureEngine: payload?.metadata?.captureEngine || payload?.meta?.captureEngine || metadata.captureEngine || "unknown",
+        viewport: payload?.metadata?.viewport || payload?.meta?.viewport,
+      },
+      schema: payload,
+    };
+    fs.writeFileSync(schemaPath, JSON.stringify(schemaToSave, null, 2));
+    console.log(`[handoff] 💾 Saved schema to ${schemaPath}`);
+
+    // Save screenshot as PNG if available
+    if (screenshot) {
+      try {
+        const screenshotPath = path.join(jobDir, "screenshot.png");
+        // Screenshot can be base64 data URL or plain base64
+        let base64Data = screenshot;
+        if (screenshot.startsWith("data:image")) {
+          // Extract base64 part from data URL
+          base64Data = screenshot.split(",")[1] || screenshot;
+        }
+        const imageBuffer = Buffer.from(base64Data, "base64");
+        fs.writeFileSync(screenshotPath, imageBuffer);
+        console.log(`[handoff] 📸 Saved screenshot to ${screenshotPath}`);
+      } catch (screenshotErr) {
+        console.warn(`[handoff] ⚠️ Failed to save screenshot: ${screenshotErr.message}`);
+      }
+    } else {
+      console.log(`[handoff] ℹ️ No screenshot available for job ${jobId}`);
+    }
+
+    // Save metadata summary for quick reference
+    const metadataPath = path.join(jobDir, "metadata.json");
+    const summary = {
+      jobId,
+      timestamp: now.toISOString(),
+      url: schemaToSave.metadata.url,
+      captureEngine: schemaToSave.metadata.captureEngine,
+      hasScreenshot: !!screenshot,
+      schemaStats: {
+        hasRoot: !!payload?.root,
+        hasTree: !!payload?.tree,
+        rootChildren: payload?.root?.children?.length || 0,
+        imageCount: payload?.assets?.images ? Object.keys(payload.assets.images).length : 0,
+        fontCount: payload?.assets?.fonts ? Object.keys(payload.assets.fonts).length : 0,
+        viewport: payload?.metadata?.viewport || payload?.meta?.viewport,
+      },
+    };
+    fs.writeFileSync(metadataPath, JSON.stringify(summary, null, 2));
+
+    return {
+      schemaPath,
+      screenshotPath: screenshot ? path.join(jobDir, "screenshot.png") : null,
+      metadataPath,
+      jobDir,
+    };
+  } catch (error) {
+    console.error(`[handoff] ❌ Failed to save job ${jobId} for debugging: ${error.message}`);
+    return null;
+  }
+}
+
 function loadStorage() {
   try {
     if (!fs.existsSync(STORAGE_FILE)) return;
@@ -100,25 +474,86 @@ function loadStorage() {
       queue.push(...parsed.queue);
     }
     if (parsed.history) {
-      history = new Map(parsed.history.map(([id, job]) => [id, job]));
+      // FIX: Handle both formats - legacy Map entries and current metadata objects
+      if (Array.isArray(parsed.history)) {
+        if (parsed.history.length > 0) {
+          // Check if it's the new format (objects with id/deliveredAt)
+          if (parsed.history[0].id && parsed.history[0].deliveredAt) {
+            // New format: array of metadata objects - reconstruct minimal jobs
+            parsed.history.forEach(meta => {
+              history.set(meta.id, {
+                id: meta.id,
+                deliveredAt: meta.deliveredAt,
+                payload: null // Metadata only - payload not persisted
+              });
+            });
+          } else {
+            // Legacy format: array of [id, job] tuples
+            history = new Map(parsed.history.map(([id, job]) => [id, job]));
+          }
+        }
+      }
     }
     if (parsed.telemetry) Object.assign(telemetry, parsed.telemetry);
     if (parsed.lastDeliveredJob) lastDeliveredJob = parsed.lastDeliveredJob;
     console.log(`[handoff] Loaded persisted state from ${STORAGE_FILE}`);
   } catch (err) {
     console.warn(`[handoff] Failed to load storage: ${err.message}`);
+    // Fallback: Initialize with empty state to prevent cascading failures
+    history = new Map();
   }
 }
 
 function persistStorage() {
   try {
+    // ENHANCED: Don't persist full payloads to avoid "Invalid string length" errors
+    // Only persist metadata for large payloads
+    const queueMetadata = queue.map((job) => ({
+      id: job.id,
+      timestamp: job.timestamp,
+      permalink: job.permalink,
+      hasPayload: !!job.payload,
+      payloadSize: job.payload ? JSON.stringify(job.payload).length : 0,
+      captureEngine:
+        job.payload?.metadata?.captureEngine ||
+        job.payload?.meta?.captureEngine,
+      hasRoot: !!job.payload?.root,
+    }));
+
+    const historyMetadata = Array.from(history.entries()).map(([id, job]) => ({
+      id,
+      deliveredAt: job.deliveredAt,
+      hasPayload: !!job.payload,
+      payloadSize: job.payload ? JSON.stringify(job.payload).length : 0,
+    }));
+
     const payload = {
-      queue,
-      history: Array.from(history.entries()),
+      queue: queueMetadata,
+      history: historyMetadata,
       telemetry,
-      lastDeliveredJob,
+      lastDeliveredJob: lastDeliveredJob
+        ? {
+            id: lastDeliveredJob.id,
+            deliveredAt: lastDeliveredJob.deliveredAt,
+            hasPayload: !!lastDeliveredJob.payload,
+          }
+        : null,
     };
-    fs.writeFileSync(STORAGE_FILE, JSON.stringify(payload, null, 2));
+
+    // Only persist if total size is reasonable (< 10MB)
+    const payloadStr = JSON.stringify(payload, null, 2);
+    if (payloadStr.length > 10 * 1024 * 1024) {
+      console.warn(
+        `[handoff] Storage payload too large (${(
+          payloadStr.length /
+          1024 /
+          1024
+        ).toFixed(2)}MB), skipping persistence`
+      );
+      return;
+    }
+
+    fs.writeFileSync(STORAGE_FILE, payloadStr);
   } catch (err) {
     console.warn(`[handoff] Failed to persist storage: ${err.message}`);
   }
@@ -161,7 +596,7 @@ app.use((req, _res, next) => {
             url: req.originalUrl,
             path: req.path,
             isJobs: req.originalUrl.includes("/api/jobs"),
-            isCapture: req.originalUrl.includes("/api/capture"),
+            isHealthCheck: req.originalUrl.includes("/api/health"),
             hasBody: !!req.body,
             bodyType: typeof req.body,
           },
@@ -325,8 +760,8 @@ function findFirstTextNode(node) {
   return null;
 }
 
-// LEGACY: Submit a new job - NOW DISABLED
-// All captures must go through /api/capture which uses Puppeteer
+// LEGACY: Submit a new job - NOW DISABLED  
+// Only extension captures are supported
 app.post(["/api/jobs", "/"], (req, res) => {
   // #region agent log
   try {
@@ -604,6 +1039,10 @@ app.post(["/api/jobs", "/"], (req, res) => {
       }
       const decompressedString = decompressed.toString("utf8");
       payloadToCheck = JSON.parse(decompressedString);
+      
+      // CRITICAL FIX: Apply schema hierarchy migration immediately after decompression
+      // This ensures 'tree' is converted to 'root' BEFORE saving to disk
+      payloadToCheck = migrateSchemaHierarchy(payloadToCheck);
 
       // #region agent log
       try {
@@ -616,7 +1055,9 @@ app.post(["/api/jobs", "/"], (req, res) => {
             message: "Decompression successful",
             data: {
               formatUsed: formatUsed,
-              hasTree: !!payloadToCheck?.tree,
+              hasRoot: !!payloadToCheck?.root,
+              hasRoot: !!payloadToCheck?.root,
+      hasTree: !!payloadToCheck?.tree,
               hasCaptures: !!payloadToCheck?.captures,
               hasSchema: !!payloadToCheck?.schema,
               hasMeta: !!payloadToCheck?.meta,
@@ -673,12 +1114,46 @@ app.post(["/api/jobs", "/"], (req, res) => {
     }
   }
 
-  // Check if this is a Puppeteer-produced schema (has captureEngine metadata)
-  // Check both 'meta' (Puppeteer) and 'metadata' (Extension)
-  const captureEngine =
+  // Check if this is an extension-produced schema (has captureEngine metadata)
+  // Check both 'meta' and 'metadata' fields
+  // ENHANCED: Also check nested structures and compressed payloads
+  // CRITICAL: Extension sets captureEngine in metadata.captureEngine
+  let captureEngine =
     payloadToCheck?.meta?.captureEngine ||
     payloadToCheck?.metadata?.captureEngine ||
-    payloadToCheck?.schema?.meta?.captureEngine;
+    payloadToCheck?.schema?.meta?.captureEngine ||
+    payloadToCheck?.schema?.metadata?.captureEngine;
+
+  // Fallback: If payload has root/tree but no explicit captureEngine, assume extension
+  // (Puppeteer uses 'meta', extension uses 'metadata')
+  if (!captureEngine && (payloadToCheck?.root || payloadToCheck?.tree)) {
+    if (payloadToCheck?.metadata && !payloadToCheck?.meta) {
+      // Has metadata but no meta = extension
+      captureEngine = "extension";
+    } else if (payloadToCheck?.meta && !payloadToCheck?.metadata) {
+      // Has meta but no metadata = unknown legacy
+      captureEngine = "unknown";
+    } else if (payloadToCheck?.metadata) {
+      // Has metadata = likely extension
+      captureEngine = "extension";
+    }
+  }
+
+  // ENHANCED: Debug logging for captureEngine detection
+  if (!captureEngine && (payloadToCheck?.root || payloadToCheck?.tree)) {
+    console.log(
+      "[handoff] DEBUG: Payload has root/tree but no captureEngine detected",
+      {
+        hasMeta: !!payloadToCheck?.meta,
+        hasMetadata: !!payloadToCheck?.metadata,
+        metaKeys: payloadToCheck?.meta ? Object.keys(payloadToCheck.meta) : [],
+        metadataKeys: payloadToCheck?.metadata
+          ? Object.keys(payloadToCheck.metadata)
+          : [],
+        topLevelKeys: Object.keys(payloadToCheck || {}).slice(0, 10),
+      }
+    );
+  }
 
   // #region agent log
   try {
@@ -691,7 +1166,8 @@ app.post(["/api/jobs", "/"], (req, res) => {
         message: "Checking captureEngine and schema structure",
         data: {
           captureEngine: captureEngine || null,
-          hasTree: !!payloadToCheck?.tree,
+          hasRoot: !!payloadToCheck?.root,
+      hasTree: !!payloadToCheck?.tree,
           hasCaptures: !!payloadToCheck?.captures,
           hasSchemaTree: !!payloadToCheck?.schema?.tree,
         },
@@ -703,8 +1179,48 @@ app.post(["/api/jobs", "/"], (req, res) => {
   } catch (e) {}
   // #endregion
 
-  if (captureEngine === "puppeteer") {
-    // Allow Puppeteer-produced schemas to be queued
+  // CRITICAL FIX: Queue jobs from extension
+  // Only extension captures are supported
+  if (captureEngine === "extension") {
+    // #region agent log
+    try {
+      const pageUrl =
+        payloadToCheck?.metadata?.url ||
+        payloadToCheck?.meta?.url ||
+        payloadToCheck?.metadata?.pageUrl ||
+        payloadToCheck?.meta?.pageUrl ||
+        "";
+      const root = payloadToCheck?.root || payloadToCheck?.tree || null;
+      const rootChildren = Array.isArray(root?.children) ? root.children.length : 0;
+      const imageCount = payloadToCheck?.assets?.images
+        ? Object.keys(payloadToCheck.assets.images).length
+        : 0;
+      fs.appendFileSync(
+        "/Users/skirk92/figmacionvert-2/.cursor/debug.log",
+        JSON.stringify({
+          id: "log_" + Date.now() + "_schema_stats",
+          timestamp: Date.now(),
+          location: "handoff-server.cjs:apiJobs:schemaStats",
+          message: "Schema stats for queued job",
+          data: {
+            captureEngine,
+            pageUrl,
+            hasTree: !!root,
+            rootType: root?.type || null,
+            rootTag: root?.htmlTag || null,
+            rootChildren,
+            imageCount,
+            topKeys: payloadToCheck ? Object.keys(payloadToCheck).slice(0, 15) : [],
+          },
+          sessionId: "debug-session",
+          runId: "run2",
+          hypothesisId: "H_SCHEMA_EMPTY",
+        }) + "\n"
+      );
+    } catch (e) {}
+    // #endregion
+
+    // Allow both Puppeteer and Extension-produced schemas to be queued
     const job = {
       id: uuid(),
       timestamp: Date.now(),
@@ -715,9 +1231,29 @@ app.post(["/api/jobs", "/"], (req, res) => {
     history.set(job.id, job);
     persistStorage();
 
+    // Save job for debugging
+    const pageUrl = payloadToCheck?.metadata?.url || payloadToCheck?.meta?.url || "unknown";
+    saveJobForDebugging(job.id, payloadToCheck, {
+      url: pageUrl,
+      captureEngine,
+      queueLength: queue.length,
+    });
+
     console.log(
-      `[handoff] received puppeteer job ${job.id} (queue=${queue.length})`
+      `[handoff] ✅ Received ${captureEngine} job ${job.id} (queue=${queue.length})`
     );
+    console.log(`[handoff]    Payload has root: ${!!payloadToCheck?.root}`);
+    if (payloadToCheck?.tree) {
+      console.log(`[handoff]    ⚠️ Found legacy 'tree' property in payload`);
+    }
+    console.log(`[handoff]    Payload has assets: ${!!payloadToCheck?.assets}`);
+    console.log(
+      `[handoff]    Payload has metadata: ${!!payloadToCheck?.metadata}`
+    );
+    if (payloadToCheck?.assets?.images) {
+      const imageCount = Object.keys(payloadToCheck.assets.images).length;
+      console.log(`[handoff]    Image count: ${imageCount}`);
+    }
     return res.json({
       ok: true,
       id: job.id,
@@ -727,18 +1263,23 @@ app.post(["/api/jobs", "/"], (req, res) => {
   }
 
   // Also accept extension-captured data (has tree property OR captures array)
-  if (
-    payloadToCheck?.tree ||
-    payloadToCheck?.captures ||
-    payloadToCheck?.schema?.tree ||
-    captureEngine === "extension"
-  ) {
+  // ENHANCED: More comprehensive check for extension payloads
+  const hasRoot = payloadToCheck?.root || payloadToCheck?.tree || payloadToCheck?.schema?.root || payloadToCheck?.schema?.tree;
+  const hasCaptures =
+    payloadToCheck?.captures || payloadToCheck?.schema?.captures;
+  const isExtension =
+    captureEngine === "extension" ||
+    (hasRoot &&
+      payloadToCheck?.metadata &&
+      !payloadToCheck?.meta?.captureEngine);
+
+  if (hasRoot || hasCaptures || isExtension) {
     // #region agent log - Analyze captured schema properties for visual discrepancy analysis
     try {
-      const schema = payloadToCheck?.tree
+      const schema = (payloadToCheck?.root || payloadToCheck?.tree)
         ? payloadToCheck
         : payloadToCheck?.schema || payloadToCheck;
-      const rootNode = schema?.tree;
+      const rootNode = schema?.root || schema?.tree;
       const sampleNode = rootNode?.children?.[0];
       const sampleTextNode = findFirstTextNode(rootNode);
 
@@ -750,7 +1291,7 @@ app.post(["/api/jobs", "/"], (req, res) => {
           location: "handoff-server.cjs:338",
           message: "Schema properties analysis",
           data: {
-            hasTree: !!schema?.tree,
+            hasRoot: !!schema?.root,
             hasAssets: !!schema?.assets,
             hasMetadata: !!schema?.metadata,
             imageCount: schema?.assets?.images
@@ -798,6 +1339,65 @@ app.post(["/api/jobs", "/"], (req, res) => {
     telemetry.lastExtensionTransferAt = Date.now();
     telemetry.lastQueuedJobId = job.id;
 
+    // Save job for debugging
+    const pageUrl = payloadToCheck?.metadata?.url || payloadToCheck?.meta?.url || "unknown";
+    saveJobForDebugging(job.id, payloadToCheck, {
+      url: pageUrl,
+      captureEngine: "extension",
+      queueLength: queue.length,
+    });
+
+    console.log(
+      `[handoff] ✅ Received extension job ${job.id} (queue=${queue.length}) [FALLBACK PATH]`
+    );
+    console.log(`[handoff]    Payload has root: ${!!payloadToCheck?.root}`);
+    if (payloadToCheck?.tree) {
+      console.log(`[handoff]    ⚠️ Found legacy 'tree' property in payload`);
+    }
+    console.log(`[handoff]    Payload has assets: ${!!payloadToCheck?.assets}`);
+    console.log(
+      `[handoff]    Payload has metadata: ${!!payloadToCheck?.metadata}`
+    );
+    if (payloadToCheck?.assets?.images) {
+      const imageCount = Object.keys(payloadToCheck.assets.images).length;
+      console.log(`[handoff]    Image count: ${imageCount}`);
+    }
+    return res.json({
+      ok: true,
+      id: job.id,
+      queueLength: queue.length,
+      permalink: job.permalink,
+    });
+  }
+
+  // Reject direct schema uploads - extension only
+  // ENHANCED: Better error message with debug info
+  // CRITICAL: But allow extension uploads (they have captureEngine: "extension")
+  if (captureEngine === "extension") {
+    // This should have been caught above, but if it wasn't, queue it now
+    console.log(
+      "[handoff] Extension payload detected in fallback, queueing..."
+    );
+    const job = {
+      id: uuid(),
+      timestamp: Date.now(),
+      payload: payloadToCheck,
+    };
+    job.permalink = `${getBaseUrl()}/api/jobs/${job.id}`;
+    queue.push(job);
+    history.set(job.id, job);
+    persistStorage();
+    telemetry.lastExtensionTransferAt = Date.now();
+    telemetry.lastQueuedJobId = job.id;
+
+    // Save job for debugging
+    const pageUrl = payloadToCheck?.metadata?.url || payloadToCheck?.meta?.url || "unknown";
+    saveJobForDebugging(job.id, payloadToCheck, {
+      url: pageUrl,
+      captureEngine: "extension",
+      queueLength: queue.length,
+    });
+
     console.log(
       `[handoff] received extension job ${job.id} (queue=${queue.length})`
     );
@@ -809,15 +1409,33 @@ app.post(["/api/jobs", "/"], (req, res) => {
     });
   }
 
-  // Reject direct schema uploads - must use /api/capture
   console.warn(
-    "[handoff] Rejected legacy schema upload - use /api/capture instead"
+    "[handoff] Rejected legacy schema upload - extension only",
+    {
+      hasRoot: !!payloadToCheck?.root,
+      hasTree: !!payloadToCheck?.tree,
+      hasCaptures: !!payloadToCheck?.captures,
+      hasSchema: !!payloadToCheck?.schema,
+      captureEngine: captureEngine || "none",
+      hasMetadata: !!payloadToCheck?.metadata,
+      hasMeta: !!payloadToCheck?.meta,
+      topLevelKeys: payloadToCheck
+        ? Object.keys(payloadToCheck).slice(0, 10)
+        : [],
+    }
   );
   return res.status(410).json({
     ok: false,
     error:
-      "Direct schema uploads are disabled. Use POST /api/capture with URL to trigger Puppeteer capture.",
-    hint: 'POST /api/capture { url: "https://..." }',
+      "Direct schema uploads are disabled. Use the Chrome extension to capture pages.",
+    hint: "Install and use the Chrome extension to capture webpages.",
+    debug: {
+      hasRoot: !!payloadToCheck?.root,
+      hasTree: !!payloadToCheck?.tree,
+      captureEngine: captureEngine || "none",
+      hasMetadata: !!payloadToCheck?.metadata,
+      hasMeta: !!payloadToCheck?.meta,
+    },
   });
 });
 
@@ -840,12 +1458,105 @@ app.get(["/api/jobs/next", "/api/jobs"], (req, res) => {
     history.set(job.id, lastDeliveredJob);
     persistStorage();
 
+    // Save delivered job state (update or create if not saved on receipt)
+    const pageUrl = job.payload?.metadata?.url || job.payload?.meta?.url || "unknown";
+    const captureEngine = job.payload?.metadata?.captureEngine || job.payload?.meta?.captureEngine || "unknown";
+    const saveResult = saveJobForDebugging(job.id, job.payload, {
+      url: pageUrl,
+      captureEngine,
+      deliveredAt: new Date().toISOString(),
+      queueLength: queue.length,
+    });
+    
+    // Update metadata with delivery info if job was already saved
+    if (saveResult && saveResult.metadataPath && fs.existsSync(saveResult.metadataPath)) {
+      try {
+        const metadata = JSON.parse(fs.readFileSync(saveResult.metadataPath, "utf8"));
+        metadata.deliveredAt = new Date().toISOString();
+        fs.writeFileSync(saveResult.metadataPath, JSON.stringify(metadata, null, 2));
+      } catch (e) {
+        // Ignore errors updating metadata
+      }
+    }
+
     // Format the response to match what the Figma plugin expects
+    // CRITICAL FIX: Ensure payload is correctly extracted for extension format
+    let jobPayload = job.payload;
+
+    // Handle extension payload structure:
+    // Extension sends schema directly: { tree, assets, metadata, ... }
+    // 3. Multi-viewport format: { captures: [{ data: { tree, assets, ... } }] }
+    if (jobPayload?.schema && typeof jobPayload.schema === "object" && (jobPayload.schema.root || jobPayload.schema.tree)) {
+      console.log("[handoff] Unwrapping nested schema format");
+      jobPayload = jobPayload.schema;
+    }
+    
+    // Apply schema hierarchy migration early
+    jobPayload = migrateSchemaHierarchy(jobPayload);
+    
+    // CRITICAL FIX: Handle multi-viewport format from Chrome extension
+    // The extension sends: { version, multiViewport, captures: [{ data: { tree, assets } }] }
+    if (Array.isArray(jobPayload?.captures) && jobPayload.captures.length > 0 && !jobPayload.root && !jobPayload.tree) {
+      console.log("[handoff] Unwrapping multi-viewport capture format...");
+      let picked = null;
+      for (const cap of jobPayload.captures) {
+        if (!cap) continue;
+        // Try common shapes
+        const candidate = cap.data?.root || cap.data?.tree
+          ? cap.data
+          : cap.data?.schema?.root || cap.data?.schema?.tree
+          ? cap.data.schema
+          : cap.data?.rawSchemaJson
+          ? JSON.parse(cap.data.rawSchemaJson)
+          : cap.data || cap.schema;
+        if (candidate?.root || candidate?.tree) {
+          picked = candidate;
+          console.log(`[handoff] Using viewport: ${cap.viewport || cap.name || "unnamed"}`);
+          // Preserve screenshot from capture if available
+          if (!picked.screenshot && cap.data?.screenshot) {
+            picked.screenshot = cap.data.screenshot;
+          }
+          break;
+        }
+        if (cap?.rawSchemaJson && !picked) {
+          try {
+            const parsed = JSON.parse(cap.rawSchemaJson);
+            if (parsed?.tree) {
+              picked = parsed;
+              console.log(`[handoff] Parsed rawSchemaJson for viewport: ${cap.viewport || cap.name || "unnamed"}`);
+              break;
+            }
+          } catch {
+            // ignore parse error and continue
+          }
+        }
+      }
+      if (picked) {
+        // Preserve metadata from wrapper if the picked schema doesn't have it
+        if (!picked.metadata && jobPayload.metadata) {
+          picked.metadata = jobPayload.metadata;
+        }
+        jobPayload = picked;
+        
+        // Apply schema hierarchy migration
+        jobPayload = migrateSchemaHierarchy(jobPayload);
+        
+        console.log("[handoff] Successfully unwrapped multi-viewport format", {
+          hasRoot: !!jobPayload.root,
+          rootChildren: jobPayload.root?.children?.length || 0,
+          hasAssets: !!jobPayload.assets,
+          imageCount: jobPayload.assets?.images ? Object.keys(jobPayload.assets.images).length : 0,
+        });
+      } else {
+        console.error("[handoff] Multi-viewport format detected but no valid capture data found");
+      }
+    }
+
     const response = {
       job: {
         id: job.id,
-        payload: job.payload.schema || job.payload, // Handle both formats
-        screenshot: job.payload.screenshot,
+        payload: jobPayload, // Use the correctly extracted payload
+        screenshot: jobPayload?.screenshot || job.payload?.screenshot,
         permalink: job.permalink || `${getBaseUrl()}/api/jobs/${job.id}`,
       },
       telemetry: getTelemetry(),
@@ -855,7 +1566,14 @@ app.get(["/api/jobs/next", "/api/jobs"], (req, res) => {
     console.log(`[handoff] Sending formatted job response`, {
       jobId: response.job.id,
       hasPayload: !!response.job.payload,
+      hasRoot: !!response.job.payload?.root,
       hasScreenshot: !!response.job.screenshot,
+      payloadKeys: response.job.payload
+        ? Object.keys(response.job.payload).slice(0, 10)
+        : [],
+      captureEngine:
+        response.job.payload?.metadata?.captureEngine ||
+        response.job.payload?.meta?.captureEngine,
     });
 
     res.json(response);
@@ -888,10 +1606,54 @@ app.get("/api/jobs/last", (req, res) => {
 // Retrieve a specific job by id (queue or history)
 app.get("/api/jobs/:id", (req, res) => {
   const { id } = req.params;
-  const job = history.get(id) || queue.find((j) => j.id === id);
+  let job = history.get(id) || queue.find((j) => j.id === id);
   if (!job) {
     return res.status(404).json({ ok: false, error: "Job not found" });
   }
+
+  // CRITICAL FIX: Load payload from disk if missing from memory
+  // This happens after server restart or when payload was stripped for memory optimization
+  if (!job.payload) {
+    try {
+      // Find the job directory in jobs-debug/YYYY-MM-DD/job-{id}/
+      const jobsDebugDir = path.join(__dirname, "jobs-debug");
+      if (fs.existsSync(jobsDebugDir)) {
+        // Search in all date subdirectories (most recent first)
+        const dateDirs = fs.readdirSync(jobsDebugDir)
+          .filter((name) => fs.statSync(path.join(jobsDebugDir, name)).isDirectory())
+          .sort()
+          .reverse();
+
+        for (const dateDir of dateDirs) {
+          const jobDir = path.join(jobsDebugDir, dateDir, `job-${id}`);
+          const schemaPath = path.join(jobDir, "schema.json");
+
+          if (fs.existsSync(schemaPath)) {
+            console.log(`[handoff] 📂 Loading payload from disk for job ${id}`);
+            const diskData = JSON.parse(fs.readFileSync(schemaPath, "utf8"));
+
+            // Extract the payload from the saved schema
+            // The disk format is: { jobId, timestamp, metadata, schema: <actual payload> }
+            // Apply migration since saved schema may have legacy 'tree' property
+            job = {
+              ...job,
+              payload: migrateSchemaHierarchy(diskData.schema),
+            };
+
+            console.log(`[handoff] ✅ Loaded payload from ${schemaPath} (${JSON.stringify(job.payload).length} bytes)`);
+            break;
+          }
+        }
+
+        if (!job.payload) {
+          console.warn(`[handoff] ⚠️ Payload not found on disk for job ${id}`);
+        }
+      }
+    } catch (err) {
+      console.error(`[handoff] ❌ Error loading payload from disk: ${err.message}`);
+    }
+  }
+
   res.json({
     job: {
       ...job,
@@ -923,11 +1685,14 @@ app.get("/api/jobs/history", (_req, res) => {
 
 // Capture a URL
 /**
- * Run AI analysis on a screenshot (extracted from runFullCapturePipeline for reuse)
+ * Run AI analysis on a screenshot
  * @param {string} screenshotBase64 - Base64 encoded screenshot
  * @returns {Promise<Object>} AI analysis results
  */
-async function runAIAnalysis(screenshotBase64) {
+/**
+ * Run AI analysis with per-model timeouts and detailed diagnostics
+ */
+async function runAIAnalysis(screenshotBase64, strictFidelity = true) {
   const results = {
     ocr: null,
     visionComponents: null,
@@ -937,184 +1702,445 @@ async function runAIAnalysis(screenshotBase64) {
     mlComponents: null,
     errors: {},
     executionTracking: {
-      vision: { called: false, started: null, completed: null, duration: null },
-      color: { called: false, started: null, completed: null, duration: null },
+      vision: {
+        called: false,
+        started: null,
+        completed: null,
+        duration: null,
+        timeout: false,
+      },
+      color: {
+        called: false,
+        started: null,
+        completed: null,
+        duration: null,
+        timeout: false,
+      },
       typography: {
         called: false,
         started: null,
         completed: null,
         duration: null,
+        timeout: false,
       },
-      ml: { called: false, started: null, completed: null, duration: null },
+      ml: {
+        called: false,
+        started: null,
+        completed: null,
+        duration: null,
+        timeout: false,
+      },
     },
   };
 
-  // Vision Analyzer (OCR + Component Detection)
-  console.log("[ai-analysis] 🤖 [TRACK] Starting Vision Analyzer (OCR)...");
-  results.executionTracking.vision.called = true;
-  results.executionTracking.vision.started = Date.now();
+  // Per-model timeout (20s each, allowing 3 models = 60s total)
+  const MODEL_TIMEOUT = 20000; // 20 seconds per model
 
-  let visionAnalyzer = null;
-  let visionSuccess = false;
-  try {
-    if (!createVisionAnalyzer) {
-      throw new Error("Vision analyzer not available - module failed to load");
-    }
-    visionAnalyzer = createVisionAnalyzer({ debug: false });
+  /**
+   * Helper to run a model with timeout and diagnostics
+   */
+  async function runModelWithTimeout(
+    modelName,
+    modelFn,
+    trackingKey,
+    timeoutMs = MODEL_TIMEOUT
+  ) {
+    console.log(`[ai-analysis] 🔍 [DIAG] Starting ${modelName}...`);
+    results.executionTracking[trackingKey].called = true;
+    results.executionTracking[trackingKey].started = Date.now();
+    results.executionTracking[trackingKey].timeout = false;
 
-    const ocrResult = await visionAnalyzer.extractTextFromImage(
-      Buffer.from(screenshotBase64, "base64")
-    );
-    results.ocr = {
-      fullText: ocrResult.fullText.substring(0, 5000),
-      wordCount: ocrResult.words.length,
-      confidence: ocrResult.confidence,
-      duration: ocrResult.duration,
-      words: ocrResult.words?.slice(0, 100),
-    };
-    results.executionTracking.vision.completed = Date.now();
-    results.executionTracking.vision.duration =
-      results.executionTracking.vision.completed -
-      results.executionTracking.vision.started;
-
-    console.log(
-      `[ai-analysis] ✅ [TRACK] Vision Analyzer completed in ${
-        results.executionTracking.vision.duration
-      }ms - OCR extracted ${
-        ocrResult.words.length
-      } words (confidence: ${ocrResult.confidence.toFixed(2)})`
-    );
-
-    // Note: analyzeScreenshot requires a Puppeteer page, so we skip it for standalone analysis
-    // This is acceptable as OCR is the main value-add for extension captures
-    visionSuccess = true;
-  } catch (visionErr) {
-    results.executionTracking.vision.completed = Date.now();
-    results.executionTracking.vision.duration =
-      results.executionTracking.vision.completed -
-      results.executionTracking.vision.started;
-    console.error(
-      `[ai-analysis] ❌ [TRACK] Vision Analyzer failed after ${results.executionTracking.vision.duration}ms:`,
-      visionErr.message
-    );
-    results.errors.vision = visionErr.message;
-  } finally {
-    if (visionAnalyzer) {
-      await visionAnalyzer.cleanup();
-    }
+    return Promise.race([
+      modelFn().catch((err) => {
+        const elapsed =
+          Date.now() - results.executionTracking[trackingKey].started;
+        console.error(
+          `[ai-analysis] ❌ [DIAG] ${modelName} failed after ${elapsed}ms:`,
+          err.message
+        );
+        throw err;
+      }),
+      new Promise((_, reject) =>
+        setTimeout(() => {
+          const elapsed =
+            Date.now() - results.executionTracking[trackingKey].started;
+          results.executionTracking[trackingKey].timeout = true;
+          console.error(
+            `[ai-analysis] ⏱️ [DIAG] ${modelName} TIMEOUT after ${elapsed}ms (${timeoutMs}ms limit)`
+          );
+          reject(
+            new Error(
+              `${modelName} timed out after ${elapsed}ms (limit: ${timeoutMs}ms)`
+            )
+          );
+        }, timeoutMs)
+      ),
+    ]);
   }
+
+  if (strictFidelity) {
+    console.log(
+      "[ai-analysis] 🛡️ [DIAG] Strict Fidelity mode enabled. Skipping speculative models (Color, ML)."
+    );
+  }
+
+  // Run all models in parallel for better performance and diagnostics
+  // Each model has its own 20s timeout, so failures don't block others
+  console.log("[ai-analysis] 🚀 [DIAG] Starting all AI models in parallel...");
+  const analysisStartTime = Date.now();
+  const screenshotBuffer = Buffer.from(screenshotBase64, "base64");
+
+  // Vision Analyzer (OCR + Component Detection)
+  const visionPromise = (async () => {
+    console.log("[ai-analysis] 🤖 [TRACK] Starting Vision Analyzer (OCR)...");
+    results.executionTracking.vision.called = true;
+    results.executionTracking.vision.started = Date.now();
+
+    let visionAnalyzer = null;
+    try {
+      if (!createVisionAnalyzer) {
+        throw new Error(
+          "Vision analyzer not available - module failed to load"
+        );
+      }
+
+      console.log(
+        "[ai-analysis] 🔍 [DIAG] Creating Vision Analyzer instance..."
+      );
+      visionAnalyzer = createVisionAnalyzer({ debug: false });
+
+      console.log("[ai-analysis] 🔍 [DIAG] Calling extractTextFromImage...");
+      const ocrResult = await runModelWithTimeout(
+        "Vision Analyzer (OCR)",
+        async () => {
+          return await visionAnalyzer.extractTextFromImage(screenshotBuffer);
+        },
+        "vision"
+      );
+
+      results.ocr = {
+        fullText: ocrResult.fullText.substring(0, 5000),
+        wordCount: ocrResult.words.length,
+        confidence: ocrResult.confidence,
+        duration: ocrResult.duration,
+        words: ocrResult.words?.slice(0, 100),
+      };
+      results.executionTracking.vision.completed = Date.now();
+      results.executionTracking.vision.duration =
+        results.executionTracking.vision.completed -
+        results.executionTracking.vision.started;
+
+      console.log(
+        `[ai-analysis] ✅ [TRACK] Vision Analyzer completed in ${
+          results.executionTracking.vision.duration
+        }ms - OCR extracted ${
+          ocrResult.words.length
+        } words (confidence: ${ocrResult.confidence.toFixed(2)})`
+      );
+      return true;
+    } catch (visionErr) {
+      results.executionTracking.vision.completed = Date.now();
+      results.executionTracking.vision.duration =
+        results.executionTracking.vision.completed -
+        results.executionTracking.vision.started;
+      const isTimeout = results.executionTracking.vision.timeout;
+      console.error(
+        `[ai-analysis] ❌ [TRACK] Vision Analyzer ${
+          isTimeout ? "TIMED OUT" : "failed"
+        } after ${results.executionTracking.vision.duration}ms:`,
+        visionErr.message
+      );
+      results.errors.vision = visionErr.message;
+      return false;
+    } finally {
+      if (visionAnalyzer) {
+        console.log("[ai-analysis] 🔍 [DIAG] Cleaning up Vision Analyzer...");
+        await visionAnalyzer.cleanup();
+      }
+    }
+  })();
 
   // Color Palette Extraction
-  console.log("[ai-analysis] 🎨 [TRACK] Starting Color Analyzer...");
-  results.executionTracking.color.called = true;
-  results.executionTracking.color.started = Date.now();
+  const colorPromise = strictFidelity
+    ? Promise.resolve(false)
+    : (async () => {
+    console.log("[ai-analysis] 🎨 [TRACK] Starting Color Analyzer...");
+    results.executionTracking.color.called = true;
+    results.executionTracking.color.started = Date.now();
 
-  let colorSuccess = false;
-  try {
-    if (!extractColorPalette) {
-      throw new Error("Color analyzer not available - module failed to load");
+    try {
+      if (!extractColorPalette) {
+        throw new Error("Color analyzer not available - module failed to load");
+      }
+
+      console.log("[ai-analysis] 🔍 [DIAG] Calling extractColorPalette...");
+      const colorPalette = await runModelWithTimeout(
+        "Color Analyzer",
+        async () => {
+          return await extractColorPalette(screenshotBuffer);
+        },
+        "color"
+      );
+
+      results.colorPalette = {
+        theme: colorPalette.theme,
+        tokens: colorPalette.tokens,
+        css: colorPalette.css,
+        palette: colorPalette.palette,
+      };
+      results.executionTracking.color.completed = Date.now();
+      results.executionTracking.color.duration =
+        results.executionTracking.color.completed -
+        results.executionTracking.color.started;
+
+      console.log(
+        `[ai-analysis] ✅ [TRACK] Color Analyzer completed in ${
+          results.executionTracking.color.duration
+        }ms - theme: ${colorPalette.theme}, tokens: ${
+          Object.keys(colorPalette.tokens).length
+        }, colors: ${Object.keys(colorPalette.palette).length}`
+      );
+      return true;
+    } catch (colorErr) {
+      results.executionTracking.color.completed = Date.now();
+      results.executionTracking.color.duration =
+        results.executionTracking.color.completed -
+        results.executionTracking.color.started;
+      const isTimeout = results.executionTracking.color.timeout;
+      console.error(
+        `[ai-analysis] ❌ [TRACK] Color Analyzer ${
+          isTimeout ? "TIMED OUT" : "failed"
+        } after ${results.executionTracking.color.duration}ms:`,
+        colorErr.message
+      );
+      results.errors.color = colorErr.message;
+      return false;
     }
-    const colorPalette = await extractColorPalette(
-      Buffer.from(screenshotBase64, "base64")
-    );
-    results.colorPalette = {
-      theme: colorPalette.theme,
-      tokens: colorPalette.tokens,
-      css: colorPalette.css,
-      palette: colorPalette.palette,
-    };
-    results.executionTracking.color.completed = Date.now();
-    results.executionTracking.color.duration =
-      results.executionTracking.color.completed -
-      results.executionTracking.color.started;
-
-    console.log(
-      `[ai-analysis] ✅ [TRACK] Color Analyzer completed in ${
-        results.executionTracking.color.duration
-      }ms - theme: ${colorPalette.theme}, tokens: ${
-        Object.keys(colorPalette.tokens).length
-      }, colors: ${Object.keys(colorPalette.palette).length}`
-    );
-    colorSuccess = true;
-  } catch (colorErr) {
-    results.executionTracking.color.completed = Date.now();
-    results.executionTracking.color.duration =
-      results.executionTracking.color.completed -
-      results.executionTracking.color.started;
-    console.error(
-      `[ai-analysis] ❌ [TRACK] Color Analyzer failed after ${results.executionTracking.color.duration}ms:`,
-      colorErr.message
-    );
-    results.errors.color = colorErr.message;
-  }
-
-  // Typography Analysis (requires font data from page, so we skip for standalone)
-  // This is acceptable as typography is better extracted from DOM anyway
+  })();
 
   // YOLO ML Component Detection
-  console.log(
-    "[ai-analysis] 🤖 [TRACK] Starting YOLO ML Component Detection..."
-  );
-  results.executionTracking.ml.called = true;
-  results.executionTracking.ml.started = Date.now();
-
-  let mlSuccess = false;
-  try {
-    if (!yoloDetect) {
-      throw new Error("YOLO detector not available - module failed to load");
-    }
-    const mlDetections = await yoloDetect(
-      Buffer.from(screenshotBase64, "base64")
-    );
-    results.mlComponents = {
-      detections: mlDetections.detections.slice(0, 50),
-      summary: mlDetections.summary,
-      imageSize: mlDetections.imageSize,
-      duration: mlDetections.duration,
-    };
-    results.executionTracking.ml.completed = Date.now();
-    results.executionTracking.ml.duration =
-      results.executionTracking.ml.completed -
-      results.executionTracking.ml.started;
-
+  const mlPromise = strictFidelity
+    ? Promise.resolve(false)
+    : (async () => {
     console.log(
-      `[ai-analysis] ✅ [TRACK] YOLO Detector completed in ${results.executionTracking.ml.duration}ms - detected ${mlDetections.summary.total} components:`,
-      mlDetections.summary.byType
+      "[ai-analysis] 🤖 [TRACK] Starting YOLO ML Component Detection..."
     );
-    mlSuccess = true;
-  } catch (mlErr) {
-    results.executionTracking.ml.completed = Date.now();
-    results.executionTracking.ml.duration =
-      results.executionTracking.ml.completed -
-      results.executionTracking.ml.started;
-    console.error(
-      `[ai-analysis] ❌ [TRACK] YOLO Detector failed after ${results.executionTracking.ml.duration}ms:`,
-      mlErr.message
-    );
-    results.errors.ml = mlErr.message;
-  }
+    results.executionTracking.ml.called = true;
+    results.executionTracking.ml.started = Date.now();
+    results.executionTracking.ml.attempts = [];
+
+    try {
+      if (!yoloDetect) {
+        throw new Error("YOLO detector not available - module failed to load");
+      }
+      const now = Date.now();
+      if (mlCircuit.openUntil && now < mlCircuit.openUntil) {
+        const remaining = mlCircuit.openUntil - now;
+        const msg = `YOLO skipped (circuit breaker open for ${Math.ceil(
+          remaining / 1000
+        )}s)`;
+        console.warn(`[ai-analysis] ⚠️ [TRACK] ${msg}`);
+        results.errors.ml = msg;
+        results.executionTracking.ml.completed = now;
+        results.executionTracking.ml.duration =
+          results.executionTracking.ml.completed -
+          results.executionTracking.ml.started;
+        return false;
+      }
+
+      const downscaleForMl = async (maxDim) => {
+        if (!sharp) return screenshotBuffer;
+        try {
+          const img = sharp(screenshotBuffer);
+          const meta = await img.metadata();
+          const w = meta.width || 0;
+          const h = meta.height || 0;
+          if (!w || !h) return screenshotBuffer;
+          if (Math.max(w, h) <= maxDim) return screenshotBuffer;
+          return await img
+            .resize({
+              width: maxDim,
+              height: maxDim,
+              fit: "inside",
+              withoutEnlargement: true,
+            })
+            .png()
+            .toBuffer();
+        } catch (e) {
+          console.warn(
+            `[ai-analysis] ⚠️ [DIAG] ML downscale failed, using original buffer: ${String(
+              e?.message || e
+            )}`
+          );
+          return screenshotBuffer;
+        }
+      };
+
+      const attempts = [
+        { label: "downscale-1024", maxDim: 1024, timeoutMs: 12000 },
+        { label: "downscale-640", maxDim: 640, timeoutMs: 8000 },
+      ];
+
+      let mlDetections = null;
+      let lastError = null;
+
+      for (const attempt of attempts) {
+        const attemptStart = Date.now();
+        try {
+          const inputBuffer = await downscaleForMl(attempt.maxDim);
+          console.log(
+            `[ai-analysis] 🔍 [DIAG] Calling yoloDetect (${attempt.label}, timeout=${attempt.timeoutMs}ms)...`
+          );
+
+          const detections = await runModelWithTimeout(
+            "YOLO Detector",
+            async () => {
+              return await yoloDetect(inputBuffer);
+            },
+            "ml",
+            attempt.timeoutMs
+          );
+
+          results.executionTracking.ml.attempts.push({
+            label: attempt.label,
+            maxDim: attempt.maxDim,
+            timeoutMs: attempt.timeoutMs,
+            durationMs: Date.now() - attemptStart,
+            timeout: false,
+            ok: true,
+          });
+
+          mlDetections = detections;
+          break;
+        } catch (err) {
+          const message = err?.message || String(err);
+          const wasTimeout = String(message).includes("timed out");
+          results.executionTracking.ml.attempts.push({
+            label: attempt.label,
+            maxDim: attempt.maxDim,
+            timeoutMs: attempt.timeoutMs,
+            durationMs: Date.now() - attemptStart,
+            timeout: wasTimeout,
+            ok: false,
+            error: message,
+          });
+          lastError = err;
+          if (!wasTimeout) {
+            break;
+          }
+        }
+      }
+
+      if (!mlDetections) {
+        throw lastError || new Error("YOLO detector failed");
+      }
+
+      results.mlComponents = {
+        detections: mlDetections.detections.slice(0, 50),
+        summary: mlDetections.summary,
+        imageSize: mlDetections.imageSize,
+        duration: mlDetections.duration,
+      };
+      results.executionTracking.ml.completed = Date.now();
+      results.executionTracking.ml.duration =
+        results.executionTracking.ml.completed -
+        results.executionTracking.ml.started;
+
+      console.log(
+        `[ai-analysis] ✅ [TRACK] YOLO Detector completed in ${results.executionTracking.ml.duration}ms - detected ${mlDetections.summary.total} components:`,
+        mlDetections.summary.byType
+      );
+      mlCircuit.consecutiveTimeouts = 0;
+      return true;
+    } catch (mlErr) {
+      results.executionTracking.ml.completed = Date.now();
+      results.executionTracking.ml.duration =
+        results.executionTracking.ml.completed -
+        results.executionTracking.ml.started;
+      const isTimeout = results.executionTracking.ml.timeout;
+      console.error(
+        `[ai-analysis] ❌ [TRACK] YOLO Detector ${
+          isTimeout ? "TIMED OUT" : "failed"
+        } after ${results.executionTracking.ml.duration}ms:`,
+        mlErr.message
+      );
+      results.errors.ml = mlErr.message;
+
+      // Circuit breaker: if YOLO keeps timing out, skip it for a cooldown window
+      if (String(mlErr.message || "").includes("timed out")) {
+        mlCircuit.consecutiveTimeouts += 1;
+        if (mlCircuit.consecutiveTimeouts >= ML_CIRCUIT_BREAKER_TIMEOUTS) {
+          mlCircuit.openUntil = Date.now() + ML_CIRCUIT_BREAKER_COOLDOWN_MS;
+          console.warn(
+            `[ai-analysis] ⚠️ [DIAG] Opening YOLO circuit breaker for ${Math.ceil(
+              ML_CIRCUIT_BREAKER_COOLDOWN_MS / 1000
+            )}s after ${mlCircuit.consecutiveTimeouts} consecutive timeouts`
+          );
+        }
+      }
+      return false;
+    }
+  })();
+
+  // Wait for all models to complete (or timeout)
+  const [visionSuccess, colorSuccess, mlSuccess] = await Promise.allSettled([
+    visionPromise,
+    colorPromise,
+    mlPromise,
+  ]).then((settled) => [
+    settled[0].status === "fulfilled" ? settled[0].value : false,
+    settled[1].status === "fulfilled" ? settled[1].value : false,
+    settled[2].status === "fulfilled" ? settled[2].value : false,
+  ]);
+
+  const parallelDuration = Date.now() - analysisStartTime;
+  console.log(
+    `[ai-analysis] 🚀 [DIAG] All models completed in parallel (total: ${parallelDuration}ms)`
+  );
 
   const successCount = [visionSuccess, colorSuccess, mlSuccess].filter(
     Boolean
   ).length;
 
-  // Log execution summary
-  console.log(`[ai-analysis] 📊 [TRACK] Execution Summary:`);
+  // Log execution summary with timeout diagnostics
+  const totalDuration = Date.now() - results.executionTracking.vision.started;
+  console.log(
+    `[ai-analysis] 📊 [DIAG] Execution Summary (Total: ${totalDuration}ms):`
+  );
   console.log(
     `   Vision Analyzer: ${visionSuccess ? "✅" : "❌"} ${
       results.executionTracking.vision.duration || 0
-    }ms`
+    }ms${results.executionTracking.vision.timeout ? " ⏱️ TIMEOUT" : ""}`
   );
   console.log(
     `   Color Analyzer: ${colorSuccess ? "✅" : "❌"} ${
       results.executionTracking.color.duration || 0
-    }ms`
+    }ms${results.executionTracking.color.timeout ? " ⏱️ TIMEOUT" : ""}`
   );
   console.log(
     `   YOLO Detector: ${mlSuccess ? "✅" : "❌"} ${
       results.executionTracking.ml.duration || 0
-    }ms`
+    }ms${results.executionTracking.ml.timeout ? " ⏱️ TIMEOUT" : ""}`
   );
+
+  // Identify which model is the bottleneck
+  const durations = [
+    {
+      name: "Vision",
+      duration: results.executionTracking.vision.duration || 0,
+    },
+    { name: "Color", duration: results.executionTracking.color.duration || 0 },
+    { name: "YOLO", duration: results.executionTracking.ml.duration || 0 },
+  ];
+  const slowest = durations.reduce((max, curr) =>
+    curr.duration > max.duration ? curr : max
+  );
+  if (slowest.duration > 10000) {
+    console.warn(
+      `[ai-analysis] ⚠️ [DIAG] Slowest model: ${slowest.name} (${slowest.duration}ms) - may be causing timeouts`
+    );
+  }
+
   console.log(
     `[ai-analysis] 📊 AI Analysis Summary: ${successCount}/3 models executed successfully`
   );
@@ -1124,25 +2150,31 @@ async function runAIAnalysis(screenshotBase64) {
 
 app.post("/api/ai-analyze", async (req, res) => {
   // CRITICAL FIX: Add timeout to prevent hanging
-  const AI_ANALYSIS_TIMEOUT = 30000; // 30 seconds max
+  // Overall timeout is 70s (20s per model × 3 models + 10s buffer)
+  // Per-model timeouts are handled in runAIAnalysis()
+  const AI_ANALYSIS_TIMEOUT = 70000; // 70 seconds max (20s per model + buffer)
   const requestStartTime = Date.now();
 
   const timeoutId = setTimeout(() => {
     if (!res.headersSent) {
       const elapsed = Date.now() - requestStartTime;
       console.error(
-        `[ai-analyze] ⏱️ Request timeout after ${elapsed}ms (30s limit)`
+        `[ai-analyze] ⏱️ [DIAG] Overall request timeout after ${elapsed}ms (${AI_ANALYSIS_TIMEOUT}ms limit)`
       );
-      console.error("[ai-analyze] This may indicate:");
-      console.error("  - AI models are taking too long to process");
-      console.error("  - Vision analyzer (OCR) is stuck");
-      console.error("  - Color analyzer is stuck");
-      console.error("  - YOLO detector is stuck");
+      console.error("[ai-analyze] [DIAG] This indicates:");
+      console.error(
+        "  - One or more AI models exceeded their 20s per-model timeout"
+      );
+      console.error("  - Check logs above for which specific model timed out");
+      console.error("  - Vision Analyzer (OCR) timeout: 20s limit");
+      console.error("  - Color Analyzer timeout: 20s limit");
+      console.error("  - YOLO Detector timeout: 20s limit");
       res.status(504).json({
         ok: false,
-        error: `AI analysis timeout - request took longer than ${AI_ANALYSIS_TIMEOUT}ms. One or more AI models may be unresponsive.`,
+        error: `AI analysis timeout - request took longer than ${AI_ANALYSIS_TIMEOUT}ms. Check server logs for which specific model timed out (each model has a 20s limit).`,
         timeout: true,
         elapsed: elapsed,
+        diagnostic: "Check server logs for per-model timeout details",
       });
     }
   }, AI_ANALYSIS_TIMEOUT);
@@ -1168,8 +2200,14 @@ app.post("/api/ai-analyze", async (req, res) => {
     );
 
     try {
+      const { metadata } = req.body || {};
+      const strictFidelity =
+        metadata && metadata.strictFidelity !== undefined
+          ? metadata.strictFidelity
+          : true;
+
       const aiStartTime = Date.now();
-      const aiResults = await runAIAnalysis(screenshotBase64);
+      const aiResults = await runAIAnalysis(screenshotBase64, strictFidelity);
       const aiDuration = Date.now() - aiStartTime;
 
       if (timeoutId) clearTimeout(timeoutId); // CRITICAL: Clear timeout on success
@@ -1181,6 +2219,21 @@ app.post("/api/ai-analyze", async (req, res) => {
         mlComponents: !!aiResults.mlComponents,
         errors: Object.keys(aiResults.errors || {}).length,
       });
+
+      // Log diagnostic information about model performance
+      if (aiResults.executionTracking) {
+        console.log(`[ai-analyze] [DIAG] Model execution times:`, {
+          vision: `${aiResults.executionTracking.vision.duration || 0}ms${
+            aiResults.executionTracking.vision.timeout ? " (TIMEOUT)" : ""
+          }`,
+          color: `${aiResults.executionTracking.color.duration || 0}ms${
+            aiResults.executionTracking.color.timeout ? " (TIMEOUT)" : ""
+          }`,
+          ml: `${aiResults.executionTracking.ml.duration || 0}ms${
+            aiResults.executionTracking.ml.timeout ? " (TIMEOUT)" : ""
+          }`,
+        });
+      }
 
       if (!res.headersSent) {
         res.json({
@@ -1517,27 +2570,311 @@ app.get("/api/verify-models", async (req, res) => {
   });
 });
 
-app.post("/api/capture", async (req, res) => {
-  const { url } = req.body || {};
-  if (!url || typeof url !== "string") {
-    return res.status(400).json({ ok: false, error: "Missing capture URL" });
+
+// ============================================================================
+// AX TREE SEMANTICS (CDP) — deterministic structure hints
+// ============================================================================
+
+const AX_LANDMARK_ROLES = new Set([
+  "banner",
+  "navigation",
+  "main",
+  "contentinfo",
+  "complementary",
+  "form",
+  "search",
+  "region",
+]);
+
+function axRoleString(axNode) {
+  const role = axNode?.role;
+  if (!role) return null;
+  if (typeof role === "string") return role;
+  if (typeof role.value === "string") return role.value;
+  return null;
+}
+
+function axNameString(axNode) {
+  const name = axNode?.name;
+  if (!name) return null;
+  if (typeof name === "string") return name;
+  if (typeof name.value === "string") return name.value;
+  return null;
+}
+
+function boundsFromQuad(quad) {
+  if (!Array.isArray(quad) || quad.length < 8) return null;
+  let minX = Infinity,
+    minY = Infinity,
+    maxX = -Infinity,
+    maxY = -Infinity;
+  for (let i = 0; i < quad.length; i += 2) {
+    const x = quad[i];
+    const y = quad[i + 1];
+    if (!Number.isFinite(x) || !Number.isFinite(y)) continue;
+    minX = Math.min(minX, x);
+    minY = Math.min(minY, y);
+    maxX = Math.max(maxX, x);
+    maxY = Math.max(maxY, y);
   }
-  console.log(`[capture] Starting headless capture for ${url}`);
+  if (!Number.isFinite(minX) || !Number.isFinite(minY)) return null;
+  const width = Math.max(0, maxX - minX);
+  const height = Math.max(0, maxY - minY);
+  return { left: minX, top: minY, right: maxX, bottom: maxY, width, height };
+}
+
+async function getBoxForBackendNode(client, backendNodeId) {
+  // Prefer the protocol's backendNodeId path when available.
   try {
-    const capture = await runFullCapturePipeline(url, req.body.options || {});
-    res.json({
-      ok: true,
-      data: capture.data,
-      validationReport: capture.validationReport,
-      previewWithOverlay: capture.previewWithOverlay,
+    const model = await client.send("DOM.getBoxModel", { backendNodeId });
+    const quad = model?.model?.border || model?.model?.content;
+    const bounds = boundsFromQuad(quad);
+    if (bounds && bounds.width > 0 && bounds.height > 0) return bounds;
+  } catch {}
+
+  // Fallback: resolve -> requestNode -> getBoxModel(nodeId)
+  try {
+    const resolved = await client.send("DOM.resolveNode", { backendNodeId });
+    const objectId = resolved?.object?.objectId;
+    if (!objectId) return null;
+    const requested = await client.send("DOM.requestNode", { objectId });
+    const nodeId = requested?.nodeId;
+    if (!nodeId) return null;
+    const model = await client.send("DOM.getBoxModel", { nodeId });
+    const quad = model?.model?.border || model?.model?.content;
+    const bounds = boundsFromQuad(quad);
+    if (bounds && bounds.width > 0 && bounds.height > 0) return bounds;
+  } catch {}
+
+  return null;
+}
+
+async function captureAxSemantics(page, options = {}) {
+  const maxLandmarks = Number.isFinite(options.maxAxLandmarks)
+    ? options.maxAxLandmarks
+    : 20;
+  const includeFullTree = !!options.includeFullAxTree;
+  const includeDomSnapshot = !!options.includeDomSnapshot;
+
+  const client = await page.target().createCDPSession();
+  try {
+    await client.send("DOM.enable").catch(() => {});
+    await client.send("Accessibility.enable").catch(() => {});
+
+    let domSnapshotSummary = null;
+    if (includeDomSnapshot) {
+      try {
+        const snapshot = await client.send("DOMSnapshot.captureSnapshot", {
+          computedStyles: [
+            "display",
+            "position",
+            "z-index",
+            "overflow",
+            "overflow-x",
+            "overflow-y",
+            "transform",
+            "transform-origin",
+          ],
+          includePaintOrder: true,
+          includeDOMRects: true,
+        });
+        domSnapshotSummary = {
+          documentCount: snapshot?.documents?.length || 0,
+          nodeCount:
+            snapshot?.documents?.[0]?.nodes?.nodeName?.length ||
+            snapshot?.documents?.[0]?.nodes?.backendNodeId?.length ||
+            0,
+        };
+      } catch (e) {
+        domSnapshotSummary = { error: e?.message || String(e) };
+      }
+    }
+
+    const ax = await client.send("Accessibility.getFullAXTree");
+    const axNodes = ax?.nodes || ax?.axNodes || ax?.tree || [];
+
+    const landmarks = [];
+    for (const node of axNodes) {
+      if (landmarks.length >= maxLandmarks) break;
+      if (node?.ignored) continue;
+
+      const role = axRoleString(node);
+      if (!role || !AX_LANDMARK_ROLES.has(role)) continue;
+
+      const backendNodeId = node.backendDOMNodeId || node.backendNodeId;
+      if (!backendNodeId || !Number.isFinite(backendNodeId)) continue;
+
+      const bounds = await getBoxForBackendNode(client, backendNodeId);
+      if (!bounds || bounds.width < 2 || bounds.height < 2) continue;
+
+      landmarks.push({
+        role,
+        name: axNameString(node) || null,
+        backendNodeId,
+        bounds,
+      });
+    }
+
+    // Stable ordering: top-to-bottom, then left-to-right.
+    landmarks.sort((a, b) => {
+      if (a.bounds.top !== b.bounds.top) return a.bounds.top - b.bounds.top;
+      return a.bounds.left - b.bounds.left;
     });
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    console.error("[capture] Failed:", message);
-    console.error(error); // Log full error to stdout/stderr
-    res.status(500).json({ ok: false, error: message });
+
+    return {
+      source: "cdp",
+      capturedAt: new Date().toISOString(),
+      axSummary: {
+        totalNodes: Array.isArray(axNodes) ? axNodes.length : 0,
+        landmarkCount: landmarks.length,
+      },
+      domSnapshotSummary,
+      landmarks,
+      ...(includeFullTree ? { axNodes } : {}),
+    };
+  } finally {
+    try {
+      await client.detach();
+    } catch {}
   }
-});
+}
+
+function findFirstNodeByTag(root, tag) {
+  const target = String(tag || "").toLowerCase();
+  if (!root) return null;
+  const stack = [root];
+  while (stack.length) {
+    const n = stack.pop();
+    if ((n.htmlTag || "").toLowerCase() === target) return n;
+    if (Array.isArray(n.children)) {
+      for (let i = n.children.length - 1; i >= 0; i--)
+        stack.push(n.children[i]);
+    }
+  }
+  return null;
+}
+
+function computeCenter(node) {
+  const box = node?.absoluteLayout;
+  if (!box) return null;
+  const cx = (box.left + box.right) / 2;
+  const cy = (box.top + box.bottom) / 2;
+  if (!Number.isFinite(cx) || !Number.isFinite(cy)) return null;
+  return { cx, cy };
+}
+
+function contains(bounds, point) {
+  return (
+    point.cx >= bounds.left &&
+    point.cx <= bounds.right &&
+    point.cy >= bounds.top &&
+    point.cy <= bounds.bottom
+  );
+}
+
+function upsertLayoutRelatives(node, parentAbs) {
+  if (!node?.layout || !node?.absoluteLayout) return;
+  node.layout.relativeX = node.absoluteLayout.left - parentAbs.left;
+  node.layout.relativeY = node.absoluteLayout.top - parentAbs.top;
+}
+
+function applyAxLandmarkFramesToSchema(schema, semantics) {
+  const landmarks = semantics?.landmarks;
+  if (!schema?.tree || !Array.isArray(landmarks) || landmarks.length === 0) {
+    return;
+  }
+
+  // Anchor under <body> when available (matches how users think about page structure).
+  const root = schema.tree;
+  const body = findFirstNodeByTag(root, "body") || root;
+  const bodyAbs = body.absoluteLayout || {
+    left: 0,
+    top: 0,
+    right: 0,
+    bottom: 0,
+  };
+
+  body.children = Array.isArray(body.children) ? body.children : [];
+
+  const landmarkNodes = landmarks.map((lm, index) => {
+    const id = `ax_landmark_${index}_${lm.role}`;
+    const name =
+      lm.name && String(lm.name).trim().length
+        ? `${lm.role}: ${String(lm.name).trim().slice(0, 80)}`
+        : lm.role;
+    const abs = {
+      left: lm.bounds.left,
+      top: lm.bounds.top,
+      right: lm.bounds.right,
+      bottom: lm.bounds.bottom,
+      width: lm.bounds.width,
+      height: lm.bounds.height,
+    };
+    return {
+      id,
+      parentId: body.id || null,
+      type: "FRAME",
+      name,
+      htmlTag: "ax-landmark",
+      cssClasses: [],
+      layout: {
+        x: abs.left,
+        y: abs.top,
+        width: abs.width,
+        height: abs.height,
+        relativeX: abs.left - bodyAbs.left,
+        relativeY: abs.top - bodyAbs.top,
+      },
+      absoluteLayout: abs,
+      fills: [],
+      strokes: [],
+      effects: [],
+      attributes: { axRole: lm.role, axName: lm.name || "" },
+      children: [],
+    };
+  });
+
+  // Insert landmark frames at the top for stable ordering.
+  body.children = [...landmarkNodes, ...body.children];
+
+  // Re-parent direct body children into landmark frames when their center falls within a landmark.
+  // This preserves internal DOM structure while adding deterministic “sections”.
+  const originalChildren = body.children.slice(landmarkNodes.length);
+  const remaining = [];
+
+  for (const child of originalChildren) {
+    const center = computeCenter(child);
+    if (!center) {
+      remaining.push(child);
+      continue;
+    }
+
+    // Pick the smallest landmark that contains the child center (more specific).
+    let best = null;
+    let bestArea = Infinity;
+    for (const lmNode of landmarkNodes) {
+      const b = lmNode.absoluteLayout;
+      if (!b || !contains(b, center)) continue;
+      const area = b.width * b.height;
+      if (area < bestArea) {
+        best = lmNode;
+        bestArea = area;
+      }
+    }
+
+    if (!best) {
+      remaining.push(child);
+      continue;
+    }
+
+    child.parentId = best.id;
+    upsertLayoutRelatives(child, best.absoluteLayout);
+    best.children.push(child);
+  }
+
+  // Replace the body children after landmark frames.
+  body.children = [...landmarkNodes, ...remaining];
+}
 
 app.use((error, _req, res, next) => {
   if (error?.type === "entity.too.large") {
@@ -1562,7 +2899,6 @@ function logStartup(proto) {
   console.log(`    - GET  /api/jobs/next`);
   console.log(`    - GET  /api/jobs/:id`);
   console.log(`    - GET  /api/jobs/history`);
-  console.log(`    - POST /api/capture`);
   console.log(`    - GET  /api/health`);
 }
 
@@ -1598,712 +2934,3 @@ server.on("error", (error) => {
   }
 });
 
-async function runFullCapturePipeline(targetUrl, options = {}) {
-  // Use system Chrome on macOS to avoid crash
-  let executablePath = undefined;
-  if (process.platform === "darwin") {
-    const chromePath =
-      "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome";
-    if (fs.existsSync(chromePath)) {
-      executablePath = chromePath;
-    }
-  }
-
-  const browser = await puppeteer.launch({
-    headless: true,
-    executablePath,
-    args: ["--no-sandbox", "--disable-setuid-sandbox"],
-    protocolTimeout: 600000, // 10 minutes for complex pages
-  });
-
-  const page = await browser.newPage();
-
-  // ===== ENHANCED: Network Interception for Fonts & Assets =====
-  const capturedFonts = [];
-  const capturedAssets = { fonts: [], stylesheets: [] };
-
-  await page.setRequestInterception(true);
-  page.on("request", (request) => {
-    const resourceType = request.resourceType();
-    const url = request.url();
-
-    if (resourceType === "font") {
-      capturedFonts.push(url);
-      capturedAssets.fonts.push({ url, type: "font" });
-    } else if (resourceType === "stylesheet") {
-      capturedAssets.stylesheets.push({ url, type: "stylesheet" });
-    }
-
-    request.continue();
-  });
-
-  // ===== ENHANCED: Start CSS Coverage =====
-  await Promise.all([
-    page.coverage.startCSSCoverage(),
-    page.coverage.startJSCoverage(),
-  ]);
-
-  // Bypass CSP for image/asset fetching
-  await page.setBypassCSP(true);
-  await page.setUserAgent(
-    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
-  );
-  await page.setViewport({ width: 1440, height: 900, deviceScaleFactor: 1 });
-
-  try {
-    console.log(`[headless] Navigating to ${targetUrl}`);
-    await page.goto(targetUrl, { waitUntil: "networkidle2", timeout: 60000 });
-
-    const injectedScriptPath = path.join(
-      __dirname,
-      "chrome-extension",
-      "dist",
-      "injected-script.js"
-    );
-
-    // Development safety: keep Puppeteer capture using the latest extractor code.
-    // If the built injected script is missing OR older than src, auto-build it (local only).
-    // This prevents "no change" situations when src changes but dist is stale.
-    // Controlled by HANDOFF_AUTO_BUILD_INJECTED (default: true when not production).
-    const autoBuild =
-      (process.env.HANDOFF_AUTO_BUILD_INJECTED || "").toLowerCase() ===
-        "true" ||
-      (process.env.HANDOFF_AUTO_BUILD_INJECTED === undefined &&
-        process.env.NODE_ENV !== "production");
-
-    if (autoBuild) {
-      try {
-        const srcPath = path.join(
-          __dirname,
-          "chrome-extension",
-          "src",
-          "utils",
-          "dom-extractor.ts"
-        );
-        const distExists = fs.existsSync(injectedScriptPath);
-        const srcExists = fs.existsSync(srcPath);
-
-        const distMtime = distExists
-          ? fs.statSync(injectedScriptPath).mtimeMs
-          : 0;
-        const srcMtime = srcExists ? fs.statSync(srcPath).mtimeMs : 0;
-
-        if (!distExists || (srcExists && srcMtime > distMtime)) {
-          console.log(
-            `[headless] Auto-building chrome-extension (dist stale or missing): ${
-              !distExists ? "missing" : "stale"
-            }`
-          );
-          const { spawnSync } = require("child_process");
-          const extDir = path.join(__dirname, "chrome-extension");
-          const res = spawnSync(
-            process.platform === "win32" ? "npm.cmd" : "npm",
-            ["run", "build"],
-            {
-              cwd: extDir,
-              stdio: "inherit",
-            }
-          );
-          if (res.status !== 0) {
-            throw new Error(
-              `chrome-extension build failed with code ${res.status}`
-            );
-          }
-        }
-      } catch (e) {
-        console.warn(
-          "[headless] Auto-build skipped/failed (continuing with existing dist):",
-          e.message
-        );
-      }
-    }
-
-    if (!fs.existsSync(injectedScriptPath)) {
-      throw new Error(
-        "Injected script not built. Run `cd chrome-extension && npm run build`."
-      );
-    }
-    const injectedScript = fs.readFileSync(injectedScriptPath, "utf8");
-    await page.evaluate(injectedScript);
-
-    // Set page timeout to match our extraction timeout
-    page.setDefaultTimeout(300000); // 5 minutes
-
-    console.log("[headless] Starting DOM extraction...");
-    const extraction = await page.evaluate(() => {
-      return new Promise((resolve, reject) => {
-        const timeout = setTimeout(
-          () => reject(new Error("Extraction timeout after 180 seconds")),
-          180000
-        );
-        function cleanup() {
-          clearTimeout(timeout);
-          window.removeEventListener("message", handler);
-        }
-        const handler = (event) => {
-          if (event.data?.type === "EXTRACTION_COMPLETE") {
-            cleanup();
-            resolve({
-              data: event.data.data,
-              validationReport: event.data.validationReport,
-              previewWithOverlay: event.data.previewWithOverlay,
-            });
-          } else if (event.data?.type === "EXTRACTION_ERROR") {
-            cleanup();
-            reject(new Error(event.data.error));
-          }
-        };
-        window.addEventListener("message", handler);
-        window.postMessage({ type: "START_EXTRACTION" }, "*");
-      });
-    });
-
-    console.log("[headless] Extraction complete, capturing screenshot...");
-    const screenshotBase64 = await page.screenshot({
-      encoding: "base64",
-      fullPage: true,
-    });
-    extraction.data = extraction.data || {};
-    extraction.data.screenshot = `data:image/png;base64,${screenshotBase64}`;
-
-    // ===== ENFORCED: Puppeteer Engine Metadata =====
-    extraction.data.meta = extraction.data.meta || {};
-    extraction.data.meta.captureEngine = "puppeteer";
-    extraction.data.meta.capturedAt = new Date().toISOString();
-    extraction.data.meta.captureMode = options.mode || "api";
-    extraction.data.meta.url = targetUrl;
-
-    // ===== ENHANCED: Accessibility Tree =====
-    console.log("[headless] Extracting accessibility tree...");
-    try {
-      const accessibilityTree = await page.accessibility.snapshot({
-        interestingOnly: false,
-      });
-      extraction.data.accessibility = accessibilityTree;
-    } catch (a11yErr) {
-      console.warn(
-        "[headless] Accessibility extraction failed:",
-        a11yErr.message
-      );
-    }
-
-    // ===== ENHANCED: CSS Coverage Analysis =====
-    console.log("[headless] Analyzing CSS coverage...");
-    try {
-      const [cssCoverage] = await Promise.all([
-        page.coverage.stopCSSCoverage(),
-        page.coverage.stopJSCoverage(),
-      ]);
-
-      let totalCSSBytes = 0;
-      let usedCSSBytes = 0;
-
-      for (const entry of cssCoverage) {
-        totalCSSBytes += entry.text.length;
-        for (const range of entry.ranges) {
-          usedCSSBytes += range.end - range.start;
-        }
-      }
-
-      const coveragePercent =
-        totalCSSBytes > 0
-          ? ((usedCSSBytes / totalCSSBytes) * 100).toFixed(1)
-          : 0;
-      console.log(`[headless] CSS Coverage: ${coveragePercent}% used`);
-
-      extraction.data.cssCoverage = {
-        totalBytes: totalCSSBytes,
-        usedBytes: usedCSSBytes,
-        coveragePercent: parseFloat(coveragePercent),
-      };
-    } catch (covErr) {
-      console.warn("[headless] CSS coverage failed:", covErr.message);
-    }
-
-    // ===== ENHANCED: Add Network-Captured Fonts =====
-    extraction.data.capturedFonts = capturedFonts;
-    extraction.data.capturedAssets = capturedAssets;
-
-    // ===== ENHANCED: Hover State Capture =====
-    console.log("[headless] Capturing hover states...");
-    const hoverStates = [];
-    try {
-      const interactiveElements = await page.$$(
-        'button, a, [role="button"], .btn, .button'
-      );
-      const maxHoverCaptures = 15;
-
-      for (
-        let i = 0;
-        i < Math.min(interactiveElements.length, maxHoverCaptures);
-        i++
-      ) {
-        const element = interactiveElements[i];
-        try {
-          const beforeInfo = await page.evaluate((el) => {
-            const rect = el.getBoundingClientRect();
-            const styles = window.getComputedStyle(el);
-            return {
-              id: el.id || `hover-${i}`,
-              rect: {
-                x: rect.x,
-                y: rect.y,
-                width: rect.width,
-                height: rect.height,
-              },
-              styles: {
-                backgroundColor: styles.backgroundColor,
-                color: styles.color,
-                boxShadow: styles.boxShadow,
-                transform: styles.transform,
-              },
-            };
-          }, element);
-
-          if (beforeInfo.rect.width < 10 || beforeInfo.rect.height < 10)
-            continue;
-
-          await element.hover();
-          await page.waitForTimeout(100);
-
-          const afterStyles = await page.evaluate((el) => {
-            const styles = window.getComputedStyle(el);
-            return {
-              backgroundColor: styles.backgroundColor,
-              color: styles.color,
-              boxShadow: styles.boxShadow,
-              transform: styles.transform,
-            };
-          }, element);
-
-          const hasChange =
-            beforeInfo.styles.backgroundColor !== afterStyles.backgroundColor ||
-            beforeInfo.styles.color !== afterStyles.color ||
-            beforeInfo.styles.boxShadow !== afterStyles.boxShadow;
-
-          if (hasChange) {
-            hoverStates.push({
-              id: beforeInfo.id,
-              default: beforeInfo.styles,
-              hover: afterStyles,
-            });
-          }
-
-          await page.mouse.move(0, 0);
-        } catch (hoverErr) {
-          /* skip */
-        }
-      }
-
-      console.log(`[headless] Captured ${hoverStates.length} hover variants`);
-      extraction.data.hoverStates = hoverStates;
-    } catch (hoverErr) {
-      console.warn("[headless] Hover capture failed:", hoverErr.message);
-    }
-
-    // ===== ENHANCED: AI Vision Analysis (OCR + Component Detection) =====
-    console.log(
-      "[headless] 🤖 [TRACK] Starting Vision Analyzer (OCR + Component Detection)..."
-    );
-    let visionStartTime = Date.now();
-    let visionDuration = null;
-    let visionAnalyzer = null;
-    let visionSuccess = false;
-    try {
-      if (!createVisionAnalyzer) {
-        throw new Error(
-          "Vision analyzer not available - module failed to load"
-        );
-      }
-      visionAnalyzer = createVisionAnalyzer({ debug: false });
-
-      // Run OCR on the screenshot
-      const ocrResult = await visionAnalyzer.extractTextFromImage(
-        Buffer.from(screenshotBase64, "base64")
-      );
-      extraction.data.ocr = {
-        fullText: ocrResult.fullText.substring(0, 5000), // Limit size
-        wordCount: ocrResult.words.length,
-        confidence: ocrResult.confidence,
-        duration: ocrResult.duration,
-        words: ocrResult.words?.slice(0, 100), // Limit word details
-      };
-      console.log(
-        `[headless] ✅ OCR extracted ${
-          ocrResult.words.length
-        } words (confidence: ${ocrResult.confidence.toFixed(2)})`
-      );
-
-      // Run component detection
-      const componentAnalysis = await visionAnalyzer.analyzeScreenshot(page);
-      extraction.data.visionComponents = {
-        summary: componentAnalysis.summary,
-        detectedCount: componentAnalysis.components.length,
-        buttonCount: componentAnalysis.summary.BUTTON || 0,
-        inputCount: componentAnalysis.summary.INPUT || 0,
-        cardCount: componentAnalysis.summary.CARD || 0,
-        navCount: componentAnalysis.summary.NAV || 0,
-        components: componentAnalysis.components?.slice(0, 50), // Limit component details
-      };
-      visionDuration = Date.now() - visionStartTime;
-      console.log(
-        `[headless] ✅ [TRACK] Vision Analyzer completed in ${visionDuration}ms - OCR: ${ocrResult.words.length} words, Components: ${componentAnalysis.components.length}`
-      );
-      console.log(
-        `[headless] ✅ AI Vision detected ${componentAnalysis.components.length} components:`,
-        extraction.data.visionComponents.summary
-      );
-      visionSuccess = true;
-    } catch (visionErr) {
-      visionDuration = Date.now() - visionStartTime;
-      console.error(
-        `[headless] ❌ [TRACK] Vision Analyzer failed after ${visionDuration}ms:`,
-        visionErr.message
-      );
-      console.error("[headless] Vision error stack:", visionErr.stack);
-      // Store error in metadata for debugging
-      extraction.data.meta = extraction.data.meta || {};
-      extraction.data.meta.visionError = visionErr.message;
-      // Don't set empty fallback - let the error be visible
-    } finally {
-      if (visionAnalyzer) {
-        await visionAnalyzer.cleanup();
-      }
-    }
-
-    if (!visionSuccess) {
-      console.warn(
-        "[headless] ⚠️ Vision analysis did not complete successfully - capture quality may be reduced"
-      );
-    }
-
-    // ===== ENHANCED: Color Palette Extraction =====
-    console.log("[headless] 🎨 [TRACK] Starting Color Analyzer...");
-    let colorStartTime = Date.now();
-    let colorDuration = null;
-    let colorSuccess = false;
-    try {
-      if (!extractColorPalette) {
-        throw new Error("Color analyzer not available - module failed to load");
-      }
-      const colorPalette = await extractColorPalette(
-        Buffer.from(screenshotBase64, "base64")
-      );
-      extraction.data.colorPalette = {
-        theme: colorPalette.theme,
-        tokens: colorPalette.tokens,
-        css: colorPalette.css,
-        palette: colorPalette.palette, // Store full palette, not just count
-      };
-      colorDuration = Date.now() - colorStartTime;
-      console.log(
-        `[headless] ✅ [TRACK] Color Analyzer completed in ${colorDuration}ms - theme: ${
-          colorPalette.theme
-        }, tokens: ${Object.keys(colorPalette.tokens).length}, colors: ${
-          Object.keys(colorPalette.palette).length
-        }`
-      );
-      colorSuccess = true;
-
-      // Integrate color palette into styles for Figma
-      if (!extraction.data.styles) {
-        extraction.data.styles = { colors: {}, textStyles: {}, effects: {} };
-      }
-      // Add color palette colors to style registry
-      if (
-        colorPalette.palette &&
-        Object.keys(colorPalette.palette).length > 0
-      ) {
-        Object.entries(colorPalette.palette).forEach(([name, color]) => {
-          if (color && color.hex) {
-            const colorId = `palette-${name
-              .toLowerCase()
-              .replace(/\s+/g, "-")}`;
-            extraction.data.styles.colors[colorId] = {
-              id: colorId,
-              name: name,
-              color: color.figma || {
-                r: color.rgb.r / 255,
-                g: color.rgb.g / 255,
-                b: color.rgb.b / 255,
-                a: 1,
-              },
-              usageCount: color.population || 1,
-            };
-          }
-        });
-        console.log(
-          `[headless] ✅ Integrated ${
-            Object.keys(extraction.data.styles.colors).length
-          } colors into style registry`
-        );
-      }
-    } catch (colorErr) {
-      console.error("[headless] ❌ Color extraction failed:", colorErr.message);
-      console.error("[headless] Color error stack:", colorErr.stack);
-      extraction.data.meta = extraction.data.meta || {};
-      extraction.data.meta.colorError = colorErr.message;
-    }
-
-    if (!colorSuccess) {
-      console.warn(
-        "[headless] ⚠️ Color palette extraction did not complete - design tokens may be incomplete"
-      );
-    }
-
-    // ===== ENHANCED: Typography Analysis =====
-    console.log("[headless] 📝 [TRACK] Starting Typography Analyzer...");
-    let typographyStartTime = Date.now();
-    let typographyDuration = null;
-    let typographySuccess = false;
-    try {
-      if (!analyzeTypography || !analyzeSpacing) {
-        throw new Error(
-          "Typography analyzer not available - module failed to load"
-        );
-      }
-      // Extract font data from the page
-      const fontData = await page.evaluate(() => {
-        const fonts = [];
-        const elements = document.querySelectorAll("*");
-        for (const el of elements) {
-          const styles = window.getComputedStyle(el);
-          if (el.textContent?.trim()) {
-            fonts.push({
-              fontSize: parseFloat(styles.fontSize),
-              fontFamily: styles.fontFamily,
-              fontWeight: styles.fontWeight,
-              lineHeight: styles.lineHeight,
-              usage: 1,
-            });
-          }
-        }
-        return fonts;
-      });
-
-      if (!analyzeTypography) {
-        throw new Error(
-          "Typography analyzer not available - module failed to load"
-        );
-      }
-      const typography = analyzeTypography(fontData);
-      extraction.data.typography = {
-        scale: typography.typeScale.scale,
-        ratio: typography.typeScale.ratio,
-        baseSize: typography.typeScale.baseSize,
-        roles: typography.typeScale.roles,
-        families: typography.families.slice(0, 5).map((f) => f.family),
-        tokens: typography.tokens,
-      };
-      typographyDuration = Date.now() - typographyStartTime;
-      console.log(
-        `[headless] ✅ [TRACK] Typography Analyzer completed in ${typographyDuration}ms - scale: ${typography.typeScale.scale}, base: ${typography.typeScale.baseSize}px, families: ${typography.families.length}`
-      );
-
-      // Integrate typography tokens into styles for Figma
-      if (!extraction.data.styles) {
-        extraction.data.styles = { colors: {}, textStyles: {}, effects: {} };
-      }
-      if (typography.tokens && Object.keys(typography.tokens).length > 0) {
-        Object.entries(typography.tokens).forEach(([name, token]) => {
-          const styleId = `typography-${name
-            .toLowerCase()
-            .replace(/\s+/g, "-")}`;
-          extraction.data.styles.textStyles[styleId] = {
-            id: styleId,
-            name: name,
-            ...token,
-          };
-        });
-        console.log(
-          `[headless] ✅ Integrated ${
-            Object.keys(extraction.data.styles.textStyles).length
-          } typography styles`
-        );
-      }
-      typographySuccess = true;
-
-      // Extract spacing data
-      const spacingData = await page.evaluate(() => {
-        const spacings = [];
-        const elements = document.querySelectorAll("*");
-        for (const el of elements) {
-          const styles = window.getComputedStyle(el);
-          [
-            "marginTop",
-            "marginBottom",
-            "marginLeft",
-            "marginRight",
-            "paddingTop",
-            "paddingBottom",
-            "paddingLeft",
-            "paddingRight",
-            "gap",
-          ].forEach((prop) => {
-            const val = parseFloat(styles[prop]);
-            if (val > 0) spacings.push(val);
-          });
-        }
-        return spacings;
-      });
-
-      if (!analyzeSpacing) {
-        throw new Error(
-          "Spacing analyzer not available - module failed to load"
-        );
-      }
-      const spacing = analyzeSpacing(spacingData);
-      extraction.data.spacingScale = {
-        base: spacing.base,
-        scale: spacing.scale.slice(0, 6),
-      };
-      console.log(
-        `[headless] ✅ Spacing base: ${spacing.base}px, scale: [${spacing.scale
-          .slice(0, 6)
-          .join(", ")}]`
-      );
-    } catch (typoErr) {
-      console.error(
-        "[headless] ❌ Typography/Spacing analysis failed:",
-        typoErr.message
-      );
-      console.error("[headless] Typography error stack:", typoErr.stack);
-      extraction.data.meta = extraction.data.meta || {};
-      extraction.data.meta.typographyError = typoErr.message;
-    }
-
-    if (!typographySuccess) {
-      console.warn(
-        "[headless] ⚠️ Typography analysis did not complete - text styles may be incomplete"
-      );
-    }
-
-    // ===== ENHANCED: YOLO ML-Based Component Detection =====
-    console.log(
-      "[headless] 🤖 [TRACK] Starting YOLO ML Component Detection..."
-    );
-    let mlStartTime = Date.now();
-    let mlDuration = null;
-    let mlSuccess = false;
-    try {
-      if (!yoloDetect) {
-        throw new Error("YOLO detector not available - module failed to load");
-      }
-      const mlDetections = await yoloDetect(
-        Buffer.from(screenshotBase64, "base64")
-      );
-
-      extraction.data.mlComponents = {
-        detections: mlDetections.detections.slice(0, 50), // Limit size
-        summary: mlDetections.summary,
-        imageSize: mlDetections.imageSize,
-        duration: mlDetections.duration,
-      };
-
-      mlDuration = Date.now() - mlStartTime;
-      console.log(
-        `[headless] ✅ [TRACK] YOLO Detector completed in ${mlDuration}ms - detected ${mlDetections.summary.total} components:`,
-        mlDetections.summary.byType
-      );
-      mlSuccess = true;
-
-      // Integrate ML detections with component registry if available
-      if (extraction.data.components && mlDetections.detections.length > 0) {
-        // Cross-reference ML detections with DOM-extracted components
-        console.log(
-          `[headless] ✅ Cross-referencing ${mlDetections.detections.length} ML detections with DOM components`
-        );
-      }
-    } catch (mlErr) {
-      console.error("[headless] ❌ ML detection failed:", mlErr.message);
-      console.error("[headless] ML error stack:", mlErr.stack);
-      extraction.data.mlComponents = { error: mlErr.message };
-      extraction.data.meta = extraction.data.meta || {};
-      extraction.data.meta.mlError = mlErr.message;
-    }
-
-    if (!mlSuccess) {
-      console.warn(
-        "[headless] ⚠️ ML component detection did not complete - component detection may be less accurate"
-      );
-    }
-
-    // ===== FINAL: AI Model Execution Summary =====
-    const aiSummary = {
-      vision: visionSuccess,
-      color: colorSuccess,
-      typography: typographySuccess,
-      ml: mlSuccess,
-      timestamp: new Date().toISOString(),
-    };
-    extraction.data.meta = extraction.data.meta || {};
-    extraction.data.meta.aiModelsExecuted = aiSummary;
-
-    const successCount = Object.values(aiSummary).filter(
-      (v) => v === true
-    ).length;
-    const totalModels = 4;
-
-    // Log execution summary with durations
-    console.log(`[headless] 📊 [TRACK] Execution Summary:`);
-    console.log(
-      `   Vision Analyzer: ${visionSuccess ? "✅" : "❌"} ${
-        visionDuration ? visionDuration + "ms" : "failed"
-      }`
-    );
-    console.log(
-      `   Color Analyzer: ${colorSuccess ? "✅" : "❌"} ${
-        colorDuration ? colorDuration + "ms" : "failed"
-      }`
-    );
-    console.log(
-      `   Typography Analyzer: ${typographySuccess ? "✅" : "❌"} ${
-        typographyDuration ? typographyDuration + "ms" : "failed"
-      }`
-    );
-    console.log(
-      `   YOLO Detector: ${mlSuccess ? "✅" : "❌"} ${
-        mlDuration ? mlDuration + "ms" : "failed"
-      }`
-    );
-
-    console.log(
-      `[headless] 📊 AI Models Summary: ${successCount}/${totalModels} models executed successfully`
-    );
-    if (successCount < totalModels) {
-      console.warn(
-        `[headless] ⚠️ ${
-          totalModels - successCount
-        } AI model(s) failed - capture quality may be reduced`
-      );
-    }
-
-    // ===== CRITICAL: Enhance schema with AI results to improve fidelity =====
-    console.log(
-      "[headless] 🤖 [AI-Enhancer] Enhancing schema with AI results..."
-    );
-    try {
-      const {
-        enhanceSchemaWithAI,
-      } = require("./handoff-server-ai-enhancer.cjs");
-      extraction.data = enhanceSchemaWithAI(extraction.data, {
-        ocr: extraction.data.ocr,
-        colorPalette: extraction.data.colorPalette,
-        mlComponents: extraction.data.mlComponents,
-        typography: extraction.data.typography,
-        spacingScale: extraction.data.spacingScale,
-      });
-      console.log("[headless] ✅ [AI-Enhancer] Schema enhancement complete");
-    } catch (enhanceError) {
-      console.warn(
-        "[headless] ⚠️ [AI-Enhancer] Schema enhancement failed:",
-        enhanceError.message
-      );
-      // Continue without enhancement - extraction is still valid
-    }
-
-    return extraction;
-  } finally {
-    await browser.close();
-  }
-}

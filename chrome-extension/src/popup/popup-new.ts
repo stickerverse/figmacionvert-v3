@@ -53,6 +53,23 @@ const captureDialogClose = document.getElementById(
   "capture-dialog-close"
 ) as HTMLButtonElement;
 
+// Settings Elements
+const btnSettings = document.getElementById(
+  "btn-settings"
+) as HTMLButtonElement;
+const settingsPanel = document.getElementById(
+  "settings-panel"
+) as HTMLDivElement;
+const settingsClose = document.getElementById(
+  "settings-close"
+) as HTMLButtonElement;
+const strictFidelityToggle = document.getElementById(
+  "strict-fidelity-toggle"
+) as HTMLInputElement;
+const enhancedModeToggle = document.getElementById(
+  "enhanced-mode-toggle"
+) as HTMLInputElement;
+
 // State
 let isCapturing = false;
 let captureStartTime = 0;
@@ -74,6 +91,8 @@ type CaptureStage =
   | "error";
 
 let completionTimeout: number | null = null;
+let jobStatusPollInterval: number | null = null;
+let currentJobId: string | null = null;
 
 function setStage(stage: CaptureStage, jobId: string = "unknown") {
   console.log("[CAPTURE_STAGE]", stage);
@@ -105,12 +124,128 @@ function setStage(stage: CaptureStage, jobId: string = "unknown") {
 
   // Watchdog logic
   if (stage === "waitingForFigma") {
+    currentJobId = jobId;
     waitForCompletionOrTimeout(jobId);
+    startJobStatusPolling(jobId);
   } else if (stage === "complete" || stage === "error") {
     if (completionTimeout !== null) {
       clearTimeout(completionTimeout);
       completionTimeout = null;
     }
+    stopJobStatusPolling();
+    currentJobId = null;
+  }
+}
+
+async function checkJobStatus(
+  jobId: string
+): Promise<"completed" | "in-progress" | "not-found"> {
+  const statusUrls = [
+    "http://127.0.0.1:4411/api/jobs",
+    "http://localhost:4411/api/jobs",
+    "http://127.0.0.1:5511/api/jobs",
+    "http://localhost:5511/api/jobs",
+  ];
+
+  for (const baseUrl of statusUrls) {
+    try {
+      // Check if job is in history (completed)
+      const historyResponse = await fetch(`${baseUrl}/history`, {
+        method: "GET",
+        headers: { "cache-control": "no-cache" },
+      });
+
+      if (historyResponse.ok) {
+        const historyData = await historyResponse.json();
+        const jobs = historyData?.jobs || [];
+        const jobInHistory = jobs.find((j: any) => j.id === jobId);
+
+        if (jobInHistory) {
+          console.log(
+            `[JOB_STATUS] Job ${jobId} found in history - Figma has processed it`
+          );
+          return "completed";
+        }
+      }
+
+      // Check if job still exists in queue
+      const jobResponse = await fetch(`${baseUrl}/${jobId}`, {
+        method: "GET",
+        headers: { "cache-control": "no-cache" },
+      });
+
+      if (jobResponse.ok) {
+        const jobData = await jobResponse.json();
+        if (jobData?.job) {
+          console.log(
+            `[JOB_STATUS] Job ${jobId} still in queue - waiting for Figma`
+          );
+          return "in-progress";
+        }
+      } else if (jobResponse.status === 404) {
+        // Job not found in queue - check history one more time
+        console.log(
+          `[JOB_STATUS] Job ${jobId} not in queue, checking history...`
+        );
+        // Already checked history above, so if not there either, it's likely completed
+        return "completed";
+      }
+    } catch (err) {
+      console.warn(`[JOB_STATUS] Failed to check ${baseUrl}:`, err);
+      continue;
+    }
+  }
+
+  return "not-found";
+}
+
+function startJobStatusPolling(jobId: string) {
+  if (jobStatusPollInterval !== null) {
+    clearInterval(jobStatusPollInterval);
+  }
+
+  let pollCount = 0;
+  const maxPolls = 120; // 2 minutes max (120 * 1s)
+
+  jobStatusPollInterval = window.setInterval(async () => {
+    pollCount++;
+
+    // Check job status
+    const status = await checkJobStatus(jobId);
+
+    if (status === "completed") {
+      console.log(`[JOB_STATUS] Job ${jobId} completed by Figma`);
+      stopJobStatusPolling();
+      setStage("complete", jobId);
+      updateStatus("Figma import completed");
+      logToTerminal(
+        `✅ Figma import completed for job ${jobId}`,
+        "terminal-success"
+      );
+    } else if (status === "not-found" && pollCount >= 10) {
+      // After 10 polls, if job not found anywhere, assume it was completed
+      console.log(
+        `[JOB_STATUS] Job ${jobId} not found after ${pollCount} polls - assuming completed`
+      );
+      stopJobStatusPolling();
+      setStage("complete", jobId);
+      updateStatus("Figma import completed");
+      logToTerminal(
+        `✅ Job ${jobId} processed (not found in queue/history)`,
+        "terminal-success"
+      );
+    } else if (pollCount >= maxPolls) {
+      console.warn(`[JOB_STATUS] Polling timeout after ${maxPolls} attempts`);
+      stopJobStatusPolling();
+      // Don't fail here - let the timeout handler deal with it
+    }
+  }, 1000); // Poll every second
+}
+
+function stopJobStatusPolling() {
+  if (jobStatusPollInterval !== null) {
+    clearInterval(jobStatusPollInterval);
+    jobStatusPollInterval = null;
   }
 }
 
@@ -121,6 +256,7 @@ function waitForCompletionOrTimeout(jobId: string) {
 
   completionTimeout = window.setTimeout(() => {
     console.error("[CAPTURE_TIMEOUT] Stuck at 98%. Last known jobId:", jobId);
+    stopJobStatusPolling();
     alert(
       "Capture appears stuck waiting for Figma completion.\n\n" +
         "Check:\n" +
@@ -166,6 +302,35 @@ function init() {
   terminalClearBtn.addEventListener("click", clearTerminal);
   terminalMinimizeBtn.addEventListener("click", toggleTerminal);
   captureDialogClose?.addEventListener("click", () => hideCaptureDialog());
+
+  // Settings listeners
+  btnSettings?.addEventListener("click", () => {
+    settingsPanel.classList.remove("hidden");
+  });
+
+  settingsClose?.addEventListener("click", () => {
+    settingsPanel.classList.add("hidden");
+  });
+
+  // Load settings
+  chrome.storage.local.get(["strictFidelity", "enhancedMode"], (result) => {
+    if (result.strictFidelity !== undefined) {
+      if (strictFidelityToggle)
+        strictFidelityToggle.checked = result.strictFidelity;
+    }
+    if (result.enhancedMode !== undefined) {
+      if (enhancedModeToggle) enhancedModeToggle.checked = result.enhancedMode;
+    }
+  });
+
+  // Save settings
+  strictFidelityToggle?.addEventListener("change", () => {
+    chrome.storage.local.set({ strictFidelity: strictFidelityToggle.checked });
+  });
+
+  enhancedModeToggle?.addEventListener("change", () => {
+    chrome.storage.local.set({ enhancedMode: enhancedModeToggle.checked });
+  });
 
   // Debug listeners removed
 
@@ -328,23 +493,8 @@ async function startCapture(
     log("info", `Target URL: ${tab.url}`);
     log("info", `Tab ID: ${tab.id}`);
 
-    // Make sure the capture content script is present before messaging the tab
-    try {
-      await chrome.scripting.executeScript({
-        target: { tabId: tab.id },
-        files: ["dist/content-scripts/capture-dom.js"],
-      });
-      log("info", "Capture content script ensured");
-    } catch (error) {
-      const message =
-        error instanceof Error
-          ? error.message
-          : "Content script injection failed";
-      log("error", message);
-      updateStatus("Capture failed");
-      finishCapture();
-      return;
-    }
+    // Content script is auto-injected via manifest (content-script.js)
+    // No manual injection needed here
 
     // Take initial screenshot for preview
     await updatePreview(tab.id);
@@ -352,6 +502,10 @@ async function startCapture(
     // Send capture command to background
     log("info", "Sending capture command to background script...");
     setStage("capturingDom");
+
+    // Get strict fidelity setting
+    const settings = await chrome.storage.local.get(["strictFidelity"]);
+    const strictFidelity = settings.strictFidelity !== false; // Default to true
 
     await new Promise<void>((resolve, reject) => {
       chrome.runtime.sendMessage(
@@ -361,6 +515,7 @@ async function startCapture(
           allowNavigation,
           mode,
           viewports,
+          strictFidelity,
         },
         (response) => {
           if (chrome.runtime.lastError) {
@@ -455,7 +610,12 @@ function updateStatus(status: string) {
 /**
  * Update circular progress ring
  */
-function updateProgressRing(percent: number, label: string = "") {
+function updateProgressRing(
+  percent: number,
+  label: string = "",
+  phase?: string,
+  detail?: string
+) {
   // Update progress ring visualization
   const ring = document.querySelector(
     ".progress-ring-fill"
@@ -464,6 +624,8 @@ function updateProgressRing(percent: number, label: string = "") {
     ".progress-percent"
   ) as HTMLElement;
   const labelText = document.querySelector(".progress-label") as HTMLElement;
+  const phaseText = document.getElementById("progress-phase");
+  const detailText = document.getElementById("progress-detail");
 
   if (ring) {
     const circumference = 2 * Math.PI * 54; // radius = 54
@@ -472,8 +634,10 @@ function updateProgressRing(percent: number, label: string = "") {
 
     if (percent >= 100) {
       ring.classList.add("complete");
+      ring.classList.remove("active");
     } else if (percent > 0) {
       ring.classList.add("active");
+      ring.classList.remove("complete");
     }
   }
 
@@ -483,6 +647,24 @@ function updateProgressRing(percent: number, label: string = "") {
 
   if (labelText && label) {
     labelText.textContent = label;
+  }
+
+  if (phaseText) {
+    if (phase) {
+      phaseText.textContent = phase;
+      phaseText.style.display = "block";
+    } else {
+      phaseText.style.display = "none";
+    }
+  }
+
+  if (detailText) {
+    if (detail) {
+      detailText.textContent = detail;
+      detailText.style.display = "block";
+    } else {
+      detailText.style.display = "none";
+    }
   }
 }
 
@@ -640,8 +822,9 @@ function handleRemoteJobQueued(message: any) {
   logToTerminal(`✅ Job queued on server (ID: ${jobId})`, "terminal-success");
   logToTerminal(`   URL: ${url}`, "terminal-log-entry");
 
-  // Update progress to show success
-  updateProgressRing(100, "Job queued for Figma import");
+  // Transition to waitingForFigma stage to start polling
+  setStage("waitingForFigma", jobId);
+  updateStatus("Waiting for Figma plugin to import...");
 
   // Update status
   const statusEl = document.getElementById("preview-status");
@@ -733,7 +916,14 @@ function handleCaptureProgress(message: any) {
     setStage("waitingForFigma");
   } else {
     updateStatus(`${phase} - ${percent}%`);
-    updateProgressRing(percent, phase);
+    const detailText = details
+      ? `${details.elements ? `${details.elements} elements` : ""}${
+          details.images ? `, ${details.images} images` : ""
+        }${details.viewport ? ` • ${details.viewport}` : ""}${
+          details.sizeKB ? ` • ${details.sizeKB}KB` : ""
+        }`.trim()
+      : undefined;
+    updateProgressRing(percent, phase, phase, detailText);
     updateTerminalStats(percent, details);
   }
 }
@@ -796,7 +986,12 @@ function handleExtractionProgress(message: any) {
   }
 
   updateStatus(`${phase} - ${percent}%`);
-  updateProgressRing(percent, phase);
+  const detailText = data
+    ? `${data.elements ? `${data.elements} elements` : ""}${
+        data.images ? `, ${data.images} images` : ""
+      }${data.imagesFound ? ` (${data.imagesFound} found)` : ""}`.trim()
+    : message.message;
+  updateProgressRing(percent, phase, phase, detailText);
   updateTerminalStats(percent, data);
 }
 
@@ -948,6 +1143,22 @@ function handleCaptureComplete(message: any) {
  */
 function handleCaptureError(message: any) {
   log("error", ` Capture failed: ${message.error}`);
+  
+  // Log diagnostic details if available
+  if (message.details) {
+    const diagnostics = message.details.diagnostics;
+    if (diagnostics) {
+      const diagInfo = Object.entries(diagnostics)
+        .map(([key, value]) => `${key}: ${value}`)
+        .join(", ");
+      log("warning", ` Diagnostics: ${diagInfo}`);
+    }
+    
+    if (message.details.reason) {
+      log("warning", ` Reason: ${message.details.reason}`);
+    }
+  }
+  
   updateStatus("Capture failed");
   setStage("error");
   finishCapture();

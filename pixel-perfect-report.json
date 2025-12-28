@@ -1,0 +1,1314 @@
+{
+  "allResults": [
+    {
+      "passed": 3688,
+      "failed": 0,
+      "warnings": 6,
+      "errors": [
+        {
+          "nodeId": "node_1579",
+          "test": "transform.parsing",
+          "severity": "warning",
+          "message": "layoutContext.transform=\"matrix(1, 0, 0, 1, -42, -42)\" but no parsed transform.matrix"
+        },
+        {
+          "nodeId": "node_1600",
+          "test": "transform.parsing",
+          "severity": "warning",
+          "message": "layoutContext.transform=\"matrix(1, 0, 0, 1, -42, -42)\" but no parsed transform.matrix"
+        },
+        {
+          "nodeId": "node_1621",
+          "test": "transform.parsing",
+          "severity": "warning",
+          "message": "layoutContext.transform=\"matrix(1, 0, 0, 1, -42, -42)\" but no parsed transform.matrix"
+        },
+        {
+          "nodeId": "node_1701",
+          "test": "transform.parsing",
+          "severity": "warning",
+          "message": "layoutContext.transform=\"matrix(1, 0, 0, 1, -864, 0)\" but no parsed transform.matrix"
+        },
+        {
+          "nodeId": "node_1703",
+          "test": "transform.parsing",
+          "severity": "warning",
+          "message": "layoutContext.transform=\"matrix(1, 0, 0, 1, 0, 0)\" but no parsed transform.matrix"
+        },
+        {
+          "nodeId": "node_1953",
+          "test": "transform.parsing",
+          "severity": "warning",
+          "message": "layoutContext.transform=\"matrix(1, 0, 0, 1, -160, 0)\" but no parsed transform.matrix"
+        }
+      ]
+    },
+    {
+      "passed": 2214,
+      "failed": 0,
+      "warnings": 0,
+      "errors": []
+    },
+    {
+      "passed": 69,
+      "failed": 0,
+      "warnings": 207,
+      "errors": [
+        {
+          "nodeId": "node_130",
+          "test": "intrinsicSize",
+          "severity": "warning",
+          "message": "Missing intrinsicSize"
+        },
+        {
+          "nodeId": "node_130",
+          "test": "imageFit",
+          "severity": "warning",
+          "message": "Missing imageFit (object-fit)"
+        },
+        {
+          "nodeId": "node_130",
+          "test": "aspectRatio",
+          "severity": "warning",
+          "message": "Missing aspectRatio"
+        },
+        {
+          "nodeId": "node_138",
+          "test": "intrinsicSize",
+          "severity": "warning",
+          "message": "Missing intrinsicSize"
+        },
+        {
+          "nodeId": "node_138",
+          "test": "imageFit",
+          "severity": "warning",
+          "message": "Missing imageFit (object-fit)"
+        },
+        {
+          "nodeId": "node_138",
+          "test": "aspectRatio",
+          "severity": "warning",
+          "message": "Missing aspectRatio"
+        },
+        {
+          "nodeId": "node_153",
+          "test": "intrinsicSize",
+          "severity": "warning",
+          "message": "Missing intrinsicSize"
+        },
+        {
+          "nodeId": "node_153",
+          "test": "imageFit",
+          "severity": "warning",
+          "message": "Missing imageFit (object-fit)"
+        },
+        {
+          "nodeId": "node_153",
+          "test": "aspectRatio",
+          "severity": "warning",
+          "message": "Missing aspectRatio"
+        },
+        {
+          "nodeId": "node_162",
+          "test": "intrinsicSize",
+          "severity": "warning",
+          "message": "Missing intrinsicSize"
+        },
+        {
+          "nodeId": "node_162",
+          "test": "imageFit",
+          "severity": "warning",
+          "message": "Missing imageFit (object-fit)"
+        },
+        {
+          "nodeId": "node_162",
+          "test": "aspectRatio",
+          "severity": "warning",
+          "message": "Missing aspectRatio"
+        },
+        {
+          "nodeId": "node_171",
+          "test": "intrinsicSize",
+          "severity": "warning",
+          "message": "Missing intrinsicSize"
+        },
+        {
+          "nodeId": "node_171",
+          "test": "imageFit",
+          "severity": "warning",
+          "message": "Missing imageFit (object-fit)"
+        },
+        {
+          "nodeId": "node_171",
+          "test": "aspectRatio",
+          "severity": "warning",
+          "message": "Missing aspectRatio"
+        },
+        {
+          "nodeId": "node_180",
+          "test": "intrinsicSize",
+          "severity": "warning",
+          "message": "Missing intrinsicSize"
+        },
+        {
+          "nodeId": "node_180",
+          "test": "imageFit",
+          "severity": "warning",
+          "message": "Missing imageFit (object-fit)"
+        },
+        {
+          "nodeId": "node_180",
+          "test": "aspectRatio",
+          "severity": "warning",
+          "message": "Missing aspectRatio"
+        },
+        {
+          "nodeId": "node_199",
+          "test": "intrinsicSize",
+          "severity": "warning",
+          "message": "Missing intrinsicSize"
+        },
+        {
+          "nodeId": "node_199",
+          "test": "imageFit",
+          "severity": "warning",
+          "message": "Missing imageFit (object-fit)"
+        },
+        {
+          "nodeId": "node_199",
+          "test": "aspectRatio",
+          "severity": "warning",
+          "message": "Missing aspectRatio"
+        },
+        {
+          "nodeId": "node_208",
+          "test": "intrinsicSize",
+          "severity": "warning",
+          "message": "Missing intrinsicSize"
+        },
+        {
+          "nodeId": "node_208",
+          "test": "imageFit",
+          "severity": "warning",
+          "message": "Missing imageFit (object-fit)"
+        },
+        {
+          "nodeId": "node_208",
+          "test": "aspectRatio",
+          "severity": "warning",
+          "message": "Missing aspectRatio"
+        },
+        {
+          "nodeId": "node_217",
+          "test": "intrinsicSize",
+          "severity": "warning",
+          "message": "Missing intrinsicSize"
+        },
+        {
+          "nodeId": "node_217",
+          "test": "imageFit",
+          "severity": "warning",
+          "message": "Missing imageFit (object-fit)"
+        },
+        {
+          "nodeId": "node_217",
+          "test": "aspectRatio",
+          "severity": "warning",
+          "message": "Missing aspectRatio"
+        },
+        {
+          "nodeId": "node_226",
+          "test": "intrinsicSize",
+          "severity": "warning",
+          "message": "Missing intrinsicSize"
+        },
+        {
+          "nodeId": "node_226",
+          "test": "imageFit",
+          "severity": "warning",
+          "message": "Missing imageFit (object-fit)"
+        },
+        {
+          "nodeId": "node_226",
+          "test": "aspectRatio",
+          "severity": "warning",
+          "message": "Missing aspectRatio"
+        },
+        {
+          "nodeId": "node_235",
+          "test": "intrinsicSize",
+          "severity": "warning",
+          "message": "Missing intrinsicSize"
+        },
+        {
+          "nodeId": "node_235",
+          "test": "imageFit",
+          "severity": "warning",
+          "message": "Missing imageFit (object-fit)"
+        },
+        {
+          "nodeId": "node_235",
+          "test": "aspectRatio",
+          "severity": "warning",
+          "message": "Missing aspectRatio"
+        },
+        {
+          "nodeId": "node_256",
+          "test": "intrinsicSize",
+          "severity": "warning",
+          "message": "Missing intrinsicSize"
+        },
+        {
+          "nodeId": "node_256",
+          "test": "imageFit",
+          "severity": "warning",
+          "message": "Missing imageFit (object-fit)"
+        },
+        {
+          "nodeId": "node_256",
+          "test": "aspectRatio",
+          "severity": "warning",
+          "message": "Missing aspectRatio"
+        },
+        {
+          "nodeId": "node_263",
+          "test": "intrinsicSize",
+          "severity": "warning",
+          "message": "Missing intrinsicSize"
+        },
+        {
+          "nodeId": "node_263",
+          "test": "imageFit",
+          "severity": "warning",
+          "message": "Missing imageFit (object-fit)"
+        },
+        {
+          "nodeId": "node_263",
+          "test": "aspectRatio",
+          "severity": "warning",
+          "message": "Missing aspectRatio"
+        },
+        {
+          "nodeId": "node_270",
+          "test": "intrinsicSize",
+          "severity": "warning",
+          "message": "Missing intrinsicSize"
+        },
+        {
+          "nodeId": "node_270",
+          "test": "imageFit",
+          "severity": "warning",
+          "message": "Missing imageFit (object-fit)"
+        },
+        {
+          "nodeId": "node_270",
+          "test": "aspectRatio",
+          "severity": "warning",
+          "message": "Missing aspectRatio"
+        },
+        {
+          "nodeId": "node_284",
+          "test": "intrinsicSize",
+          "severity": "warning",
+          "message": "Missing intrinsicSize"
+        },
+        {
+          "nodeId": "node_284",
+          "test": "imageFit",
+          "severity": "warning",
+          "message": "Missing imageFit (object-fit)"
+        },
+        {
+          "nodeId": "node_284",
+          "test": "aspectRatio",
+          "severity": "warning",
+          "message": "Missing aspectRatio"
+        },
+        {
+          "nodeId": "node_311",
+          "test": "intrinsicSize",
+          "severity": "warning",
+          "message": "Missing intrinsicSize"
+        },
+        {
+          "nodeId": "node_311",
+          "test": "imageFit",
+          "severity": "warning",
+          "message": "Missing imageFit (object-fit)"
+        },
+        {
+          "nodeId": "node_311",
+          "test": "aspectRatio",
+          "severity": "warning",
+          "message": "Missing aspectRatio"
+        },
+        {
+          "nodeId": "node_335",
+          "test": "intrinsicSize",
+          "severity": "warning",
+          "message": "Missing intrinsicSize"
+        },
+        {
+          "nodeId": "node_335",
+          "test": "imageFit",
+          "severity": "warning",
+          "message": "Missing imageFit (object-fit)"
+        },
+        {
+          "nodeId": "node_335",
+          "test": "aspectRatio",
+          "severity": "warning",
+          "message": "Missing aspectRatio"
+        },
+        {
+          "nodeId": "node_359",
+          "test": "intrinsicSize",
+          "severity": "warning",
+          "message": "Missing intrinsicSize"
+        },
+        {
+          "nodeId": "node_359",
+          "test": "imageFit",
+          "severity": "warning",
+          "message": "Missing imageFit (object-fit)"
+        },
+        {
+          "nodeId": "node_359",
+          "test": "aspectRatio",
+          "severity": "warning",
+          "message": "Missing aspectRatio"
+        },
+        {
+          "nodeId": "node_383",
+          "test": "intrinsicSize",
+          "severity": "warning",
+          "message": "Missing intrinsicSize"
+        },
+        {
+          "nodeId": "node_383",
+          "test": "imageFit",
+          "severity": "warning",
+          "message": "Missing imageFit (object-fit)"
+        },
+        {
+          "nodeId": "node_383",
+          "test": "aspectRatio",
+          "severity": "warning",
+          "message": "Missing aspectRatio"
+        },
+        {
+          "nodeId": "node_407",
+          "test": "intrinsicSize",
+          "severity": "warning",
+          "message": "Missing intrinsicSize"
+        },
+        {
+          "nodeId": "node_407",
+          "test": "imageFit",
+          "severity": "warning",
+          "message": "Missing imageFit (object-fit)"
+        },
+        {
+          "nodeId": "node_407",
+          "test": "aspectRatio",
+          "severity": "warning",
+          "message": "Missing aspectRatio"
+        },
+        {
+          "nodeId": "node_437",
+          "test": "intrinsicSize",
+          "severity": "warning",
+          "message": "Missing intrinsicSize"
+        },
+        {
+          "nodeId": "node_437",
+          "test": "imageFit",
+          "severity": "warning",
+          "message": "Missing imageFit (object-fit)"
+        },
+        {
+          "nodeId": "node_437",
+          "test": "aspectRatio",
+          "severity": "warning",
+          "message": "Missing aspectRatio"
+        },
+        {
+          "nodeId": "node_448",
+          "test": "intrinsicSize",
+          "severity": "warning",
+          "message": "Missing intrinsicSize"
+        },
+        {
+          "nodeId": "node_448",
+          "test": "imageFit",
+          "severity": "warning",
+          "message": "Missing imageFit (object-fit)"
+        },
+        {
+          "nodeId": "node_448",
+          "test": "aspectRatio",
+          "severity": "warning",
+          "message": "Missing aspectRatio"
+        },
+        {
+          "nodeId": "node_459",
+          "test": "intrinsicSize",
+          "severity": "warning",
+          "message": "Missing intrinsicSize"
+        },
+        {
+          "nodeId": "node_459",
+          "test": "imageFit",
+          "severity": "warning",
+          "message": "Missing imageFit (object-fit)"
+        },
+        {
+          "nodeId": "node_459",
+          "test": "aspectRatio",
+          "severity": "warning",
+          "message": "Missing aspectRatio"
+        },
+        {
+          "nodeId": "node_470",
+          "test": "intrinsicSize",
+          "severity": "warning",
+          "message": "Missing intrinsicSize"
+        },
+        {
+          "nodeId": "node_470",
+          "test": "imageFit",
+          "severity": "warning",
+          "message": "Missing imageFit (object-fit)"
+        },
+        {
+          "nodeId": "node_470",
+          "test": "aspectRatio",
+          "severity": "warning",
+          "message": "Missing aspectRatio"
+        },
+        {
+          "nodeId": "node_481",
+          "test": "intrinsicSize",
+          "severity": "warning",
+          "message": "Missing intrinsicSize"
+        },
+        {
+          "nodeId": "node_481",
+          "test": "imageFit",
+          "severity": "warning",
+          "message": "Missing imageFit (object-fit)"
+        },
+        {
+          "nodeId": "node_481",
+          "test": "aspectRatio",
+          "severity": "warning",
+          "message": "Missing aspectRatio"
+        },
+        {
+          "nodeId": "node_496",
+          "test": "intrinsicSize",
+          "severity": "warning",
+          "message": "Missing intrinsicSize"
+        },
+        {
+          "nodeId": "node_496",
+          "test": "imageFit",
+          "severity": "warning",
+          "message": "Missing imageFit (object-fit)"
+        },
+        {
+          "nodeId": "node_496",
+          "test": "aspectRatio",
+          "severity": "warning",
+          "message": "Missing aspectRatio"
+        },
+        {
+          "nodeId": "node_503",
+          "test": "intrinsicSize",
+          "severity": "warning",
+          "message": "Missing intrinsicSize"
+        },
+        {
+          "nodeId": "node_503",
+          "test": "imageFit",
+          "severity": "warning",
+          "message": "Missing imageFit (object-fit)"
+        },
+        {
+          "nodeId": "node_503",
+          "test": "aspectRatio",
+          "severity": "warning",
+          "message": "Missing aspectRatio"
+        },
+        {
+          "nodeId": "node_510",
+          "test": "intrinsicSize",
+          "severity": "warning",
+          "message": "Missing intrinsicSize"
+        },
+        {
+          "nodeId": "node_510",
+          "test": "imageFit",
+          "severity": "warning",
+          "message": "Missing imageFit (object-fit)"
+        },
+        {
+          "nodeId": "node_510",
+          "test": "aspectRatio",
+          "severity": "warning",
+          "message": "Missing aspectRatio"
+        },
+        {
+          "nodeId": "node_517",
+          "test": "intrinsicSize",
+          "severity": "warning",
+          "message": "Missing intrinsicSize"
+        },
+        {
+          "nodeId": "node_517",
+          "test": "imageFit",
+          "severity": "warning",
+          "message": "Missing imageFit (object-fit)"
+        },
+        {
+          "nodeId": "node_517",
+          "test": "aspectRatio",
+          "severity": "warning",
+          "message": "Missing aspectRatio"
+        },
+        {
+          "nodeId": "node_524",
+          "test": "intrinsicSize",
+          "severity": "warning",
+          "message": "Missing intrinsicSize"
+        },
+        {
+          "nodeId": "node_524",
+          "test": "imageFit",
+          "severity": "warning",
+          "message": "Missing imageFit (object-fit)"
+        },
+        {
+          "nodeId": "node_524",
+          "test": "aspectRatio",
+          "severity": "warning",
+          "message": "Missing aspectRatio"
+        },
+        {
+          "nodeId": "node_531",
+          "test": "intrinsicSize",
+          "severity": "warning",
+          "message": "Missing intrinsicSize"
+        },
+        {
+          "nodeId": "node_531",
+          "test": "imageFit",
+          "severity": "warning",
+          "message": "Missing imageFit (object-fit)"
+        },
+        {
+          "nodeId": "node_531",
+          "test": "aspectRatio",
+          "severity": "warning",
+          "message": "Missing aspectRatio"
+        },
+        {
+          "nodeId": "node_564",
+          "test": "intrinsicSize",
+          "severity": "warning",
+          "message": "Missing intrinsicSize"
+        },
+        {
+          "nodeId": "node_564",
+          "test": "imageFit",
+          "severity": "warning",
+          "message": "Missing imageFit (object-fit)"
+        },
+        {
+          "nodeId": "node_564",
+          "test": "aspectRatio",
+          "severity": "warning",
+          "message": "Missing aspectRatio"
+        },
+        {
+          "nodeId": "node_611",
+          "test": "intrinsicSize",
+          "severity": "warning",
+          "message": "Missing intrinsicSize"
+        },
+        {
+          "nodeId": "node_611",
+          "test": "imageFit",
+          "severity": "warning",
+          "message": "Missing imageFit (object-fit)"
+        },
+        {
+          "nodeId": "node_611",
+          "test": "aspectRatio",
+          "severity": "warning",
+          "message": "Missing aspectRatio"
+        },
+        {
+          "nodeId": "node_658",
+          "test": "intrinsicSize",
+          "severity": "warning",
+          "message": "Missing intrinsicSize"
+        },
+        {
+          "nodeId": "node_658",
+          "test": "imageFit",
+          "severity": "warning",
+          "message": "Missing imageFit (object-fit)"
+        },
+        {
+          "nodeId": "node_658",
+          "test": "aspectRatio",
+          "severity": "warning",
+          "message": "Missing aspectRatio"
+        },
+        {
+          "nodeId": "node_705",
+          "test": "intrinsicSize",
+          "severity": "warning",
+          "message": "Missing intrinsicSize"
+        },
+        {
+          "nodeId": "node_705",
+          "test": "imageFit",
+          "severity": "warning",
+          "message": "Missing imageFit (object-fit)"
+        },
+        {
+          "nodeId": "node_705",
+          "test": "aspectRatio",
+          "severity": "warning",
+          "message": "Missing aspectRatio"
+        },
+        {
+          "nodeId": "node_755",
+          "test": "intrinsicSize",
+          "severity": "warning",
+          "message": "Missing intrinsicSize"
+        },
+        {
+          "nodeId": "node_755",
+          "test": "imageFit",
+          "severity": "warning",
+          "message": "Missing imageFit (object-fit)"
+        },
+        {
+          "nodeId": "node_755",
+          "test": "aspectRatio",
+          "severity": "warning",
+          "message": "Missing aspectRatio"
+        },
+        {
+          "nodeId": "node_802",
+          "test": "intrinsicSize",
+          "severity": "warning",
+          "message": "Missing intrinsicSize"
+        },
+        {
+          "nodeId": "node_802",
+          "test": "imageFit",
+          "severity": "warning",
+          "message": "Missing imageFit (object-fit)"
+        },
+        {
+          "nodeId": "node_802",
+          "test": "aspectRatio",
+          "severity": "warning",
+          "message": "Missing aspectRatio"
+        },
+        {
+          "nodeId": "node_849",
+          "test": "intrinsicSize",
+          "severity": "warning",
+          "message": "Missing intrinsicSize"
+        },
+        {
+          "nodeId": "node_849",
+          "test": "imageFit",
+          "severity": "warning",
+          "message": "Missing imageFit (object-fit)"
+        },
+        {
+          "nodeId": "node_849",
+          "test": "aspectRatio",
+          "severity": "warning",
+          "message": "Missing aspectRatio"
+        },
+        {
+          "nodeId": "node_896",
+          "test": "intrinsicSize",
+          "severity": "warning",
+          "message": "Missing intrinsicSize"
+        },
+        {
+          "nodeId": "node_896",
+          "test": "imageFit",
+          "severity": "warning",
+          "message": "Missing imageFit (object-fit)"
+        },
+        {
+          "nodeId": "node_896",
+          "test": "aspectRatio",
+          "severity": "warning",
+          "message": "Missing aspectRatio"
+        },
+        {
+          "nodeId": "node_942",
+          "test": "intrinsicSize",
+          "severity": "warning",
+          "message": "Missing intrinsicSize"
+        },
+        {
+          "nodeId": "node_942",
+          "test": "imageFit",
+          "severity": "warning",
+          "message": "Missing imageFit (object-fit)"
+        },
+        {
+          "nodeId": "node_942",
+          "test": "aspectRatio",
+          "severity": "warning",
+          "message": "Missing aspectRatio"
+        },
+        {
+          "nodeId": "node_992",
+          "test": "intrinsicSize",
+          "severity": "warning",
+          "message": "Missing intrinsicSize"
+        },
+        {
+          "nodeId": "node_992",
+          "test": "imageFit",
+          "severity": "warning",
+          "message": "Missing imageFit (object-fit)"
+        },
+        {
+          "nodeId": "node_992",
+          "test": "aspectRatio",
+          "severity": "warning",
+          "message": "Missing aspectRatio"
+        },
+        {
+          "nodeId": "node_1039",
+          "test": "intrinsicSize",
+          "severity": "warning",
+          "message": "Missing intrinsicSize"
+        },
+        {
+          "nodeId": "node_1039",
+          "test": "imageFit",
+          "severity": "warning",
+          "message": "Missing imageFit (object-fit)"
+        },
+        {
+          "nodeId": "node_1039",
+          "test": "aspectRatio",
+          "severity": "warning",
+          "message": "Missing aspectRatio"
+        },
+        {
+          "nodeId": "node_1089",
+          "test": "intrinsicSize",
+          "severity": "warning",
+          "message": "Missing intrinsicSize"
+        },
+        {
+          "nodeId": "node_1089",
+          "test": "imageFit",
+          "severity": "warning",
+          "message": "Missing imageFit (object-fit)"
+        },
+        {
+          "nodeId": "node_1089",
+          "test": "aspectRatio",
+          "severity": "warning",
+          "message": "Missing aspectRatio"
+        },
+        {
+          "nodeId": "node_1139",
+          "test": "intrinsicSize",
+          "severity": "warning",
+          "message": "Missing intrinsicSize"
+        },
+        {
+          "nodeId": "node_1139",
+          "test": "imageFit",
+          "severity": "warning",
+          "message": "Missing imageFit (object-fit)"
+        },
+        {
+          "nodeId": "node_1139",
+          "test": "aspectRatio",
+          "severity": "warning",
+          "message": "Missing aspectRatio"
+        },
+        {
+          "nodeId": "node_1186",
+          "test": "intrinsicSize",
+          "severity": "warning",
+          "message": "Missing intrinsicSize"
+        },
+        {
+          "nodeId": "node_1186",
+          "test": "imageFit",
+          "severity": "warning",
+          "message": "Missing imageFit (object-fit)"
+        },
+        {
+          "nodeId": "node_1186",
+          "test": "aspectRatio",
+          "severity": "warning",
+          "message": "Missing aspectRatio"
+        },
+        {
+          "nodeId": "node_1236",
+          "test": "intrinsicSize",
+          "severity": "warning",
+          "message": "Missing intrinsicSize"
+        },
+        {
+          "nodeId": "node_1236",
+          "test": "imageFit",
+          "severity": "warning",
+          "message": "Missing imageFit (object-fit)"
+        },
+        {
+          "nodeId": "node_1236",
+          "test": "aspectRatio",
+          "severity": "warning",
+          "message": "Missing aspectRatio"
+        },
+        {
+          "nodeId": "node_1299",
+          "test": "intrinsicSize",
+          "severity": "warning",
+          "message": "Missing intrinsicSize"
+        },
+        {
+          "nodeId": "node_1299",
+          "test": "imageFit",
+          "severity": "warning",
+          "message": "Missing imageFit (object-fit)"
+        },
+        {
+          "nodeId": "node_1299",
+          "test": "aspectRatio",
+          "severity": "warning",
+          "message": "Missing aspectRatio"
+        },
+        {
+          "nodeId": "node_1319",
+          "test": "intrinsicSize",
+          "severity": "warning",
+          "message": "Missing intrinsicSize"
+        },
+        {
+          "nodeId": "node_1319",
+          "test": "imageFit",
+          "severity": "warning",
+          "message": "Missing imageFit (object-fit)"
+        },
+        {
+          "nodeId": "node_1319",
+          "test": "aspectRatio",
+          "severity": "warning",
+          "message": "Missing aspectRatio"
+        },
+        {
+          "nodeId": "node_1339",
+          "test": "intrinsicSize",
+          "severity": "warning",
+          "message": "Missing intrinsicSize"
+        },
+        {
+          "nodeId": "node_1339",
+          "test": "imageFit",
+          "severity": "warning",
+          "message": "Missing imageFit (object-fit)"
+        },
+        {
+          "nodeId": "node_1339",
+          "test": "aspectRatio",
+          "severity": "warning",
+          "message": "Missing aspectRatio"
+        },
+        {
+          "nodeId": "node_1359",
+          "test": "intrinsicSize",
+          "severity": "warning",
+          "message": "Missing intrinsicSize"
+        },
+        {
+          "nodeId": "node_1359",
+          "test": "imageFit",
+          "severity": "warning",
+          "message": "Missing imageFit (object-fit)"
+        },
+        {
+          "nodeId": "node_1359",
+          "test": "aspectRatio",
+          "severity": "warning",
+          "message": "Missing aspectRatio"
+        },
+        {
+          "nodeId": "node_1379",
+          "test": "intrinsicSize",
+          "severity": "warning",
+          "message": "Missing intrinsicSize"
+        },
+        {
+          "nodeId": "node_1379",
+          "test": "imageFit",
+          "severity": "warning",
+          "message": "Missing imageFit (object-fit)"
+        },
+        {
+          "nodeId": "node_1379",
+          "test": "aspectRatio",
+          "severity": "warning",
+          "message": "Missing aspectRatio"
+        },
+        {
+          "nodeId": "node_1399",
+          "test": "intrinsicSize",
+          "severity": "warning",
+          "message": "Missing intrinsicSize"
+        },
+        {
+          "nodeId": "node_1399",
+          "test": "imageFit",
+          "severity": "warning",
+          "message": "Missing imageFit (object-fit)"
+        },
+        {
+          "nodeId": "node_1399",
+          "test": "aspectRatio",
+          "severity": "warning",
+          "message": "Missing aspectRatio"
+        },
+        {
+          "nodeId": "node_1452",
+          "test": "intrinsicSize",
+          "severity": "warning",
+          "message": "Missing intrinsicSize"
+        },
+        {
+          "nodeId": "node_1452",
+          "test": "imageFit",
+          "severity": "warning",
+          "message": "Missing imageFit (object-fit)"
+        },
+        {
+          "nodeId": "node_1452",
+          "test": "aspectRatio",
+          "severity": "warning",
+          "message": "Missing aspectRatio"
+        },
+        {
+          "nodeId": "node_1473",
+          "test": "intrinsicSize",
+          "severity": "warning",
+          "message": "Missing intrinsicSize"
+        },
+        {
+          "nodeId": "node_1473",
+          "test": "imageFit",
+          "severity": "warning",
+          "message": "Missing imageFit (object-fit)"
+        },
+        {
+          "nodeId": "node_1473",
+          "test": "aspectRatio",
+          "severity": "warning",
+          "message": "Missing aspectRatio"
+        },
+        {
+          "nodeId": "node_1499",
+          "test": "intrinsicSize",
+          "severity": "warning",
+          "message": "Missing intrinsicSize"
+        },
+        {
+          "nodeId": "node_1499",
+          "test": "imageFit",
+          "severity": "warning",
+          "message": "Missing imageFit (object-fit)"
+        },
+        {
+          "nodeId": "node_1499",
+          "test": "aspectRatio",
+          "severity": "warning",
+          "message": "Missing aspectRatio"
+        },
+        {
+          "nodeId": "node_1516",
+          "test": "intrinsicSize",
+          "severity": "warning",
+          "message": "Missing intrinsicSize"
+        },
+        {
+          "nodeId": "node_1516",
+          "test": "imageFit",
+          "severity": "warning",
+          "message": "Missing imageFit (object-fit)"
+        },
+        {
+          "nodeId": "node_1516",
+          "test": "aspectRatio",
+          "severity": "warning",
+          "message": "Missing aspectRatio"
+        },
+        {
+          "nodeId": "node_1526",
+          "test": "intrinsicSize",
+          "severity": "warning",
+          "message": "Missing intrinsicSize"
+        },
+        {
+          "nodeId": "node_1526",
+          "test": "imageFit",
+          "severity": "warning",
+          "message": "Missing imageFit (object-fit)"
+        },
+        {
+          "nodeId": "node_1526",
+          "test": "aspectRatio",
+          "severity": "warning",
+          "message": "Missing aspectRatio"
+        },
+        {
+          "nodeId": "node_1536",
+          "test": "intrinsicSize",
+          "severity": "warning",
+          "message": "Missing intrinsicSize"
+        },
+        {
+          "nodeId": "node_1536",
+          "test": "imageFit",
+          "severity": "warning",
+          "message": "Missing imageFit (object-fit)"
+        },
+        {
+          "nodeId": "node_1536",
+          "test": "aspectRatio",
+          "severity": "warning",
+          "message": "Missing aspectRatio"
+        },
+        {
+          "nodeId": "node_1546",
+          "test": "intrinsicSize",
+          "severity": "warning",
+          "message": "Missing intrinsicSize"
+        },
+        {
+          "nodeId": "node_1546",
+          "test": "imageFit",
+          "severity": "warning",
+          "message": "Missing imageFit (object-fit)"
+        },
+        {
+          "nodeId": "node_1546",
+          "test": "aspectRatio",
+          "severity": "warning",
+          "message": "Missing aspectRatio"
+        },
+        {
+          "nodeId": "node_1556",
+          "test": "intrinsicSize",
+          "severity": "warning",
+          "message": "Missing intrinsicSize"
+        },
+        {
+          "nodeId": "node_1556",
+          "test": "imageFit",
+          "severity": "warning",
+          "message": "Missing imageFit (object-fit)"
+        },
+        {
+          "nodeId": "node_1556",
+          "test": "aspectRatio",
+          "severity": "warning",
+          "message": "Missing aspectRatio"
+        },
+        {
+          "nodeId": "node_1578",
+          "test": "intrinsicSize",
+          "severity": "warning",
+          "message": "Missing intrinsicSize"
+        },
+        {
+          "nodeId": "node_1578",
+          "test": "imageFit",
+          "severity": "warning",
+          "message": "Missing imageFit (object-fit)"
+        },
+        {
+          "nodeId": "node_1578",
+          "test": "aspectRatio",
+          "severity": "warning",
+          "message": "Missing aspectRatio"
+        },
+        {
+          "nodeId": "node_1579",
+          "test": "intrinsicSize",
+          "severity": "warning",
+          "message": "Missing intrinsicSize"
+        },
+        {
+          "nodeId": "node_1579",
+          "test": "imageFit",
+          "severity": "warning",
+          "message": "Missing imageFit (object-fit)"
+        },
+        {
+          "nodeId": "node_1579",
+          "test": "aspectRatio",
+          "severity": "warning",
+          "message": "Missing aspectRatio"
+        },
+        {
+          "nodeId": "node_1599",
+          "test": "intrinsicSize",
+          "severity": "warning",
+          "message": "Missing intrinsicSize"
+        },
+        {
+          "nodeId": "node_1599",
+          "test": "imageFit",
+          "severity": "warning",
+          "message": "Missing imageFit (object-fit)"
+        },
+        {
+          "nodeId": "node_1599",
+          "test": "aspectRatio",
+          "severity": "warning",
+          "message": "Missing aspectRatio"
+        },
+        {
+          "nodeId": "node_1600",
+          "test": "intrinsicSize",
+          "severity": "warning",
+          "message": "Missing intrinsicSize"
+        },
+        {
+          "nodeId": "node_1600",
+          "test": "imageFit",
+          "severity": "warning",
+          "message": "Missing imageFit (object-fit)"
+        },
+        {
+          "nodeId": "node_1600",
+          "test": "aspectRatio",
+          "severity": "warning",
+          "message": "Missing aspectRatio"
+        },
+        {
+          "nodeId": "node_1620",
+          "test": "intrinsicSize",
+          "severity": "warning",
+          "message": "Missing intrinsicSize"
+        },
+        {
+          "nodeId": "node_1620",
+          "test": "imageFit",
+          "severity": "warning",
+          "message": "Missing imageFit (object-fit)"
+        },
+        {
+          "nodeId": "node_1620",
+          "test": "aspectRatio",
+          "severity": "warning",
+          "message": "Missing aspectRatio"
+        },
+        {
+          "nodeId": "node_1621",
+          "test": "intrinsicSize",
+          "severity": "warning",
+          "message": "Missing intrinsicSize"
+        },
+        {
+          "nodeId": "node_1621",
+          "test": "imageFit",
+          "severity": "warning",
+          "message": "Missing imageFit (object-fit)"
+        },
+        {
+          "nodeId": "node_1621",
+          "test": "aspectRatio",
+          "severity": "warning",
+          "message": "Missing aspectRatio"
+        },
+        {
+          "nodeId": "node_1654",
+          "test": "intrinsicSize",
+          "severity": "warning",
+          "message": "Missing intrinsicSize"
+        },
+        {
+          "nodeId": "node_1654",
+          "test": "imageFit",
+          "severity": "warning",
+          "message": "Missing imageFit (object-fit)"
+        },
+        {
+          "nodeId": "node_1654",
+          "test": "aspectRatio",
+          "severity": "warning",
+          "message": "Missing aspectRatio"
+        },
+        {
+          "nodeId": "node_1671",
+          "test": "intrinsicSize",
+          "severity": "warning",
+          "message": "Missing intrinsicSize"
+        },
+        {
+          "nodeId": "node_1671",
+          "test": "imageFit",
+          "severity": "warning",
+          "message": "Missing imageFit (object-fit)"
+        },
+        {
+          "nodeId": "node_1671",
+          "test": "aspectRatio",
+          "severity": "warning",
+          "message": "Missing aspectRatio"
+        },
+        {
+          "nodeId": "node_1688",
+          "test": "intrinsicSize",
+          "severity": "warning",
+          "message": "Missing intrinsicSize"
+        },
+        {
+          "nodeId": "node_1688",
+          "test": "imageFit",
+          "severity": "warning",
+          "message": "Missing imageFit (object-fit)"
+        },
+        {
+          "nodeId": "node_1688",
+          "test": "aspectRatio",
+          "severity": "warning",
+          "message": "Missing aspectRatio"
+        }
+      ]
+    },
+    {
+      "passed": 157,
+      "failed": 0,
+      "warnings": 0,
+      "errors": [],
+      "stats": {
+        "nodesWithFilters": 0,
+        "nodesWithBlendModes": 0,
+        "nodesWithEffects": 1844
+      }
+    }
+  ],
+  "timestamp": "2025-12-27T13:59:13.753Z"
+}

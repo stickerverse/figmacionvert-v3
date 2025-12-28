@@ -8,30 +8,6 @@ self.addEventListener("error", (event: ErrorEvent) => {
 
 self.addEventListener("unhandledrejection", (event: PromiseRejectionEvent) => {
   console.error("[UNHANDLED_REJECTION]", event.reason);
-  // #region agent log
-  const errorDetails = {
-    reason: event.reason,
-    reasonType: typeof event.reason,
-    reasonString: String(event.reason),
-    reasonMessage:
-      event.reason instanceof Error ? event.reason.message : undefined,
-    reasonStack: event.reason instanceof Error ? event.reason.stack : undefined,
-    timestamp: Date.now(),
-  };
-  fetch("http://127.0.0.1:7242/ingest/ec6ff4c5-673b-403d-a943-70cb2e5565f2", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      location: "background.ts:10",
-      message: "Unhandled rejection",
-      data: errorDetails,
-      timestamp: Date.now(),
-      sessionId: "debug-session",
-      runId: "run1",
-      hypothesisId: "ERROR",
-    }),
-  }).catch(() => {});
-  // #endregion
   reportError("unhandledrejection", event.reason);
 });
 
@@ -70,26 +46,8 @@ function reportError(
 
 console.log("Web to Figma extension loaded");
 
-// Ensure content script is dynamically registered (belt-and-suspenders)
-chrome.scripting
-  .registerContentScripts([
-    {
-      id: "auto-capture-content-script",
-      js: ["dist/content-script.js"],
-      matches: ["<all_urls>"],
-      runAt: "document_idle",
-      allFrames: true,
-    },
-  ])
-  .then(() => {
-    console.log("[background] Registered persistent content script");
-  })
-  .catch((err) => {
-    console.warn(
-      "[background] Failed to register persistent content script:",
-      err?.message || err
-    );
-  });
+// Content script is declared in manifest.json - no dynamic registration needed
+// Dynamic registration would conflict with manifest declaration and cause "No SW" errors
 
 // Handoff server endpoint - using local server for development
 // Allow overriding via a global for local testing; default to null so we try multiple bases
@@ -147,77 +105,88 @@ function isCapturableUrl(url: string): boolean {
   console.log(`[capture] checking URL for support: ${url} -> ${!isRestricted}`);
   return !isRestricted;
 }
-
 /**
- * Ensure content script is injected into the tab and responsive
+ * Wait for the manifest-declared content script to be ready.
+ * The manifest already auto-injects content-script.js on all URLs,
+ * so we just need to wait for it to respond.
  */
-async function ensureContentScript(tabId: number) {
-  try {
-    // Check if script is already injected and responsive
-    const checkReady = async (retries = 3, delayMs = 100): Promise<boolean> => {
-      for (let i = 0; i < retries; i++) {
-        try {
-          const response = await chrome.tabs.sendMessage(tabId, {
-            type: "PING",
-          });
-          if (response && response.pong) {
-            console.log(`[background] Content script ready on tab ${tabId}`);
-            return true;
-          }
-        } catch (e) {
-          // Script not ready, will retry
-          if (chrome.runtime.lastError) {
-            console.warn(
-              `[background] PING attempt ${i + 1} failed on tab ${tabId}:`,
-              chrome.runtime.lastError.message
-            );
-          }
+async function ensureContentScript(tabId: number): Promise<boolean> {
+  // Check if script is already injected and responsive
+  const checkReady = async (retries = 3, delayMs = 100): Promise<boolean> => {
+    for (let i = 0; i < retries; i++) {
+      try {
+        const response = await chrome.tabs.sendMessage(tabId, {
+          type: "PING",
+        });
+        if (response && response.pong) {
+          console.log(`[background] Content script ready on tab ${tabId}`);
+          return true;
         }
-        if (i < retries - 1)
-          await new Promise((resolve) => setTimeout(resolve, delayMs));
+      } catch (e) {
+        // Script not ready, will retry
+        // This is expected for tabs that were open before extension was loaded
       }
-      return false;
-    };
-
-    // First check if already present
-    if (await checkReady(1)) {
-      return;
+      if (i < retries - 1)
+        await new Promise((resolve) => setTimeout(resolve, delayMs));
     }
+    return false;
+  };
 
-    console.log(`[background] Injecting content script into tab ${tabId}`);
-    await chrome.scripting.executeScript({
-      target: { tabId, allFrames: true },
-      files: ["dist/content-script.js"],
-    });
+  // First, check if manifest-declared content script is already ready
+  // Give it a quick check (3 retries x 100ms) for fast pages
+  let isReady = await checkReady(3, 100);
 
-    // Wait for the script to be ready (retry up to 20 times over ~2 seconds)
-    if (!(await checkReady(20, 100))) {
+  // If not ready, try programmatically injecting for existing tabs
+  if (!isReady) {
+    const url = (await chrome.tabs.get(tabId)).url;
+    if (url && getUrlType(url) === "restricted") {
       console.warn(
-        `[background] Content script not responding on tab ${tabId} after injection; proceeding anyway`
+        `[background] Content script cannot run on restricted URL: ${url}`
       );
+      return false;
     }
-  } catch (error) {
-    console.error(
-      `[background] Failed to inject content script into tab ${tabId}:`,
-      error instanceof Error ? error.message : String(error)
-    );
-    chrome.runtime.sendMessage(
-      {
-        type: "CAPTURE_ERROR",
-        error:
-          error instanceof Error
-            ? error.message
-            : String(error) || "Unknown content-script injection error",
-      },
-      () => void chrome.runtime.lastError
-    );
+
+    // Try to inject content script programmatically
+    try {
+      console.log(
+        `[background] Content script not found, attempting programmatic injection on tab ${tabId}`
+      );
+      await chrome.scripting.executeScript({
+        target: { tabId: tabId },
+        files: ["content-script.js"], // Relative to extension root (dist folder)
+        world: "ISOLATED", // Content scripts run in isolated world
+      });
+      console.log(
+        `[background] Successfully injected content script on tab ${tabId}`
+      );
+      // Give it a moment to initialize, then check again
+      await new Promise((resolve) => setTimeout(resolve, 200));
+      isReady = await checkReady(10, 100); // Check up to 1 second after injection
+    } catch (injectError) {
+      console.warn(
+        `[background] Failed to inject content script on tab ${tabId}:`,
+        injectError
+      );
+      // Fall through to show user-friendly error
+    }
   }
+
+  if (!isReady) {
+    // Content script still not responding after injection attempt
+    console.warn(
+      `[background] Content script not responding on tab ${tabId} after injection attempt. ` +
+        `Please refresh the page.`
+    );
+    return false;
+  }
+  return true;
 }
 
 /**
  * Get user-friendly URL type description for error messages
  */
 function getUrlType(url: string): string {
+  if (url.startsWith("http://") || url.startsWith("https://")) return "web";
   if (url.startsWith("chrome-extension://")) return "extension";
   if (url.startsWith("chrome://")) return "Chrome internal";
   if (url.startsWith("edge://")) return "Edge internal";
@@ -250,18 +219,19 @@ function buildUnsupportedUrlError(url: string | undefined | null) {
   };
 }
 
-async function ensureSidePanelBehavior() {
-  if (!chrome.sidePanel) return;
-
-  try {
-    if (chrome.sidePanel.setPanelBehavior) {
-      await chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: true });
-      console.log("[SIDEPANEL] Configured action to open side panel");
-    }
-  } catch (error) {
-    console.warn("[SIDEPANEL] Failed to set panel behavior", error);
-  }
-}
+// Side panel behavior disabled - using normal popup instead
+// async function ensureSidePanelBehavior() {
+//   if (!chrome.sidePanel) return;
+//
+//   try {
+//     if (chrome.sidePanel.setPanelBehavior) {
+//       await chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: true });
+//       console.log("[SIDEPANEL] Configured action to open side panel");
+//     }
+//   } catch (error) {
+//     console.warn("[SIDEPANEL] Failed to set panel behavior", error);
+//   }
+// }
 
 // CDP capture mode flag (html.to.design-level accuracy)
 // CDP capture mode is now mandatory (no fallback allowed per PIXEL_PERFECT_RULESET.md)
@@ -282,7 +252,7 @@ interface HandoffState {
 interface HandoffPayload {
   version: string;
   metadata: any;
-  tree: any;
+  root: any; // Changed from 'tree' for schema consistency
   assets: any;
   styles: any;
   components?: any;
@@ -326,9 +296,28 @@ let lastCapturedPayload: any = null;
 // DEBUG: Expose to global scope for console inspection
 (self as any).lastCapturedPayload = null;
 
+// Prevent accidental duplicate imports by de-duping identical captures for a short window.
+// Primary key is `payload.metadata.captureId` (added by content-script); fallback is absent and won't dedupe.
+const RECENT_CAPTURE_ID_TTL_MS = 60_000;
+const recentCaptureIds = new Map<string, number>();
+
 function updateLastCapturedPayload(payload: any) {
   lastCapturedPayload = payload;
   (self as any).lastCapturedPayload = payload;
+}
+
+function getCaptureIdFromPayload(payload: any): string | null {
+  const id =
+    payload?.metadata?.captureId ??
+    payload?.schema?.metadata?.captureId ??
+    payload?.payload?.metadata?.captureId;
+  return typeof id === "string" && id.trim().length > 0 ? id : null;
+}
+
+function pruneRecentCaptureIds(now: number) {
+  for (const [id, ts] of recentCaptureIds.entries()) {
+    if (now - ts > RECENT_CAPTURE_ID_TTL_MS) recentCaptureIds.delete(id);
+  }
 }
 
 // DEBUG: Helper function to inspect schema from console
@@ -363,7 +352,12 @@ function updateLastCapturedPayload(payload: any) {
   const firstKey = imageKeys[0];
   const firstImage = firstKey ? images[firstKey] : null;
 
-  const root = schema.tree;
+  // Apply migration if needed
+  if (schema.tree && !schema.root) {
+    schema.root = schema.tree;
+    delete schema.tree;
+  }
+  const root = schema.root;
   const firstChild =
     root && Array.isArray(root.children) ? root.children[0] : null;
 
@@ -419,15 +413,8 @@ chrome.action.onClicked.addListener(async (tab) => {
     );
   }
 
-  // Open the side panel for the current window
-  if (tab.windowId) {
-    try {
-      await ensureSidePanelBehavior();
-      await chrome.sidePanel.open({ windowId: tab.windowId });
-    } catch (error) {
-      console.error("Failed to open side panel:", error);
-    }
-  }
+  // Popup will open automatically via action.default_popup in manifest
+  // Side panel behavior disabled - using normal popup instead
 });
 
 chrome.commands.onCommand.addListener(async (command) => {
@@ -508,33 +495,79 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message.type === "INJECT_IN_PAGE_SCRIPT") {
     const tabId = sender.tab?.id;
     const frameId = sender.frameId;
-    const files = Array.isArray(message.files)
-      ? (message.files as string[])
-      : [];
+    // Path must match manifest.json web_accessible_resources declaration
+    const fileName = "injected-script.js";
 
-    if (!tabId || files.length === 0) {
-      sendResponse?.({ ok: false, error: "Missing tab or files" });
-      return false;
+    if (tabId) {
+      (async () => {
+        let scriptContent = "";
+        let diagnostics = "Diagnostics: ";
+        try {
+          // CONTROL TEST: Can we fetch manifest?
+          try {
+            const mUrl = chrome.runtime.getURL("manifest.json");
+            const mResp = await fetch(mUrl);
+            diagnostics += `Manifest: ${mResp.status} (${mUrl}); `;
+          } catch (e) {
+            diagnostics += `Manifest fetch failed: ${e}; `;
+          }
+
+          // Verify file exists and get content (DIAGNOSTICS ONLY - DO NOT BLOCK)
+          const url = chrome.runtime.getURL(fileName);
+          diagnostics += `Script URL: ${url}; `;
+
+          try {
+            const resp = await fetch(url);
+            if (resp.ok) {
+              scriptContent = await resp.text();
+              console.log(
+                `[background] Verified ${fileName} exists (${scriptContent.length} bytes)`
+              );
+              diagnostics += `Script: OK (${scriptContent.length}b)`;
+            } else {
+              console.warn(
+                `[background] Failed to check ${fileName}: ${resp.status}`
+              );
+              diagnostics += `Script Fetch Status: ${resp.status}`;
+            }
+          } catch (fetchErr) {
+            console.warn(
+              `[background] Diagnostics fetch failed (non-critical):`,
+              fetchErr
+            );
+            diagnostics += `Script Fetch Failed: ${
+              fetchErr instanceof Error ? fetchErr.message : String(fetchErr)
+            }`;
+          }
+
+          // Try standard injection
+          await chrome.scripting.executeScript({
+            target: {
+              tabId: tabId,
+              frameIds: typeof frameId === "number" ? [frameId] : undefined,
+            },
+            world: "MAIN",
+            files: [fileName],
+          });
+
+          sendResponse?.({ ok: true });
+        } catch (err) {
+          const params = err instanceof Error ? err.message : String(err);
+          console.error("[INJECT] Failed via scripting.executeScript:", params);
+
+          // Return the content as fallback if we have it, plus diagnostics
+          sendResponse?.({
+            ok: false,
+            error: `${params} | ${diagnostics}`,
+            fallbackCode: scriptContent,
+          });
+        }
+      })();
+      return true;
     }
 
-    (async () => {
-      try {
-        await chrome.scripting.executeScript({
-          target: {
-            tabId,
-            frameIds: typeof frameId === "number" ? [frameId] : undefined,
-          },
-          world: "MAIN",
-          files,
-        });
-        sendResponse?.({ ok: true });
-      } catch (err) {
-        const error = err instanceof Error ? err.message : String(err);
-        console.error("[INJECT] Failed via scripting.executeScript:", error);
-        sendResponse?.({ ok: false, error });
-      }
-    })();
-    return true;
+    sendResponse?.({ ok: false, error: "Missing tab ID" });
+    return false;
   }
 
   if (message.type === "TRIGGER_CAPTURE_FOR_TAB") {
@@ -584,12 +617,25 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       try {
         const tabId = message.tabId;
         const allowNavigation = Boolean(message.allowNavigation);
-        const mode = message.mode || captureMode;
+        const mode = message.mode; // 'full' or 'visual' (if applicable)
 
-        if (!tabId) throw new Error("No tab ID provided");
+        if (!tabId) {
+          throw new Error("No tab ID provided");
+        }
 
-        // Ensure content script is present so we can use the rich in-page pipeline
-        await ensureContentScript(tabId);
+        // Ensure content script is ready
+        const isReady = await ensureContentScript(tabId);
+        if (!isReady) {
+          const errorMsg =
+            "Please refresh the page to enable capture (extension updated).";
+          console.warn("[capture] Aborting capture, content script not ready");
+          sendResponse?.({ ok: false, error: errorMsg });
+          chrome.runtime.sendMessage({
+            type: "CAPTURE_ERROR",
+            error: errorMsg,
+          });
+          return;
+        }
 
         // Let popup know we're starting the in-tab capture flow
         chrome.runtime.sendMessage(
@@ -660,6 +706,38 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       priority: 2,
     });
     return false;
+  }
+
+  if (message.type === "CAPTURE_VISIBLE_TAB") {
+    // PHASE 5: Native browser screenshot for element rasterization
+    // This is the PRIMARY capture method for pixel-perfect accuracy
+    (async () => {
+      try {
+        if (!sender.tab?.id) {
+          sendResponse({ ok: false, error: "No tab ID" });
+          return;
+        }
+
+        // Capture full visible viewport
+        const dataUrl = await chrome.tabs.captureVisibleTab(
+          sender.tab.windowId,
+          { format: "png" }
+        );
+
+        if (!dataUrl) {
+          sendResponse({ ok: false, error: "Screenshot capture failed" });
+          return;
+        }
+
+        // Send back to content script for cropping
+        sendResponse({ ok: true, dataUrl });
+      } catch (err) {
+        const errorMsg = err instanceof Error ? err.message : String(err);
+        console.error("[PHASE 5] captureVisibleTab failed:", errorMsg);
+        sendResponse({ ok: false, error: errorMsg });
+      }
+    })();
+    return true; // Async response
   }
 
   if (message.type === "LOG_TO_SERVER") {
@@ -754,7 +832,13 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       return false;
     }
 
-    enqueueHandoffJob(payload, "auto");
+    const enqueueResult = enqueueHandoffJob(payload, "auto");
+    if (!enqueueResult.enqueued) {
+      console.warn(
+        "[handoff] Suppressed auto enqueue:",
+        enqueueResult.reason || "unknown"
+      );
+    }
     // Kick the queue immediately to avoid idle service worker delaying upload
     void processPendingJobs();
     captureDeliveryMode = "send";
@@ -873,7 +957,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
   // Manual send to handoff (triggered by popup "Send to Figma" button)
   if (message.type === "SEND_TO_HANDOFF") {
-    const { data } = message as { data?: any };
+    const { data, force } = message as { data?: any; force?: boolean };
     // Use provided data or fall back to cached payload (critical for chunked transfers)
     const payload = data || lastCapturedPayload;
 
@@ -907,7 +991,17 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           }
         }
 
-        enqueueHandoffJob(parsedPayload, "manual");
+        const enqueueResult = enqueueHandoffJob(parsedPayload, "manual", {
+          force: Boolean(force),
+        });
+        if (!enqueueResult.enqueued && enqueueResult.reason === "duplicate") {
+          sendResponse({
+            ok: true,
+            duplicate: true,
+            queued: pendingJobs.length,
+          });
+          return;
+        }
         sendResponse({ ok: true, queued: pendingJobs.length });
       } catch (error) {
         const errorMessage =
@@ -976,16 +1070,35 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       try {
         console.log(`🖼️ Attempting to fetch image: ${url}`);
 
+        const looksLikeImageUrl = (value: string): boolean =>
+          /\.(png|jpe?g|gif|webp|svg|avif)(\?|#|$)/i.test(value);
+
+        const uint8ToBase64 = (bytes: Uint8Array): string => {
+          // Safe Uint8Array -> base64 conversion for large payloads.
+          const CHUNK_SIZE = 0x8000; // 32k chunks
+          const chunks: string[] = [];
+          for (let i = 0; i < bytes.length; i += CHUNK_SIZE) {
+            chunks.push(
+              String.fromCharCode.apply(
+                null,
+                Array.from(bytes.subarray(i, i + CHUNK_SIZE))
+              )
+            );
+          }
+          return btoa(chunks.join(""));
+        };
+
         // Add timeout and better error handling
         const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 10000); // 10 second timeout
+        const timeoutId = setTimeout(() => controller.abort(), 20000); // 20 second timeout
 
         const response = await fetch(url, {
           signal: controller.signal,
-          mode: "cors",
           headers: {
-            Accept: "image/*,*/*;q=0.8",
-            "User-Agent": "Mozilla/5.0 (compatible; WebToFigma/1.0)",
+            // Prefer formats that Figma can reliably ingest without extra transcoding work.
+            // (Many CDNs will serve AVIF when requested, but Figma createImage does not support AVIF.)
+            Accept:
+              "image/webp,image/png,image/jpeg,image/apng,image/svg+xml,*/*;q=0.8",
           },
         });
 
@@ -996,36 +1109,32 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         }
 
         const contentType = response.headers.get("content-type") || "";
-        if (!contentType.startsWith("image/")) {
-          throw new Error(`Not an image: ${contentType}`);
+        if (!contentType.startsWith("image/") && !looksLikeImageUrl(url)) {
+          throw new Error(`Not an image: ${contentType || "unknown"}`);
         }
 
-        const blob = await response.blob();
+        const buffer = await response.arrayBuffer();
+        const bytes = new Uint8Array(buffer);
 
-        // Check blob size
-        if (blob.size > 5 * 1024 * 1024) {
-          // 5MB limit
+        // Check size (base64 expansion ~4/3).
+        if (bytes.length > 10 * 1024 * 1024) {
+          // 10MB limit
           throw new Error(
-            `Image too large: ${(blob.size / 1024 / 1024).toFixed(1)}MB`
+            `Image too large: ${(bytes.length / 1024 / 1024).toFixed(1)}MB`
           );
         }
 
-        const reader = new FileReader();
-        reader.onloadend = () => {
-          const dataUrl = reader.result as string;
-          const base64 = dataUrl.split(",")[1];
-          console.log(
-            `✅ Image fetched successfully: ${url} (${(
-              blob.size / 1024
-            ).toFixed(1)}KB)`
-          );
-          sendResponse({ ok: true, base64, mimeType: blob.type });
-        };
-        reader.onerror = () => {
-          console.error(`❌ FileReader failed for: ${url}`);
-          sendResponse({ ok: false, error: "FileReader failed" });
-        };
-        reader.readAsDataURL(blob);
+        const base64 = uint8ToBase64(bytes);
+        console.log(
+          `✅ Image fetched successfully: ${url} (${(
+            bytes.length / 1024
+          ).toFixed(1)}KB)`
+        );
+        sendResponse({
+          ok: true,
+          base64,
+          mimeType: contentType || undefined,
+        });
       } catch (error) {
         const errorMessage =
           error instanceof Error ? error.message : "Fetch failed";
@@ -1233,7 +1342,13 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       } else {
         console.log("🚀 Enqueuing parsed job for handoff...");
         lastCapturedPayload = parsedData;
-        enqueueHandoffJob(parsedData, "auto");
+        const enqueueResult = enqueueHandoffJob(parsedData, "auto");
+        if (!enqueueResult.enqueued) {
+          console.warn(
+            "[handoff] Suppressed auto enqueue (chunked):",
+            enqueueResult.reason || "unknown"
+          );
+        }
 
         sendResponse({ ok: true });
         return false;
@@ -1263,14 +1378,25 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 // Use alarms so the MV3 service worker wakes up periodically.
 const HEARTBEAT_ALARM = "handoff-heartbeat";
 
+let heartbeatScheduled = false;
+let heartbeatConsecutiveFailures = 0;
+let heartbeatLastOk: boolean | null = null;
+let heartbeatLastLogAt = 0;
+const HEARTBEAT_LOG_COOLDOWN_MS = 30000;
+
+function shouldLogHeartbeat(now: number): boolean {
+  if (now - heartbeatLastLogAt > HEARTBEAT_LOG_COOLDOWN_MS) return true;
+  return false;
+}
+
 async function pingHandoffHealth() {
   const baseBefore = currentHandoffBase();
+  let timeoutId: any = null;
   try {
     // Use 127.0.0.1 to avoid localhost resolution issues
     const heartbeatEndpoint = `${currentHandoffBase()}/api/extension/heartbeat`;
-
-    console.log("[EXT_HEARTBEAT] Sending heartbeat to", heartbeatEndpoint);
-
+    const controller = new AbortController();
+    timeoutId = setTimeout(() => controller.abort(), 2000);
     const response = await fetch(heartbeatEndpoint, {
       method: "POST",
       headers: withHandoffAuthHeaders({
@@ -1282,71 +1408,85 @@ async function pingHandoffHealth() {
         version: chrome.runtime.getManifest().version,
         timestamp: Date.now(),
       }),
+      signal: controller.signal,
     });
+    if (timeoutId) clearTimeout(timeoutId);
+    timeoutId = null;
 
     if (!response.ok) {
-      console.warn(
-        "[EXT_HEARTBEAT] Heartbeat failed with status",
-        response.status
-      );
+      heartbeatConsecutiveFailures++;
+      const now = Date.now();
+      if (heartbeatLastOk !== false || shouldLogHeartbeat(now)) {
+        console.log(
+          "[EXT_HEARTBEAT] Heartbeat failed with status",
+          response.status
+        );
+        heartbeatLastLogAt = now;
+      }
+      heartbeatLastOk = false;
     } else {
-      console.log("[EXT_HEARTBEAT] Heartbeat success");
+      heartbeatConsecutiveFailures = 0;
+      const now = Date.now();
+      if (heartbeatLastOk !== true || shouldLogHeartbeat(now)) {
+        console.log("[EXT_HEARTBEAT] Heartbeat success");
+        heartbeatLastLogAt = now;
+      }
+      heartbeatLastOk = true;
     }
   } catch (error) {
-    console.error(
-      "[EXT_HEARTBEAT] Heartbeat failed:",
-      error instanceof Error ? error.message : String(error)
-    );
-    // Rotate to the next handoff base so we eventually try fallbacks (e.g. 3000 if 5511 is down)
-    rotateHandoffBase();
-    console.warn(
-      "[EXT_HEARTBEAT] Switching handoff base from",
-      baseBefore,
-      "to",
-      currentHandoffBase()
-    );
+    heartbeatConsecutiveFailures++;
+    const message = error instanceof Error ? error.message : String(error);
+    const now = Date.now();
+    if (heartbeatLastOk !== false || shouldLogHeartbeat(now)) {
+      console.log("[EXT_HEARTBEAT] Heartbeat failed:", message);
+      heartbeatLastLogAt = now;
+    }
+    heartbeatLastOk = false;
+
+    // Only rotate after repeated failures to avoid thrashing.
+    if (heartbeatConsecutiveFailures >= 3) {
+      rotateHandoffBase();
+      heartbeatConsecutiveFailures = 0;
+      console.log(
+        "[EXT_HEARTBEAT] Switching handoff base from",
+        baseBefore,
+        "to",
+        currentHandoffBase()
+      );
+    }
+  } finally {
+    if (timeoutId) clearTimeout(timeoutId);
   }
 }
 
 function scheduleHeartbeat() {
-  console.log("[EXT_HEARTBEAT] Scheduling heartbeat alarm");
+  if (heartbeatScheduled) return;
+  heartbeatScheduled = true;
   chrome.alarms.create(HEARTBEAT_ALARM, { periodInMinutes: 0.1 }); // ~6s cadence to satisfy UI TTL
 }
 
 chrome.runtime.onInstalled.addListener(() => {
-  console.log("[EXT_HEARTBEAT] Installed, scheduling heartbeat");
-  void ensureSidePanelBehavior();
+  // void ensureSidePanelBehavior(); // Disabled - using normal popup
   scheduleHeartbeat();
   void pingHandoffHealth();
 });
 
 chrome.runtime.onStartup.addListener(() => {
-  console.log("[EXT_HEARTBEAT] Startup, scheduling heartbeat");
-  void ensureSidePanelBehavior();
+  // void ensureSidePanelBehavior(); // Disabled - using normal popup
   scheduleHeartbeat();
   void pingHandoffHealth();
 });
 
 chrome.alarms.onAlarm.addListener((alarm) => {
   if (alarm.name === HEARTBEAT_ALARM) {
-    console.log("[EXT_HEARTBEAT] Alarm fired");
     void pingHandoffHealth();
   }
 });
 
 // Also start heartbeat when service worker loads
-console.log(
-  "[EXT_HEARTBEAT] Service worker loaded, starting heartbeat sequence"
-);
-void ensureSidePanelBehavior();
+// void ensureSidePanelBehavior(); // Disabled - using normal popup
 scheduleHeartbeat();
 void pingHandoffHealth();
-
-// Fallback interval for when the service worker is kept alive
-setInterval(() => {
-  console.log("[EXT_HEARTBEAT] Interval fired");
-  void pingHandoffHealth();
-}, 5000);
 
 // Lightweight size estimator - avoids blocking JSON.stringify
 function estimatePayloadSize(payload: any): number {
@@ -1504,7 +1644,7 @@ function normalizeSchemaAndScreenshot(payload: any): {
       captures: Array<{ data: any; previewWithOverlay?: string }>;
     };
     const primary =
-      captures.captures.find((c) => c?.data && c.data.tree) ||
+      captures.captures.find((c) => c?.data && (c.data.root || c.data.tree)) ||
       captures.captures[0];
 
     const schema = primary?.data || payload;
@@ -1513,7 +1653,7 @@ function normalizeSchemaAndScreenshot(payload: any): {
   }
 
   // Case 3: Direct schema
-  if (payload.tree || payload.assets || payload.metadata) {
+  if (payload.root || payload.tree || payload.assets || payload.metadata) {
     const schema = payload;
     const screenshot = schema.screenshot;
     return { schema, screenshot };
@@ -1646,7 +1786,7 @@ async function postToHandoffServer(payload: any): Promise<void> {
         ? imageRegistry[firstImageKey]
         : undefined;
 
-      const rootNode = schema?.tree;
+      const rootNode = schema?.root || schema?.tree;
       const firstChild =
         rootNode?.children && rootNode.children.length > 0
           ? rootNode.children[0]
@@ -1694,10 +1834,9 @@ async function postToHandoffServer(payload: any): Promise<void> {
     if (!schema.metadata) {
       schema.metadata = {};
     }
-    // Only set captureEngine if not already set (content script may have set it to 'puppeteer')
-    if (!schema.metadata.captureEngine) {
-      schema.metadata.captureEngine = "extension";
-    }
+    // CRITICAL FIX: Always set captureEngine to 'extension' for extension-captured data
+    // The content script incorrectly sets this to 'puppeteer', which causes the server to reject it
+    schema.metadata.captureEngine = "extension";
 
     // Send schema directly, not wrapped in requestBody
     jsonPayload = JSON.stringify(schema);
@@ -2007,7 +2146,29 @@ function broadcastHandoffState() {
   }
 }
 
-function enqueueHandoffJob(payload: any, trigger: HandoffTrigger) {
+function enqueueHandoffJob(
+  payload: any,
+  trigger: HandoffTrigger,
+  options?: { force?: boolean }
+): { enqueued: boolean; reason?: "duplicate" | "invalid" } {
+  const now = Date.now();
+  pruneRecentCaptureIds(now);
+
+  const captureId = getCaptureIdFromPayload(payload);
+  if (captureId) {
+    const lastSeen = recentCaptureIds.get(captureId);
+    const isDuplicate =
+      typeof lastSeen === "number" && now - lastSeen < RECENT_CAPTURE_ID_TTL_MS;
+    const forced = Boolean(options?.force);
+
+    // Always dedupe auto to prevent "imports twice" regressions.
+    // For manual sends, dedupe unless explicitly forced.
+    if (isDuplicate && (trigger === "auto" || !forced)) {
+      return { enqueued: false, reason: "duplicate" };
+    }
+    recentCaptureIds.set(captureId, now);
+  }
+
   const job: PendingJob = {
     id: crypto?.randomUUID?.() ?? `job-${Date.now()}-${Math.random()}`,
     payload,
@@ -2020,6 +2181,7 @@ function enqueueHandoffJob(payload: any, trigger: HandoffTrigger) {
   pendingJobs.push(job);
   updateStateForQueue(trigger);
   scheduleQueueProcessing(0);
+  return { enqueued: true };
 }
 
 function updateStateForQueue(trigger?: HandoffTrigger | null) {
@@ -2114,7 +2276,19 @@ async function processPendingJobs(): Promise<void> {
     };
   } catch (error) {
     const message = error instanceof Error ? error.message : "Unknown error";
-    console.error("❌ Handoff failed:", message);
+    const isNetworkFailure =
+      /failed to fetch/i.test(message) ||
+      /networkerror/i.test(message) ||
+      /aborterror/i.test(message) ||
+      /timeout/i.test(message);
+    if (isNetworkFailure) {
+      console.log(
+        "ℹ️ Handoff server unreachable; keeping capture available for download:",
+        message
+      );
+    } else {
+      console.error("❌ Handoff failed:", message);
+    }
     // Surface error to any open UI
     chrome.runtime.sendMessage(
       { type: "CAPTURE_ERROR", error: `Handoff failed: ${message}` },

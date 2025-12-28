@@ -1,4 +1,4 @@
-import { waitForStablePage } from "./page-readiness";
+                                                                                                                                                                                                                                                                               import { waitForStablePage } from "./page-readiness";
 import { CaptureConfig } from "../config/capture-config";
 
 // Mock browser APIs

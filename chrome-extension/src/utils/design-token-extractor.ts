@@ -9,6 +9,7 @@ import {
   TokenValue,
   RGBA,
 } from "../types/schema";
+import { querySelectorAllDeep } from "./shadow-dom-utils";
 
 /**
  * Advanced design token extraction from CSS variables and computed styles
@@ -33,8 +34,8 @@ export class DesignTokenExtractor {
     // Extract from :root first
     this.extractFromElement(document.documentElement, "root");
 
-    // Process all elements in chunks to prevent freezing
-    const allElements = document.querySelectorAll("*");
+    // Process all elements in chunks to prevent freezing (including shadow DOM)
+    const allElements = querySelectorAllDeep(document, "*");
     const CHUNK_SIZE = 500;
 
     for (let i = 0; i < allElements.length; i += CHUNK_SIZE) {

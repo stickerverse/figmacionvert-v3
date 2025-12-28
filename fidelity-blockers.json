@@ -1,0 +1,306 @@
+{
+  "metadata": {
+    "version": "2.0.0-production",
+    "captureMode": "UNKNOWN",
+    "timestamp": "2025-12-27T11:25:59.062Z",
+    "url": "https://www.etsy.com/",
+    "viewport": {
+      "width": 1728,
+      "height": 7268,
+      "devicePixelRatio": 2
+    },
+    "hasRoot": true,
+    "stylesCount": 5,
+    "assetsCount": 3,
+    "hoverStatesCount": 0
+  },
+  "nodeStats": {
+    "typeCounts": {
+      "FRAME": 1331,
+      "TEXT": 369,
+      "VECTOR": 75,
+      "IMAGE": 69
+    },
+    "tagCounts": {
+      "html": 1,
+      "body": 1,
+      "div": 617,
+      "header": 1,
+      "a": 116,
+      "span": 471,
+      "svg": 75,
+      "nav": 4,
+      "button": 48,
+      "pseudo": 176,
+      "form": 2,
+      "label": 3,
+      "input": 2,
+      "ul": 18,
+      "li": 87,
+      "main": 1,
+      "section": 4,
+      "p": 111,
+      "img": 69,
+      "h2": 11,
+      "h3": 22,
+      "h1": 1,
+      "article": 1,
+      "h4": 1,
+      "footer": 1
+    },
+    "invalidNodes": 0,
+    "nanValues": 0,
+    "infinityValues": 0
+  },
+  "fidelityResults": {
+    "layout": {
+      "absolute_positioning": {
+        "pass": true,
+        "evidence": "absoluteLayout: {\"left\":0,\"top\":0,\"right\":1713,\"bottom\":7268,\"width\":1713,\"height\":7268} / x: MISSING / left: 0"
+      },
+      "dpr_scaling": {
+        "pass": true,
+        "evidence": "DPR: 2"
+      },
+      "scroll_offsets": {
+        "pass": false,
+        "evidence": "scrollOffset: MISSING"
+      },
+      "transform_matrix": {
+        "pass": true,
+        "evidence": "transform.matrix: MISSING / layoutContext.transform nodes: 6"
+      },
+      "transform_individual": {
+        "pass": false,
+        "evidence": "transform.rotate: MISSING / transform.scale: MISSING"
+      },
+      "position_fixed": {
+        "pass": true,
+        "evidence": "Fixed nodes: 2"
+      },
+      "position_sticky": {
+        "pass": false,
+        "evidence": "Sticky nodes: 0"
+      }
+    },
+    "stacking": {
+      "z_index": {
+        "pass": true,
+        "evidence": "zIndex sample: MISSING / layoutContext.zIndex: \"auto\""
+      },
+      "stacking_contexts": {
+        "pass": true,
+        "evidence": "stackingContext: MISSING / layoutContext._stackingContext: false"
+      },
+      "opacity_groups": {
+        "pass": true,
+        "evidence": "opacity sample: 0"
+      },
+      "clip_overflow": {
+        "pass": true,
+        "evidence": "clipsContent: MISSING / layoutContext.overflow: \"visible\""
+      },
+      "masks": {
+        "pass": true,
+        "evidence": "mask sample: MISSING"
+      }
+    },
+    "visuals": {
+      "fills": {
+        "pass": true,
+        "evidence": "fills: [] / backgrounds: []"
+      },
+      "borders": {
+        "pass": true,
+        "evidence": "strokes: []"
+      },
+      "border_radius_per_corner": {
+        "pass": true,
+        "evidence": "cornerRadius: 24 / borderRadius: MISSING"
+      },
+      "shadows": {
+        "pass": true,
+        "evidence": "effects: []"
+      },
+      "gradients": {
+        "pass": true,
+        "evidence": "Gradient fills: 9"
+      },
+      "filters": {
+        "pass": false,
+        "evidence": "filters: MISSING / layout.filter: MISSING"
+      },
+      "blend_modes": {
+        "pass": false,
+        "evidence": "blendMode: MISSING / mixBlendMode: MISSING"
+      }
+    },
+    "text": {
+      "font_family": {
+        "pass": true,
+        "evidence": "fontName.family: \"Graphik Webfont\" / textStyle.fontFamily: \"Graphik Webfont\""
+      },
+      "font_weight": {
+        "pass": true,
+        "evidence": "textStyle.fontWeight: 400"
+      },
+      "font_style": {
+        "pass": true,
+        "evidence": "fontName.style: \"Regular\" / textStyle.fontStyle: \"normal\""
+      },
+      "line_height": {
+        "pass": true,
+        "evidence": "lineHeight: {\"unit\":\"PIXELS\",\"value\":19.6} / layout.lineHeight: MISSING"
+      },
+      "letter_spacing": {
+        "pass": true,
+        "evidence": "letterSpacing: {\"value\":0,\"unit\":\"PIXELS\"} / layout.letterSpacing: MISSING"
+      },
+      "text_transform": {
+        "pass": true,
+        "evidence": "textTransform: \"none\" / textStyle.textTransform: \"none\" / textCase: MISSING"
+      },
+      "text_decoration": {
+        "pass": true,
+        "evidence": "textDecoration: \"none\" / layout.textDecoration: MISSING"
+      },
+      "text_wrapping": {
+        "pass": true,
+        "evidence": "textAutoResize: \"NONE\" / whiteSpace: MISSING"
+      },
+      "text_bounds": {
+        "pass": true,
+        "evidence": "text nodes with bounds: 369"
+      },
+      "baseline_alignment": {
+        "pass": false,
+        "evidence": "baselineOffset: MISSING / verticalAlign: MISSING"
+      }
+    },
+    "images": {
+      "intrinsic_size": {
+        "pass": false,
+        "evidence": "intrinsicSize: MISSING"
+      },
+      "object_fit": {
+        "pass": false,
+        "evidence": "imageFit: MISSING / objectFit: MISSING"
+      },
+      "aspect_ratio": {
+        "pass": false,
+        "evidence": "aspectRatio: MISSING"
+      },
+      "exif_orientation": {
+        "pass": false,
+        "evidence": "exifOrientation: MISSING"
+      },
+      "cors_handling": {
+        "pass": false,
+        "evidence": "CORS: MISSING"
+      },
+      "format_support": {
+        "pass": true,
+        "evidence": "Image nodes: 69"
+      },
+      "alpha_channel": {
+        "pass": false,
+        "evidence": "hasAlpha: MISSING"
+      }
+    },
+    "special": {
+      "svg_handling": {
+        "pass": true,
+        "evidence": "SVG nodes: 75"
+      },
+      "canvas_fallback": {
+        "pass": false,
+        "evidence": "Canvas nodes: 0"
+      },
+      "video_fallback": {
+        "pass": false,
+        "evidence": "Video nodes: 0"
+      },
+      "pseudo_elements": {
+        "pass": false,
+        "evidence": "Nodes with pseudo: 0"
+      }
+    }
+  },
+  "blockers": [
+    {
+      "category": "layout",
+      "check": "scroll_offsets",
+      "evidence": "scrollOffset: MISSING"
+    },
+    {
+      "category": "layout",
+      "check": "transform_individual",
+      "evidence": "transform.rotate: MISSING / transform.scale: MISSING"
+    },
+    {
+      "category": "layout",
+      "check": "position_sticky",
+      "evidence": "Sticky nodes: 0"
+    },
+    {
+      "category": "visuals",
+      "check": "filters",
+      "evidence": "filters: MISSING / layout.filter: MISSING"
+    },
+    {
+      "category": "visuals",
+      "check": "blend_modes",
+      "evidence": "blendMode: MISSING / mixBlendMode: MISSING"
+    },
+    {
+      "category": "text",
+      "check": "baseline_alignment",
+      "evidence": "baselineOffset: MISSING / verticalAlign: MISSING"
+    },
+    {
+      "category": "images",
+      "check": "intrinsic_size",
+      "evidence": "intrinsicSize: MISSING"
+    },
+    {
+      "category": "images",
+      "check": "object_fit",
+      "evidence": "imageFit: MISSING / objectFit: MISSING"
+    },
+    {
+      "category": "images",
+      "check": "aspect_ratio",
+      "evidence": "aspectRatio: MISSING"
+    },
+    {
+      "category": "images",
+      "check": "exif_orientation",
+      "evidence": "exifOrientation: MISSING"
+    },
+    {
+      "category": "images",
+      "check": "cors_handling",
+      "evidence": "CORS: MISSING"
+    },
+    {
+      "category": "images",
+      "check": "alpha_channel",
+      "evidence": "hasAlpha: MISSING"
+    },
+    {
+      "category": "special",
+      "check": "canvas_fallback",
+      "evidence": "Canvas nodes: 0"
+    },
+    {
+      "category": "special",
+      "check": "video_fallback",
+      "evidence": "Video nodes: 0"
+    },
+    {
+      "category": "special",
+      "check": "pseudo_elements",
+      "evidence": "Nodes with pseudo: 0"
+    }
+  ]
+}

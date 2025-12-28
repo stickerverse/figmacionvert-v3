@@ -40,3 +40,18 @@ export const IMAGE_FETCH_CONFIG = {
   // Maximum image size in KB before compression
   maxImageSizeKB: 2048,
 };
+
+// YouTube-specific configuration for heavy dynamic content
+export const YOUTUBE_CONTENT_CONFIG = {
+  // Maximum time to wait for dynamic content (comments, etc.)
+  maxDynamicContentWaitMs: 15000, // 15 seconds instead of unlimited
+
+  // Time to wait between content loading attempts
+  contentLoadRetryMs: 500,
+
+  // Maximum scroll attempts for lazy-loaded content
+  maxScrollAttempts: 3,
+
+  // Skip comments loading if taking too long (fallback)
+  skipCommentsAfterMs: 8000,
+};

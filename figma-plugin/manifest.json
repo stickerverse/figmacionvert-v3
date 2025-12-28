@@ -1,5 +1,5 @@
 {
-  "name": "Web to Figma",
+  "name": "BlueprintAI",
   "id": "web-to-figma",
   "api": "1.0.0",
   "main": "dist/code.js",
@@ -9,7 +9,8 @@
     "allowedDomains": ["*"],
     "devAllowedDomains": [
       "http://localhost:5511",
-      "http://localhost:3000"
+      "http://localhost:3000",
+      "http://localhost:4411"
     ],
     "reasoning": "Plugin needs to connect to cloud capture service, fetch images, and access cloud storage"
   }

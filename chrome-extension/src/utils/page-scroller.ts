@@ -7,46 +7,70 @@ export class PageScroller {
     onProgress?: (progress: number) => void
   ): Promise<void> {
     this.originalY = window.scrollY;
-    console.log("📜 Starting page scroll...");
+    console.log(`📜 Starting page scroll (will restore to ${this.originalY}px)...`);
 
-    const height = Math.max(
-      document.body.scrollHeight,
-      document.documentElement.scrollHeight
-    );
-    const viewportHeight = window.innerHeight;
-    let steps = Math.ceil(height / viewportHeight);
-
-    // Cap excessive scroll steps
-    if (steps > maxScrollDepthScreens) {
-      console.warn(
-        `⚠️ Page height very large (${height}px). Capping scroll steps from ${steps} to ${maxScrollDepthScreens} to avoid stalls.`
+    try {
+      const viewportHeight = window.innerHeight;
+      let previousHeight = 0;
+      let stableHeightCount = 0;
+      let currentHeight = Math.max(
+        document.body.scrollHeight,
+        document.documentElement.scrollHeight
       );
-      steps = maxScrollDepthScreens;
-    }
 
-    console.log(
-      `📜 Will scroll ${steps} times (max depth: ${maxScrollDepthScreens})`
-    );
+      console.log(
+        `📜 Will scroll up to ${maxScrollDepthScreens} times (initial height: ${currentHeight}px)`
+      );
 
-    for (let i = 0; i <= steps; i++) {
-      const scrollTo = i * viewportHeight;
-      // console.log(`📜 Scrolling to ${scrollTo}px`); // Reduce noise
+      for (let i = 0; i <= maxScrollDepthScreens; i++) {
+        const scrollTo = i * viewportHeight;
 
-      window.scrollTo({
-        top: scrollTo,
-        behavior: "smooth",
-      });
+        // Scroll with precise positioning
+        window.scrollTo({
+          top: scrollTo,
+          behavior: "auto", // Always use auto for precision
+        });
 
-      if (onProgress) {
-        onProgress((i / steps) * 100);
+        // Update progress
+        if (onProgress) {
+          const dynamicSteps = Math.ceil(currentHeight / viewportHeight);
+          onProgress(Math.min(100, (i / Math.max(1, dynamicSteps)) * 100));
+        }
+
+        // Wait for content to load and settle
+        await this.wait(200);
+
+        // Check for height stability to prevent infinite scroll
+        const newHeight = Math.max(
+          document.body.scrollHeight,
+          document.documentElement.scrollHeight
+        );
+
+        if (newHeight === previousHeight) {
+          stableHeightCount++;
+          // If height hasn't changed for 3 consecutive checks, we're likely done
+          if (stableHeightCount >= 3) {
+            console.log(`📜 Page height stabilized at ${newHeight}px (step ${i})`);
+            break;
+          }
+        } else {
+          stableHeightCount = 0;
+          currentHeight = newHeight;
+        }
+        previousHeight = newHeight;
+
+        // Hard stop if we've reached the calculated end
+        if (scrollTo + viewportHeight >= newHeight) {
+          console.log(`📜 Reached page end at ${newHeight}px (step ${i})`);
+          break;
+        }
       }
-
-      await this.wait(300); // Fast scroll - 300ms between scrolls
+    } finally {
+      // CRITICAL FIX: Always restore original scroll position (even if error occurs)
+      console.log(`📜 Restoring scroll position to ${this.originalY}px`);
+      window.scrollTo({ top: this.originalY, behavior: "auto" });
+      await this.wait(300);
     }
-
-    console.log("📜 Scrolling back to top");
-    window.scrollTo({ top: 0, behavior: "smooth" });
-    await this.wait(200);
   }
 
   /**
@@ -116,11 +140,20 @@ export class PageScroller {
   }
 
   private shouldIgnoreElement(element: Element): boolean {
-    // 1. Check if element is inside a navigation container
-    const navClosest = element.closest(
-      'nav, header, footer, [role="navigation"], [role="banner"], [role="contentinfo"]'
-    );
-    if (navClosest) return true;
+    // CRITICAL FIX: Ensure element is valid before calling closest()
+    if (!element || !(element instanceof Element)) return false;
+
+    try {
+      // 1. Check if element is inside a navigation container
+      const navClosest = element.closest(
+        'nav, header, footer, [role="navigation"], [role="banner"], [role="contentinfo"]'
+      );
+      if (navClosest) return true;
+    } catch (error) {
+      // If closest fails (e.g., element is detached), don't ignore it
+      console.warn("⚠️ [SCROLLER] closest() failed on element:", error);
+      return false;
+    }
 
     // 2. Check for specific roles that often cause issues (menus, dialogs)
     const role = element.getAttribute("role");
@@ -131,6 +164,22 @@ export class PageScroller {
       role === "alertdialog"
     )
       return true;
+
+    // CRITICAL FIX: Ignore links to prevent accidental navigation
+    if (element.tagName === "A" || element.closest("a")) return true;
+
+    // CRITICAL FIX: Ignore YouTube interaction/navigation elements
+    const tagName = element.tagName.toLowerCase();
+    if (
+      tagName.startsWith("ytd-thumbnail") ||
+      tagName.startsWith("ytd-video-renderer") ||
+      tagName.startsWith("ytd-compact-video-renderer") ||
+      tagName.startsWith("ytd-menu-renderer") ||
+      element.closest("ytd-thumbnail") ||
+      element.closest("ytd-video-renderer")
+    ) {
+      return true;
+    }
 
     // 3. Check for fixed/sticky positioning (often used for sidebars/modals)
     // We need to check the element and its ancestors

@@ -1,15 +1,16 @@
 <!DOCTYPE html>
 <html>
+
 <head>
   <meta charset="UTF-8">
   <title>Web to Figma</title>
   <style>
-    * { 
-      margin: 0; 
-      padding: 0; 
-      box-sizing: border-box; 
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
     }
-    
+
     body {
       font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
       font-size: 14px;
@@ -133,7 +134,8 @@
       stroke: url(#progress-gradient);
       stroke-width: 10;
       stroke-linecap: round;
-      stroke-dasharray: 401.07; /* 2 * PI * 64 */
+      stroke-dasharray: 401.07;
+      /* 2 * PI * 64 */
       stroke-dashoffset: 401.07;
       transition: stroke-dashoffset 0.5s ease;
     }
@@ -147,8 +149,15 @@
     }
 
     @keyframes ring-glow {
-      0%, 100% { filter: drop-shadow(0 0 6px rgba(102, 126, 234, 0.6)); }
-      50% { filter: drop-shadow(0 0 12px rgba(102, 126, 234, 1)); }
+
+      0%,
+      100% {
+        filter: drop-shadow(0 0 6px rgba(102, 126, 234, 0.6));
+      }
+
+      50% {
+        filter: drop-shadow(0 0 12px rgba(102, 126, 234, 1));
+      }
     }
 
     .progress-text {
@@ -354,6 +363,17 @@
       box-shadow: 0 6px 16px rgba(102, 126, 234, 0.4);
     }
 
+    .btn-ghost {
+      background: white;
+      color: #111827;
+      border: 1px solid #e5e7eb;
+      box-shadow: none;
+    }
+
+    .btn-ghost:hover:not(:disabled) {
+      background: #f9fafb;
+    }
+
     .connection-panel {
       border-top: 1px solid #e5e7eb;
       padding: 16px 20px;
@@ -410,10 +430,17 @@
     }
 
     @keyframes pulse-dot {
-      0%, 100% { box-shadow: 0 0 8px rgba(52, 211, 153, 0.6); }
-      50% { box-shadow: 0 0 16px rgba(52, 211, 153, 0.9); }
+
+      0%,
+      100% {
+        box-shadow: 0 0 8px rgba(52, 211, 153, 0.6);
+      }
+
+      50% {
+        box-shadow: 0 0 16px rgba(52, 211, 153, 0.9);
+      }
     }
-  
+
     .connection-message {
       font-size: 12px;
       color: #fb923c;
@@ -457,14 +484,17 @@
       border: 1px solid #fed7aa;
       display: none;
     }
+
     .diagnostics-panel.visible {
       display: block;
     }
+
     .diagnostics-panel h4 {
       margin: 0 0 8px;
       font-size: 14px;
       color: #9a3412;
     }
+
     .diagnostics-summary {
       display: grid;
       grid-template-columns: 1fr 1fr;
@@ -472,24 +502,56 @@
       font-size: 12px;
       color: #7c2d12;
     }
+
     .diagnostics-summary span {
       padding: 4px 8px;
       background: rgba(251, 146, 60, 0.15);
       border-radius: 4px;
     }
+
+    .import-options {
+      margin: 0 16px 10px;
+      padding: 10px 12px;
+      border-radius: 10px;
+      background: #f9fafb;
+      border: 1px solid #e5e7eb;
+      font-size: 12px;
+      color: #374151;
+      display: grid;
+      gap: 6px;
+    }
+
+    .import-options label {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+      cursor: pointer;
+      user-select: none;
+    }
+
+    .import-options input[type="checkbox"] {
+      width: 14px;
+      height: 14px;
+    }
+
+    .import-options .hint {
+      font-size: 11px;
+      color: #6b7280;
+    }
   </style>
 </head>
+
 <body>
   <div class="container">
     <!-- Header matching extension -->
-      <div class="header">
-        <div class="header-brand">
-          <span class="brand-html">Web to</span>
-          <span class="brand-figma">Figma</span>
-        </div>
+    <div class="header">
+      <div class="header-brand">
+        <span class="brand-html">Web to</span>
+        <span class="brand-figma">Figma</span>
       </div>
-      
-      <div id="status" class="status info">Ready to import</div>
+    </div>
+
+    <div id="status" class="status info">Ready to import</div>
 
     <!-- Progress Section with Circular Ring -->
     <div id="progress-section" class="progress-section hidden">
@@ -497,8 +559,8 @@
         <svg class="progress-ring" width="140" height="140">
           <defs>
             <linearGradient id="progress-gradient" x1="0%" y1="0%" x2="100%" y2="100%">
-              <stop offset="0%" stop-color="#667eea"/>
-              <stop offset="100%" stop-color="#764ba2"/>
+              <stop offset="0%" stop-color="#667eea" />
+              <stop offset="100%" stop-color="#764ba2" />
             </linearGradient>
           </defs>
           <circle class="progress-ring-bg" cx="70" cy="70" r="64"></circle>
@@ -573,10 +635,22 @@
       </div>
     </div>
 
+    <div class="import-options">
+      <label>
+        <input type="checkbox" id="pixel-mode">
+        Pixel-perfect mode (disable Auto Layout)
+      </label>
+      <div class="hint">Keeps absolute positioning for fidelity; imported frames won’t be responsive/editable via Auto
+        Layout.</div>
+    </div>
+
     <!-- Import Actions (no animations) -->
     <div class="import-actions">
       <button id="import-btn" class="btn btn-primary" disabled>
         📸 Import to Figma
+      </button>
+      <button id="fix-legacy-screenshot" class="btn btn-ghost">
+        🧹 Remove Legacy Screenshot Base Layer
       </button>
     </div>
   </div>
@@ -595,6 +669,7 @@
     const fileInput = document.getElementById('file-input');
     const fileNameEl = document.getElementById('file-name');
     const importBtn = document.getElementById('import-btn');
+    const fixLegacyScreenshotBtn = document.getElementById('fix-legacy-screenshot');
     const extensionLight = document.getElementById('connection-extension');
     const serverLight = document.getElementById('connection-server');
     const connectionMessage = document.getElementById('connection-message');
@@ -605,6 +680,7 @@
     const refreshHistoryBtn = document.getElementById('refresh-history');
     const fontWarnings = document.getElementById('font-warnings');
     const fontWarningsList = document.getElementById('font-warnings-list');
+    const pixelModeEl = document.getElementById('pixel-mode');
 
     // Track last-seen timestamps so transient gaps don't immediately clear lights
     let lastExtensionSeen = 0;
@@ -661,14 +737,14 @@
       if (debugQueue) debugQueue.textContent = typeof queue === 'number' ? queue : 'n/a';
     }
 
-    
+
     // Update status display
     function updateStatus(message, type = 'info') {
       let displayMessage = message;
       if (typeof message === 'object' && message !== null) {
         displayMessage = message.message || message.error || JSON.stringify(message);
       }
-      
+
       statusEl.textContent = displayMessage;
       statusEl.className = `status ${type}`;
       // Also surface in connection message area for visibility
@@ -687,20 +763,20 @@
     function updateProgress(percent, message = '') {
       if (percent > 0) {
         progressSection.classList.remove('hidden');
-        
+
         // Update circular progress ring
         const circumference = 2 * Math.PI * 64; // radius = 64
         const offset = circumference - (percent / 100) * circumference;
         progressRingFill.style.strokeDashoffset = offset;
-        
+
         if (percent >= 100) {
           progressRingFill.classList.add('complete');
         } else if (percent > 0) {
           progressRingFill.classList.add('active');
         }
-        
+
         progressPercent.textContent = `${Math.round(percent)}%`;
-        
+
         if (message) {
           progressLabel.textContent = message;
         }
@@ -820,6 +896,21 @@
       refreshHistoryBtn.addEventListener('click', () => requestHistory());
     }
 
+    // Persist pixel mode (Auto Layout off)
+    try {
+      const storedPixelMode = localStorage.getItem('pixelMode');
+      if (pixelModeEl && storedPixelMode != null) {
+        pixelModeEl.checked = storedPixelMode === 'true';
+      }
+      if (pixelModeEl) {
+        pixelModeEl.addEventListener('change', () => {
+          localStorage.setItem('pixelMode', String(!!pixelModeEl.checked));
+        });
+      }
+    } catch (e) {
+      // ignore storage issues
+    }
+
     // Import button handling
     importBtn.addEventListener('click', () => {
       if (!currentData && !currentWTFFile) return;
@@ -828,12 +919,19 @@
       updateProgress(10, 'Initializing...');
       importBtn.disabled = true;
 
+      const disableAutoLayout = !!(pixelModeEl && pixelModeEl.checked);
+      const options = {
+        // Backend supports both keys depending on message path; set both for safety.
+        applyAutoLayout: !disableAutoLayout,
+        autoLayout: !disableAutoLayout,
+      };
+
       if (currentWTFFile) {
         parent.postMessage({
           pluginMessage: {
             type: 'import-wtf',
             fileData: currentWTFFile,
-            options: {}
+            options
           }
         }, '*');
       } else {
@@ -841,20 +939,38 @@
           pluginMessage: {
             type: 'import-enhanced',
             data: currentData,
-            options: {}
+            options
           }
         }, '*');
       }
     });
 
+    if (fixLegacyScreenshotBtn) {
+      fixLegacyScreenshotBtn.addEventListener('click', () => {
+        updateStatus('Removing legacy Screenshot Base Layer...', 'info');
+        parent.postMessage({
+          pluginMessage: { type: 'fix-legacy-screenshot-layer', scope: 'selection' }
+        }, '*');
+      });
+    }
+
     // Handle messages from plugin backend (no animations)
     onmessage = async (event) => { // Added 'async' keyword here
       const msg = event.data.pluginMessage;
-      
+      if (msg.type === 'legacy-screenshot-fix-result') {
+        const removed = msg.removed || 0;
+        if (removed > 0) {
+          updateStatus(`✅ Removed ${removed} legacy Screenshot Base Layer(s)`, 'success');
+        } else {
+          updateStatus('No legacy Screenshot Base Layer found (selection)', 'info');
+        }
+        return;
+      }
+
       if (msg.type === 'report-to-runner') {
         const summary = msg.summary;
         console.log('📨 Forwarding build summary to agent runner...', summary);
-        
+
         try {
           await fetch('http://localhost:5050/figma-report', {
             method: 'POST',
@@ -862,7 +978,7 @@
             body: JSON.stringify(summary)
           });
           console.log('✅ Build summary sent to agent runner');
-          
+
           // Show success status in UI
           const statusEl = document.getElementById('status');
           if (statusEl) {
@@ -885,6 +1001,38 @@
         return; // Stop further processing for this message type
       }
 
+      // Helper function for transcoding images to PNG
+      const transcodeToPng = (id, base64, mimeType, responseType) => {
+        try {
+          const img = new Image();
+          img.crossOrigin = 'anonymous';
+          img.onload = () => {
+            try {
+              const canvas = document.createElement('canvas');
+              canvas.width = img.width;
+              canvas.height = img.height;
+              const ctx = canvas.getContext('2d');
+              if (!ctx) throw new Error('Canvas context unavailable');
+              ctx.drawImage(img, 0, 0);
+              const pngBase64 = canvas.toDataURL('image/png');
+              parent.postMessage({ pluginMessage: { type: responseType, id, pngBase64 } }, '*');
+            } catch (error) {
+              parent.postMessage({ pluginMessage: { type: responseType, id, error: String(error) } }, '*');
+            }
+          };
+          img.onerror = () => {
+            parent.postMessage({ pluginMessage: { type: responseType, id, error: 'Image decode failed' } }, '*');
+          };
+
+          const src = base64.startsWith('data:')
+            ? base64
+            : `data:${mimeType || 'image/webp'};base64,${base64}`;
+          img.src = src;
+        } catch (error) {
+          parent.postMessage({ pluginMessage: { type: responseType, id, error: String(error) } }, '*');
+        }
+      };
+
       switch (msg.type) {
         case 'auto-import-ready':
           updateStatus('🔄 Checking for captures...', 'info');
@@ -901,7 +1049,7 @@
           importBtn.disabled = false;
           updateStatus('✅ Capture received from extension!', 'success');
           setConnectionState('extension', true);
-          
+
           // Auto-trigger import
           setTimeout(() => {
             importBtn.click();
@@ -919,7 +1067,7 @@
           } else {
             setConnectionState('extension', false);
             setConnectionState('server', false);
-            
+
             // Show error in connection message
             if (msg.detail) {
               const connectionMessage = document.getElementById('connection-message');
@@ -968,7 +1116,7 @@
           updateStatus(`✅ Imported ${elementCount} elements!`, 'success');
           updateProgress(100, 'Complete!');
           importBtn.disabled = false;
-          
+
           setTimeout(() => {
             updateProgress(0);
           }, 2000);
@@ -1037,31 +1185,13 @@
 
         case 'transcode-webp': {
           const { id, base64 } = msg;
-          try {
-            const img = new Image();
-            img.crossOrigin = 'anonymous';
-            img.onload = () => {
-              try {
-                const canvas = document.createElement('canvas');
-                canvas.width = img.width;
-                canvas.height = img.height;
-                const ctx = canvas.getContext('2d');
-                if (!ctx) throw new Error('Canvas context unavailable');
-                ctx.drawImage(img, 0, 0);
-                const pngBase64 = canvas.toDataURL('image/png');
-                parent.postMessage({ pluginMessage: { type: 'webp-transcoded', id, pngBase64 } }, '*');
-              } catch (error) {
-                parent.postMessage({ pluginMessage: { type: 'webp-transcoded', id, error: String(error) } }, '*');
-              }
-            };
-            img.onerror = (error) => {
-              parent.postMessage({ pluginMessage: { type: 'webp-transcoded', id, error: 'Image decode failed' } }, '*');
-            };
-            const src = base64.startsWith('data:') ? base64 : `data:image/webp;base64,${base64}`;
-            img.src = src;
-          } catch (error) {
-            parent.postMessage({ pluginMessage: { type: 'webp-transcoded', id, error: String(error) } }, '*');
-          }
+          transcodeToPng(id, base64, 'image/webp', 'webp-transcoded');
+          break;
+        }
+
+        case 'transcode-image': {
+          const { id, base64, mimeType } = msg;
+          transcodeToPng(id, base64, mimeType || 'image/png', 'image-transcoded');
           break;
         }
       }
@@ -1101,7 +1231,7 @@
     markConnection('extension', true);
     markConnection('server', true);
     console.log('Static Web to Figma plugin loaded');
-    
+
     // Notify backend that UI is ready to receive messages
     parent.postMessage({ pluginMessage: { type: 'ui-ready' } }, '*');
     requestHistory();
@@ -1113,7 +1243,7 @@
       if (msg && msg.type) {
         // Show last message type in status for debugging
         if (msg.type !== 'progress') {
-           // updateStatus(`Msg: ${msg.type}`, 'info');
+          // updateStatus(`Msg: ${msg.type}`, 'info');
         }
       }
       if (originalOnMessage) {
@@ -1122,4 +1252,5 @@
     };
   </script>
 </body>
+
 </html>

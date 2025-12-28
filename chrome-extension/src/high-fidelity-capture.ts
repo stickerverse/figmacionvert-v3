@@ -1,3 +1,5 @@
+import { getEffectiveChildElements, getEffectiveChildren } from './utils/shadow-dom-utils';
+
 export interface ComputedStyle {
   // Basic box model
   width: number;
@@ -204,10 +206,11 @@ export class HighFidelityCapture {
       metadata: this.extractMetadata(element, computedStyle, options)
     };
 
-    // Process children
+    // Process children (including shadow DOM)
     if (node.type !== 'TEXT' && node.type !== 'IMAGE') {
-      if (element.children.length > 0) {
-        for (const child of Array.from(element.children)) {
+      const effectiveChildren = getEffectiveChildElements(element);
+      if (effectiveChildren.length > 0) {
+        for (const child of effectiveChildren) {
           const childNode = await this.analyzeElement(child as HTMLElement, options);
           if (childNode) {
             node.children.push(childNode);
@@ -237,6 +240,10 @@ export class HighFidelityCapture {
 
     // Skip elements with display: none or visibility: hidden
     const style = window.getComputedStyle(element);
+    if (!style) {
+      console.warn(`⚠️ [DOM] getComputedStyle returned null for element:`, element.tagName, element.id);
+      return true; // Skip elements without styles
+    }
     if (style.display === 'none' || style.visibility === 'hidden' || style.opacity === '0') {
       return true;
     }
@@ -309,9 +316,12 @@ export class HighFidelityCapture {
       isVisible: this.isElementVisible(element, style, rect),
       isPositioned: style.position !== 'static',
       isFlexContainer: style.display === 'flex' || style.display === 'inline-flex',
-      isTextNode: element.childNodes.length === 1 && 
-                 element.childNodes[0].nodeType === Node.TEXT_NODE &&
-                 (element.childNodes[0].textContent?.trim() || '') !== '',
+      isTextNode: (() => {
+        const children = getEffectiveChildren(element);
+        return children.length === 1 && 
+               children[0].nodeType === Node.TEXT_NODE &&
+               (children[0].textContent?.trim() || '') !== '';
+      })(),
       isImageNode: element.tagName === 'IMG',
       isSvgNode: element.tagName === 'SVG',
     };

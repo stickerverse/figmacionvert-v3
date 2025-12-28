@@ -4,7 +4,8 @@ export type LogScope =
   | "background"
   | "content"
   | "plugin"
-  | "capture";
+  | "capture"
+  | "fallback";
 
 export interface LogEvent {
   timestamp: number;

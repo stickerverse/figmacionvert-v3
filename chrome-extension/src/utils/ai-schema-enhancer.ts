@@ -25,6 +25,7 @@ export interface AIEnhancementContext {
   mlComponents?: MLComponentDetections;
   typography?: any;
   spacingScale?: any;
+  // Note: All enhancement is now pixel-perfect by default
 }
 
 export class AISchemaEnhancer {
@@ -51,22 +52,20 @@ export class AISchemaEnhancer {
    * Enhance the entire schema with AI results
    */
   enhanceSchema(schema: WebToFigmaSchema): WebToFigmaSchema {
-    if (!schema.tree) {
-      console.warn("[AI-Enhancer] Schema has no tree, skipping enhancement");
+    if (!schema.root) {
+      console.warn("[AI-Enhancer] Schema has no root, skipping enhancement");
       return schema;
     }
 
     console.log(
-      "[AI-Enhancer] 🤖 Starting schema enhancement with AI results..."
+      `[AI-Enhancer] 🤖 Starting pixel-perfect schema enhancement`
     );
 
     // Enhance the tree recursively
-    this.enhanceNode(schema.tree, schema);
+    this.enhanceNode(schema.root, schema);
 
-    // Enhance styles registry
+    // Apply global registry enhancements (always enabled for full fidelity)
     this.enhanceStyles(schema);
-
-    // Enhance component registry
     this.enhanceComponents(schema);
 
     // Log enhancement summary
@@ -94,9 +93,9 @@ export class AISchemaEnhancer {
   private enhanceNode(node: ElementNode, schema: WebToFigmaSchema): void {
     if (!node) return;
 
-    // Enhance this node
+    // Apply all enhancements for pixel-perfect capture
     this.enhanceNodeWithOCR(node);
-    this.enhanceNodeWithColorPalette(node);
+    this.enhanceNodeWithColorPalette(node, schema);
     this.enhanceNodeWithMLDetections(node, schema);
     this.enhanceNodeWithTypography(node);
     this.enhanceNodeLayout(node);
@@ -230,78 +229,15 @@ export class AISchemaEnhancer {
   /**
    * Use color palette to fill missing colors/backgrounds
    */
-  private enhanceNodeWithColorPalette(node: ElementNode): void {
-    if (!this.aiContext.colorPalette || !this.aiContext.colorPalette.palette)
-      return;
-
-    // CRITICAL FIX: Never apply AI color palette to body/html nodes
-    // Body/html backgrounds should be handled by the main frame, not filled with AI palette colors
-    // This prevents orange/gold backgrounds from appearing on the entire page
-    const isDocumentRoot = node.htmlTag === "body" || node.htmlTag === "html";
-    if (isDocumentRoot) {
-      return; // Skip body/html nodes entirely
-    }
-
-    // Check if node has no fills or transparent fills
-    const hasNoFills = !node.fills || node.fills.length === 0;
-    const hasTransparentFill =
-      node.fills &&
-      node.fills.some((f) => f.type === "SOLID" && f.color && f.color.a < 0.1);
-
-    if (hasNoFills || hasTransparentFill) {
-      // Use dominant color from palette as background
-      const palette = this.aiContext.colorPalette.palette;
-      const vibrantColor =
-        palette["Vibrant"] || palette["vibrant"] || Object.values(palette)[0];
-
-      if (vibrantColor && vibrantColor.figma) {
-        if (!node.fills) node.fills = [];
-
-        // Add background fill if missing
-        if (hasNoFills) {
-          node.fills.push({
-            type: "SOLID",
-            color: {
-              r: vibrantColor.figma.r,
-              g: vibrantColor.figma.g,
-              b: vibrantColor.figma.b,
-              a: 1,
-            },
-            opacity: 1,
-          });
-          this.enhancementsApplied.colorsFilled++;
-          console.log(
-            `[AI-Enhancer] ✅ Filled missing background for ${node.name} with palette color`
-          );
-        }
-      }
-    }
-
-    // Enhance text color if missing
-    if (node.type === "TEXT" && (!node.fills || node.fills.length === 0)) {
-      const palette = this.aiContext.colorPalette.palette;
-      const textColor =
-        palette["DarkVibrant"] ||
-        palette["darkVibrant"] ||
-        palette["Muted"] ||
-        palette["muted"] ||
-        Object.values(palette)[0];
-
-      if (textColor && textColor.figma) {
-        if (!node.fills) node.fills = [];
-        node.fills.push({
-          type: "SOLID",
-          color: {
-            r: textColor.figma.r,
-            g: textColor.figma.g,
-            b: textColor.figma.b,
-            a: 1,
-          },
-          opacity: 1,
-        });
-        this.enhancementsApplied.colorsFilled++;
-      }
-    }
+  private enhanceNodeWithColorPalette(
+    node: ElementNode,
+    schema: WebToFigmaSchema
+  ): void {
+    // Disabled: global palette-based background fills are speculative and have
+    // caused regressions (incorrect header/button/search bar fills).
+    // For pixel-fidelity we only use explicit computed styles from extraction.
+    void node;
+    void schema;
   }
 
   /**

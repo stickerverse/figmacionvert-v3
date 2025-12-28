@@ -12,15 +12,9 @@
     "webNavigation",
     "webRequest",
     "alarms",
-    "sidePanel",
     "notifications"
   ],
-  "host_permissions": [
-    "<all_urls>"
-  ],
-  "side_panel": {
-    "default_path": "dist/popup/popup.html"
-  },
+  "host_permissions": ["<all_urls>"],
   "commands": {
     "capture-full-page": {
       "suggested_key": {
@@ -39,7 +33,7 @@
   },
   "action": {
     "default_title": "Web to Figma",
-    "default_popup": "dist/popup/popup.html",
+    "default_popup": "popup/popup.html",
     "default_icon": {
       "16": "icons/icon16.png",
       "48": "icons/icon48.png",
@@ -47,19 +41,19 @@
     }
   },
   "background": {
-    "service_worker": "dist/background.js"
+    "service_worker": "background.js"
   },
   "content_scripts": [
     {
       "matches": ["<all_urls>"],
-      "js": ["dist/content-script.js"],
+      "js": ["content-script.js"],
       "run_at": "document_idle",
       "all_frames": true
     }
   ],
   "web_accessible_resources": [
     {
-      "resources": ["dist/injected-script.js"],
+      "resources": ["injected-script.js"],
       "matches": ["<all_urls>"]
     }
   ],

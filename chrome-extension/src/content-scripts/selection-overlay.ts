@@ -54,7 +54,7 @@ export class SelectionOverlay {
     // Add a global style to change cursor
     const style = document.createElement("style");
     style.id = "web-to-figma-cursor-style";
-    style.innerHTML = `* { cursor: crosshair !important; }`;
+    style.textContent = `* { cursor: crosshair !important; }`;
     document.head.appendChild(style);
   }
 

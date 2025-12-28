@@ -26,5 +26,13 @@ figma-plugin/dist/
 .vscode/
 .idea/
 
+# Local/Temp
+jobs-debug/
+.chrome-user-data/
+*.tmp
+*.backup
+analysis.txt
+fidelity-audit-output.txt
+
 handoff-jobs.json
 eng.traineddata

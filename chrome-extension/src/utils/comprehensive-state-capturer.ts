@@ -21,6 +21,7 @@ import {
 } from "./intelligent-interaction-discoverer";
 import { StateCapturer } from "./state-capturer";
 import { ElementNode, VariantData } from "../types/schema";
+import { querySelectorAllDeep, getEffectiveChildElements } from "./shadow-dom-utils";
 
 export interface ComprehensiveStateResult {
   elementId: string;
@@ -704,10 +705,10 @@ export class ComprehensiveStateCapturer {
   }
 
   private async captureStickyElements(rootElement: Element): Promise<void> {
-    // Look for elements with position: sticky or position: fixed
-    const allElements = rootElement.querySelectorAll("*");
+    // Look for elements with position: sticky or position: fixed (including shadow DOM)
+    const allElements = querySelectorAllDeep(rootElement, "*");
 
-    for (const element of Array.from(allElements)) {
+    for (const element of allElements) {
       const style = window.getComputedStyle(element);
       if (style.position === "sticky" || style.position === "fixed") {
         // Test scrolling to see state changes
@@ -752,21 +753,22 @@ export class ComprehensiveStateCapturer {
   }
 
   private async captureInfiniteScroll(rootElement: Element): Promise<void> {
-    // Look for infinite scroll containers
-    const scrollContainers = rootElement.querySelectorAll(
+    // Look for infinite scroll containers (including shadow DOM)
+    const scrollContainers = querySelectorAllDeep(
+      rootElement,
       "[data-infinite-scroll], .infinite-scroll, .lazy-load"
     );
 
-    for (const container of Array.from(scrollContainers)) {
+    for (const container of scrollContainers) {
       try {
         const originalScrollTop = container.scrollTop;
-        const originalChildCount = container.children.length;
+        const originalChildCount = getEffectiveChildElements(container).length;
 
         // Scroll to bottom to trigger loading
         container.scrollTop = container.scrollHeight;
         await this.wait(500); // Wait for potential AJAX loading
 
-        if (container.children.length > originalChildCount) {
+        if (getEffectiveChildElements(container).length > originalChildCount) {
           // New content was loaded!
           const elementId = this.generateElementId(container);
           let result = this.captureResults.get(elementId);

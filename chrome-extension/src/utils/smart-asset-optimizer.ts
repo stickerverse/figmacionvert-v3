@@ -475,10 +475,13 @@ export class SmartAssetOptimizer {
       </svg>`;
 
       const svgAsset: SVGAsset = {
-        hash: asset.hash || asset.id,
+        id: asset.id || asset.hash || "unknown",
+        hash: asset.hash || asset.id || "unknown",
         svgCode,
         width: asset.width,
         height: asset.height,
+        url: asset.url,
+        contentType: "image/svg+xml",
       };
 
       const optimizedSize = svgCode.length;

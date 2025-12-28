@@ -1,4 +1,5 @@
 import { ElementNode } from '../types/schema';
+import { getEffectiveChildElements, querySelectorDeep } from './shadow-dom-utils';
 
 /**
  * Visual fingerprint for component similarity analysis
@@ -209,10 +210,10 @@ export class ComponentDetector {
    */
   private async detectCardPatterns(allElements: Array<{ element: Element; node: ElementNode }>): Promise<Map<string, ComponentGroup>> {
     const cardCandidates = allElements.filter(({ element, node }) => {
-      // Look for container elements that might be cards
-      const hasImage = element.querySelector('img, svg, [style*="background-image"]') !== null;
+      // Look for container elements that might be cards (including shadow DOM)
+      const hasImage = querySelectorDeep(element, 'img, svg, [style*="background-image"]') !== null;
       const hasText = element.textContent && element.textContent.trim().length > 20; // Substantial text
-      const hasMultipleChildren = element.children.length >= 2;
+      const hasMultipleChildren = getEffectiveChildElements(element).length >= 2;
       const reasonableSize = node.layout.width > 150 && node.layout.height > 100;
       
       return hasMultipleChildren && (hasImage || hasText) && reasonableSize;
@@ -247,7 +248,8 @@ export class ComponentDetector {
     const inputCandidates = allElements.filter(({ element, node }) => {
       const tagName = element.tagName.toLowerCase();
       const isFormElement = ['input', 'textarea', 'select'].includes(tagName);
-      const hasLabel = element.closest('label') || document.querySelector(`label[for="${element.id}"]`);
+      // CRITICAL FIX: Ensure element is valid before calling closest()
+      const hasLabel = element instanceof Element ? (element.closest('label') || document.querySelector(`label[for="${element.id}"]`)) : null;
       
       return isFormElement || hasLabel;
     });
@@ -262,8 +264,9 @@ export class ComponentDetector {
     const navCandidates = allElements.filter(({ element, node }) => {
       const tagName = element.tagName.toLowerCase();
       const isNavElement = tagName === 'a' && element.getAttribute('href');
-      const inNavigation = element.closest('nav, [role="navigation"]');
-      const isListItem = element.tagName.toLowerCase() === 'li' && element.querySelector('a');
+      // CRITICAL FIX: Ensure element is valid before calling closest()
+      const inNavigation = element instanceof Element ? element.closest('nav, [role="navigation"]') : null;
+      const isListItem = element instanceof Element && element.tagName.toLowerCase() === 'li' && element.querySelector('a');
       
       return (isNavElement && inNavigation) || (isListItem && inNavigation);
     });
@@ -278,7 +281,8 @@ export class ComponentDetector {
     const listCandidates = allElements.filter(({ element, node }) => {
       const tagName = element.tagName.toLowerCase();
       const isListItem = tagName === 'li';
-      const inList = element.closest('ul, ol');
+      // CRITICAL FIX: Ensure element is valid before calling closest()
+      const inList = element instanceof Element ? element.closest('ul, ol') : null;
       
       return isListItem && inList && element.textContent?.trim();
     });
@@ -577,8 +581,8 @@ export class ComponentDetector {
       isInteractive: this.isInteractiveElement(element),
       
       hasText: (element.textContent?.trim().length || 0) > 0,
-      hasImage: element.querySelector('img, svg') !== null,
-      childCount: element.children.length,
+      hasImage: querySelectorDeep(element, 'img, svg') !== null,
+      childCount: getEffectiveChildElements(element).length,
       nestingLevel: this.calculateNestingLevel(element)
     };
   }
@@ -800,7 +804,7 @@ export class ComponentDetector {
     
     // Auto layout similarity
     if (node1.autoLayout && node2.autoLayout) {
-      if (node1.autoLayout.layoutMode === node2.autoLayout.layoutMode) {
+      if (node1.autoLayout.mode === node2.autoLayout.mode) {
         score += 1;
       }
       factors++;

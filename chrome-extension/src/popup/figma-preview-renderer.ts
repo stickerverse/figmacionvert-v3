@@ -28,8 +28,8 @@ export class FigmaPreviewRenderer {
     this.schema = schema;
 
     const viewport = schema.metadata?.viewport ?? {
-      width: Math.max(schema.tree?.layout?.width ?? 1024, 1),
-      height: Math.max(schema.tree?.layout?.height ?? 768, 1)
+      width: Math.max(schema.root?.layout?.width ?? 1024, 1),
+      height: Math.max(schema.root?.layout?.height ?? 768, 1)
     };
 
     this.canvas.width = viewport.width * this.scale;
@@ -46,7 +46,7 @@ export class FigmaPreviewRenderer {
     this.ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
 
     // Render the tree
-    this.renderNode(schema.tree);
+    this.renderNode(schema.root);
   }
 
   private async preloadImages(images: Record<string, any>): Promise<void> {

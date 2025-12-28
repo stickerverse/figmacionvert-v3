@@ -10,6 +10,7 @@ import { ElementNode } from "../types/schema";
 import { generateNodeId } from "./node-identity";
 import { CircuitBreaker } from "./circuit-breaker";
 import { ResourceMonitor } from "./resource-monitor";
+import { getEffectiveChildElements, getEffectiveParent, getSiblings } from "./shadow-dom-utils";
 
 export interface InteractionDiscoveryResult {
   originalNode: ElementNode;
@@ -774,7 +775,8 @@ export class IntelligentInteractionDiscoverer {
 
       // Safety filters
       // 1. Explicit opt-out
-      if (element.closest("[data-no-auto-click]")) {
+      // CRITICAL FIX: Ensure element is valid before calling closest()
+      if (element instanceof Element && element.closest("[data-no-auto-click]")) {
         return false;
       }
 
@@ -874,20 +876,17 @@ export class IntelligentInteractionDiscoverer {
   private findNearbyElements(element: Element): Element[] {
     const elements: Element[] = [];
 
-    // Add parent and children
-    if (element.parentElement) {
-      elements.push(element.parentElement);
+    // Add parent (crossing shadow DOM boundaries if needed)
+    const parent = getEffectiveParent(element);
+    if (parent) {
+      elements.push(parent);
     }
-    Array.from(element.children).forEach((child) => elements.push(child));
+    
+    // Add children (including shadow DOM children)
+    getEffectiveChildElements(element).forEach((child) => elements.push(child));
 
-    // Add siblings
-    if (element.parentElement) {
-      Array.from(element.parentElement.children).forEach((sibling) => {
-        if (sibling !== element) {
-          elements.push(sibling);
-        }
-      });
-    }
+    // Add siblings (handling shadow DOM context)
+    getSiblings(element).forEach((sibling) => elements.push(sibling));
 
     return elements;
   }

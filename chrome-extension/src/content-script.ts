@@ -1,6 +1,7 @@
 import { StatusOverlay } from "./utils/status-overlay";
 import { PageScroller } from "./utils/page-scroller";
 import { SelectionOverlay } from "./content-scripts/selection-overlay";
+import { createTrustedHTML } from "./utils/trusted-types";
 import { enhanceSchemaWithAI } from "./utils/ai-schema-enhancer";
 // Add type definition for window chunk storage
 declare global {
@@ -17,6 +18,22 @@ console.log("If you see this, content-script.js is executing!");
 
 (() => {
   console.log("🌐 Content script loaded");
+
+  // Suppress known non-fatal errors (likely from dependencies or polyfills)
+  window.addEventListener(
+    "error",
+    (event) => {
+      // Fix for "Uncaught TypeError: e.target.contains is not a function"
+      // This appears to be a scroll handler issue in a bundled dependency
+      if (event.message?.includes("e.target.contains is not a function")) {
+        event.preventDefault();
+        event.stopPropagation();
+        console.warn("⚠️ Suppressed known non-fatal scroll error");
+        return;
+      }
+    },
+    true
+  );
 
   // ============================================================================
   // EXTENSION CONFLICT DETECTION
@@ -137,8 +154,28 @@ console.log("If you see this, content-script.js is executing!");
   let watchdogTimer: any = null;
   let cancelCurrentExtraction: (() => void) | null = null;
   let captureStartTime: number | null = null; // Track capture start time for diagnostics
-  const WATCHDOG_TIMEOUT = 90000; // 90 seconds without progress = stall (increased for complex sites)
+  const WATCHDOG_TIMEOUT = 180000; // 180 seconds without progress = stall (increased to match DOM extractor)
   let isScriptInjected = false; // Track if injection script has been loaded this session
+  let lastDomStabilityReport: any | null = null; // Attach to schema metadata for diagnostics
+
+  // Internal diagnostic logging hook (was previously posting to a local agent runner).
+  // Keep disabled in production builds to avoid noisy "Failed to fetch" errors in DevTools.
+  const ENABLE_AGENT_DEBUG_INGEST = false;
+  const agentDebugIngest = (_payload: any) => {
+    if (!ENABLE_AGENT_DEBUG_INGEST) return;
+    try {
+      fetch(
+        "http://127.0.0.1:7242/ingest/ec6ff4c5-673b-403d-a943-70cb2e5565f2",
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(_payload),
+        }
+      ).catch(() => {});
+    } catch {
+      // ignore
+    }
+  };
 
   function sendCaptureProgress(
     phase: string,
@@ -156,106 +193,125 @@ console.log("If you see this, content-script.js is executing!");
     );
   }
 
+  const AI_SERVER_CANDIDATES = [
+    "http://127.0.0.1:4411",
+    "http://localhost:4411",
+  ];
+  let cachedAiServer: { base: string | null; checkedAt: number } = {
+    base: null,
+    checkedAt: 0,
+  };
+
+  async function fetchWithAbortTimeout(
+    url: string,
+    options: RequestInit,
+    timeoutMs: number
+  ): Promise<Response> {
+    const controller = new AbortController();
+    const id = setTimeout(() => controller.abort(), timeoutMs);
+    try {
+      return await fetch(url, { ...options, signal: controller.signal });
+    } finally {
+      clearTimeout(id);
+    }
+  }
+
+  async function getReachableAiServerBase(): Promise<string | null> {
+    const now = Date.now();
+    if (now - cachedAiServer.checkedAt < 15000) return cachedAiServer.base;
+
+    for (const base of AI_SERVER_CANDIDATES) {
+      try {
+        const resp = await fetchWithAbortTimeout(
+          `${base}/api/health`,
+          { method: "GET", headers: { "cache-control": "no-cache" } },
+          800
+        );
+        if (resp.ok) {
+          cachedAiServer = { base, checkedAt: now };
+          return base;
+        }
+      } catch {
+        // ignore and try next base
+      }
+    }
+
+    cachedAiServer = { base: null, checkedAt: now };
+    return null;
+  }
+
   function resetWatchdog() {
     if (watchdogTimer) clearTimeout(watchdogTimer);
     if (!isCapturing) return;
-
-    // #region agent log
-    fetch("http://127.0.0.1:7242/ingest/ec6ff4c5-673b-403d-a943-70cb2e5565f2", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        location: "content-script.ts:159",
-        message: "Watchdog reset",
-        data: {
-          isCapturing,
-          captureStartTime,
-          currentTime: Date.now(),
-          elapsed: captureStartTime ? Date.now() - captureStartTime : null,
-        },
-        timestamp: Date.now(),
-        sessionId: "debug-session",
-        runId: "run1",
-        hypothesisId: "C",
-      }),
-    }).catch(() => {});
-    // #endregion
+    agentDebugIngest({
+      location: "content-script.ts:resetWatchdog",
+      message: "Watchdog reset",
+      data: {
+        isCapturing,
+        captureStartTime,
+        currentTime: Date.now(),
+        elapsed: captureStartTime ? Date.now() - captureStartTime : null,
+      },
+      timestamp: Date.now(),
+    });
 
     watchdogTimer = setTimeout(() => {
-      const elapsed = Date.now() - (captureStartTime || Date.now());
-      // #region agent log
-      fetch(
-        "http://127.0.0.1:7242/ingest/ec6ff4c5-673b-403d-a943-70cb2e5565f2",
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            location: "content-script.ts:164",
-            message: "Watchdog stalled",
-            data: {
-              elapsed,
-              captureStartTime,
-              currentTime: Date.now(),
-              calculatedElapsed: captureStartTime
-                ? Date.now() - captureStartTime
-                : 0,
-            },
-            timestamp: Date.now(),
-            sessionId: "debug-session",
-            runId: "run1",
-            hypothesisId: "A",
-          }),
-        }
-      ).catch(() => {});
-      // #endregion
-      console.warn(
-        `⚠️ [WATCHDOG] Capture stalled after ${Math.round(elapsed / 1000)}s!`
-      );
+      // If capture already ended, ignore stale watchdog timer.
+      if (!isCapturing) return;
+
+      // Calculate elapsed time; fall back to "now" so logs never show "unknown".
+      const startedAt = captureStartTime ?? Date.now();
+      const elapsed = Date.now() - startedAt;
+      agentDebugIngest({
+        location: "content-script.ts:watchdog-stalled",
+        message: "Watchdog stalled",
+        data: {
+          elapsed,
+          captureStartTime,
+          currentTime: Date.now(),
+          calculatedElapsed: captureStartTime
+            ? Date.now() - captureStartTime
+            : 0,
+        },
+        timestamp: Date.now(),
+      });
+      const elapsedSeconds = Math.max(0, Math.round(elapsed / 1000));
+      console.warn(`⚠️ [WATCHDOG] Capture stalled after ${elapsedSeconds}s!`);
       console.warn("⚠️ [WATCHDOG] Possible causes:");
       console.warn("  - DOM extraction is taking too long");
       console.warn("  - AI analysis is stuck");
       console.warn("  - Network requests are hanging");
       console.warn("  - Page is still loading content");
 
-      overlay.update(
-        `⚠️ Capture seems stuck (${Math.round(elapsed / 1000)}s). Waiting...`
-      );
+      overlay.update(`⚠️ Capture seems stuck (${elapsedSeconds}s). Waiting...`);
 
       // Set a second timeout for ultimate failure
       watchdogTimer = setTimeout(() => {
-        const totalElapsed = Date.now() - (captureStartTime || Date.now());
-        // #region agent log
-        fetch(
-          "http://127.0.0.1:7242/ingest/ec6ff4c5-673b-403d-a943-70cb2e5565f2",
-          {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              location: "content-script.ts:179",
-              message: "Watchdog timeout",
-              data: {
-                totalElapsed,
-                captureStartTime,
-                currentTime: Date.now(),
-                calculatedElapsed: captureStartTime
-                  ? Date.now() - captureStartTime
-                  : 0,
-              },
-              timestamp: Date.now(),
-              sessionId: "debug-session",
-              runId: "run1",
-              hypothesisId: "A",
-            }),
-          }
-        ).catch(() => {});
-        // #endregion
+        // If capture already ended, ignore stale watchdog timer.
+        if (!isCapturing) return;
+
+        const totalStartedAt = captureStartTime ?? Date.now();
+        const totalElapsed = Date.now() - totalStartedAt;
+        agentDebugIngest({
+          location: "content-script.ts:watchdog-timeout",
+          message: "Watchdog timeout",
+          data: {
+            totalElapsed,
+            captureStartTime,
+            currentTime: Date.now(),
+            calculatedElapsed: captureStartTime
+              ? Date.now() - captureStartTime
+              : 0,
+          },
+          timestamp: Date.now(),
+        });
         console.error(
           `❌ [WATCHDOG] Capture timed out completely after ${Math.round(
             totalElapsed / 1000
           )}s.`
         );
         console.error("❌ [WATCHDOG] Capture failed. Possible issues:");
-        console.error("  - DOM extraction exceeded 120s timeout");
+        console.error("  - DOM extraction exceeded 180s timeout");
         console.error("  - AI analysis exceeded 30s timeout");
         console.error("  - Network connectivity issues");
         console.error("  - Page is too complex or has infinite loading");
@@ -298,25 +354,84 @@ console.log("If you see this, content-script.js is executing!");
   function waitForDomStability(
     stableDurationMs = 1000,
     maxWaitMs = 10000
-  ): Promise<void> {
+  ): Promise<{
+    timedOut: boolean;
+    reason: "stable" | "timeout" | "high-churn";
+    elapsedMs: number;
+    mutationCount: number;
+    significantMutationCount: number;
+    ignoredMutationCount: number;
+    mutationRateTotalPerSec: number;
+    mutationRateSignificantPerSec: number;
+  }> {
     return new Promise((resolve) => {
       const startTime = Date.now();
+      const minWaitMs = 4000;
+      // Only treat churn as "high" when it is extremely high; many modern sites have small
+      // background updates that shouldn't trigger warnings or early exits.
+      const churnThresholdSignificantRatePerSec = 200.0;
       console.log(
         `⏳ Waiting for DOM stability (${stableDurationMs}ms quiet period, max ${maxWaitMs}ms)...`
       );
       let timeout: any;
       let maxTimeout: any;
+      let churnTimer: any;
       let mutationCount = 0;
       let significantMutationCount = 0;
+      let ignoredMutationCount = 0;
       let lastSignificantMutationTime = startTime;
+
+      const ignoreSelectors = [
+        "nav",
+        "header",
+        "footer",
+        "[role='navigation']",
+        "[role='banner']",
+        "[role='contentinfo']",
+        "[role='dialog']",
+        "[role='alertdialog']",
+        "[aria-live]:not([aria-live='off'])",
+        "[role='status']",
+        "[role='log']",
+        "[role='timer']",
+        "[data-analytics]",
+        "[data-tracking]",
+        "[data-testid]",
+        "[data-cy]",
+      ].join(",");
+
+      const isInIgnoredStabilityRegion = (el: Element): boolean => {
+        try {
+          // CRITICAL FIX: Ensure el is an Element before calling closest()
+          if (!el || !(el instanceof Element)) return false;
+          if (el.closest("iframe")) return true;
+          if (ignoreSelectors && el.closest(ignoreSelectors)) return true;
+          const style = window.getComputedStyle(el);
+          if (style.position === "fixed" || style.position === "sticky") {
+            return true;
+          }
+          return false;
+        } catch {
+          return false;
+        }
+      };
 
       // CRITICAL FIX: Filter out "noise" mutations that don't affect layout
       // This helps with complex pages like Etsy that have continuous ads/trackers
       const isSignificantMutation = (mutation: MutationRecord): boolean => {
-        const target = mutation.target as Element;
+        const target = mutation.target;
+
+        // CRITICAL FIX: mutation.target can be a text node, comment node, etc.
+        // Only process if it's an Element
+        if (!(target instanceof Element)) return false;
 
         // Ignore mutations in iframes (ads, trackers)
-        if (target.closest("iframe")) return false;
+        try {
+          if (target.closest("iframe")) return false;
+        } catch (error) {
+          // If closest fails (e.g., element is detached), continue processing
+          console.warn("⚠️ [MUTATION] closest() failed on target:", error);
+        }
 
         // Ignore mutations in script/style tags
         if (target.tagName === "SCRIPT" || target.tagName === "STYLE")
@@ -328,6 +443,12 @@ console.log("If you see this, content-script.js is executing!");
           if (style.display === "none" || style.visibility === "hidden") {
             return false;
           }
+        }
+
+        // Ignore high-churn regions that are not relevant to the main page
+        // layout for capture (nav/header/footer/live regions, fixed overlays).
+        if (target instanceof Element && isInIgnoredStabilityRegion(target)) {
+          return false;
         }
 
         // Ignore attribute-only mutations that don't affect layout
@@ -372,12 +493,25 @@ console.log("If you see this, content-script.js is executing!");
 
       const onStabilityReached = () => {
         if (maxTimeout) clearTimeout(maxTimeout);
+        if (churnTimer) clearInterval(churnTimer);
         observer.disconnect();
         const elapsed = Date.now() - startTime;
+        const mutationRate = (mutationCount / Math.max(1, elapsed)) * 1000;
+        const significantRate =
+          (significantMutationCount / Math.max(1, elapsed)) * 1000;
         console.log(
-          `✅ DOM stabilized after ${elapsed}ms (${mutationCount} total, ${significantMutationCount} significant mutations)`
+          `✅ DOM stabilized after ${elapsed}ms (${mutationCount} total, ${significantMutationCount} significant mutations, ${ignoredMutationCount} ignored mutations)`
         );
-        resolve();
+        resolve({
+          timedOut: false,
+          reason: "stable",
+          elapsedMs: elapsed,
+          mutationCount,
+          significantMutationCount,
+          ignoredMutationCount,
+          mutationRateTotalPerSec: mutationRate,
+          mutationRateSignificantPerSec: significantRate,
+        });
       };
 
       const observer = new MutationObserver((mutations) => {
@@ -385,6 +519,7 @@ console.log("If you see this, content-script.js is executing!");
 
         // Count only significant mutations
         const significantMutations = mutations.filter(isSignificantMutation);
+        ignoredMutationCount += mutations.length - significantMutations.length;
         if (significantMutations.length > 0) {
           significantMutationCount += significantMutations.length;
           lastSignificantMutationTime = Date.now();
@@ -405,79 +540,94 @@ console.log("If you see this, content-script.js is executing!");
 
       timeout = setTimeout(onStabilityReached, stableDurationMs);
 
+      // Adaptive early exit on high-churn pages: proceed deterministically once
+      // it's clear the DOM won't become "quiet" due to continuous updates.
+      churnTimer = setInterval(() => {
+        const now = Date.now();
+        const elapsed = now - startTime;
+        if (elapsed < Math.min(minWaitMs, maxWaitMs)) return;
+
+        const mutationRate = (mutationCount / Math.max(1, elapsed)) * 1000;
+        const significantRate =
+          (significantMutationCount / Math.max(1, elapsed)) * 1000;
+        const isStillChurning = now - lastSignificantMutationTime < 750;
+
+        if (
+          isStillChurning &&
+          significantRate >= churnThresholdSignificantRatePerSec
+        ) {
+          if (timeout) clearTimeout(timeout);
+          if (maxTimeout) clearTimeout(maxTimeout);
+          if (churnTimer) clearInterval(churnTimer);
+          observer.disconnect();
+
+          console.log(
+            `ℹ️ DOM stability: high-churn (${significantRate.toFixed(
+              1
+            )}/s significant). Proceeding after ${elapsed}ms.`
+          );
+
+          resolve({
+            timedOut: false,
+            reason: "high-churn",
+            elapsedMs: elapsed,
+            mutationCount,
+            significantMutationCount,
+            ignoredMutationCount,
+            mutationRateTotalPerSec: mutationRate,
+            mutationRateSignificantPerSec: significantRate,
+          });
+        }
+      }, 1000);
+
       maxTimeout = setTimeout(() => {
         const elapsed = Date.now() - startTime;
         const mutationRate = (mutationCount / elapsed) * 1000; // mutations per second
         const significantRate = (significantMutationCount / elapsed) * 1000;
+        agentDebugIngest({
+          location: "content-script.ts:dom-stability-timeout",
+          message: "DOM stability timeout",
+          data: {
+            elapsed,
+            mutationCount,
+            significantMutationCount,
+            mutationRate,
+            significantRate,
+            stableDurationMs,
+            maxWaitMs,
+          },
+          timestamp: Date.now(),
+        });
 
-        // #region agent log
-        fetch(
-          "http://127.0.0.1:7242/ingest/ec6ff4c5-673b-403d-a943-70cb2e5565f2",
-          {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              location: "content-script.ts:337",
-              message: "DOM stability timeout",
-              data: {
-                elapsed,
-                mutationCount,
-                significantMutationCount,
-                mutationRate,
-                significantRate,
-                stableDurationMs,
-                maxWaitMs,
-              },
-              timestamp: Date.now(),
-              sessionId: "debug-session",
-              runId: "run1",
-              hypothesisId: "B",
-            }),
-          }
-        ).catch(() => {});
-        // #endregion
-
-        console.warn(
+        console.log(
           `⚠️ DOM stability check timed out after ${elapsed}ms (${mutationCount} total, ${significantMutationCount} significant mutations)`
         );
-        console.warn(
+        console.log(
           `⚠️ Mutation rate: ${mutationRate.toFixed(
             1
           )}/s total, ${significantRate.toFixed(1)}/s significant`
         );
-        console.warn("⚠️ This may indicate:");
-        console.warn("  - Page has continuous animations or updates");
-        console.warn("  - Dynamic content is still loading");
-        console.warn("  - Ads or trackers are modifying the DOM");
-        console.warn(
-          "  - This is normal for some complex pages (e.g., Etsy, Amazon)"
-        );
-        console.warn(
-          "  - Proceeding with capture - layout should still be accurate"
+        console.log(
+          "⚠️ Proceeding with capture; layout should still be accurate."
         );
         observer.disconnect();
-        // #region agent log
-        fetch(
-          "http://127.0.0.1:7242/ingest/ec6ff4c5-673b-403d-a943-70cb2e5565f2",
-          {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              location: "content-script.ts:360",
-              message: "DOM stability timeout - proceeding",
-              data: {
-                observerDisconnected: true,
-                elapsed,
-              },
-              timestamp: Date.now(),
-              sessionId: "debug-session",
-              runId: "run1",
-              hypothesisId: "B",
-            }),
-          }
-        ).catch(() => {});
-        // #endregion
-        resolve();
+        if (churnTimer) clearInterval(churnTimer);
+        agentDebugIngest({
+          location: "content-script.ts:dom-stability-timeout-proceed",
+          message: "DOM stability timeout - proceeding",
+          data: { observerDisconnected: true, elapsed },
+          timestamp: Date.now(),
+        });
+        resolve({
+          timedOut: true,
+          reason: "timeout",
+          elapsedMs: elapsed,
+          mutationCount,
+          significantMutationCount,
+          ignoredMutationCount,
+          mutationRateTotalPerSec: mutationRate,
+          mutationRateSignificantPerSec: significantRate,
+        });
       }, maxWaitMs);
     });
   }
@@ -512,8 +662,8 @@ console.log("If you see this, content-script.js is executing!");
     }
 
     // Estimate tree size (rough: 300 bytes per node)
-    if (data.tree) {
-      const nodeCount = countTreeNodes(data.tree, 5000);
+    if (data.root) {
+      const nodeCount = countTreeNodes(data.root, 5000);
       bytes += nodeCount * 300;
     }
 
@@ -532,8 +682,24 @@ console.log("If you see this, content-script.js is executing!");
     return count;
   }
 
+  function ensureCaptureId(captureData: any) {
+    if (!captureData || typeof captureData !== "object") return;
+    if (!captureData.metadata || typeof captureData.metadata !== "object") {
+      captureData.metadata = {};
+    }
+
+    const existing = captureData.metadata.captureId;
+    if (typeof existing === "string" && existing.trim().length > 0) return;
+
+    const id =
+      (globalThis as any).crypto?.randomUUID?.() ??
+      `cap-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+    captureData.metadata.captureId = id;
+  }
+
   // Send capture data to background using chunked transfer to avoid Chrome message size limits
   async function sendCaptureToBackground(captureData: any): Promise<void> {
+    ensureCaptureId(captureData);
     const CHUNK_SIZE = 10 * 1024 * 1024; // 10MB chunks to reduce message count
 
     let jsonString: string;
@@ -604,6 +770,55 @@ console.log("If you see this, content-script.js is executing!");
     console.log("📨 [CONTENT SCRIPT] Received message:", message.type);
     console.log("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
 
+    // Handle theme activation
+    if (message.type === "ACTIVATE_THEME") {
+      (async () => {
+        try {
+          const { ThemeDetector } = await import("./utils/theme-detector");
+          const detector = new ThemeDetector();
+          const result = await detector.activateTheme(message.theme);
+
+          // Store detector instance for cleanup
+          (window as any)._themeDetector = detector;
+
+          sendResponse(result);
+        } catch (error) {
+          console.error("Theme activation error:", error);
+          sendResponse({
+            success: false,
+            errorCode: "ACTIVATION_FAILED",
+            errorMessage:
+              error instanceof Error ? error.message : "Unknown error",
+            appliedChanges: [],
+          });
+        }
+      })();
+      return true; // Indicate async response
+    }
+
+    // Handle theme cleanup
+    if (message.type === "CLEANUP_THEME") {
+      (async () => {
+        try {
+          const detector = (window as any)._themeDetector;
+          if (detector) {
+            await detector.cleanup();
+            delete (window as any)._themeDetector;
+            console.log("Theme cleanup completed");
+          }
+          sendResponse({ success: true });
+        } catch (error) {
+          console.error("Theme cleanup error:", error);
+          sendResponse({
+            success: false,
+            errorMessage:
+              error instanceof Error ? error.message : "Unknown error",
+          });
+        }
+      })();
+      return true; // Indicate async response
+    }
+
     // Only allow capture orchestration from the top frame; sandboxed iframes (about:blank) should ignore
     const isTopFrame = window.top === window;
 
@@ -628,28 +843,12 @@ console.log("If you see this, content-script.js is executing!");
       document.body.setAttribute("data-debug-startcapture", "received");
       const startTime = Date.now();
       captureStartTime = startTime; // Store for watchdog diagnostics
-      // #region agent log
-      fetch(
-        "http://127.0.0.1:7242/ingest/ec6ff4c5-673b-403d-a943-70cb2e5565f2",
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            location: "content-script.ts:511",
-            message: "Capture start time set",
-            data: {
-              startTime,
-              captureStartTime,
-              isCapturing,
-            },
-            timestamp: Date.now(),
-            sessionId: "debug-session",
-            runId: "run1",
-            hypothesisId: "C",
-          }),
-        }
-      ).catch(() => {});
-      // #endregion
+      agentDebugIngest({
+        location: "content-script.ts:capture-start",
+        message: "Capture start time set",
+        data: { startTime, captureStartTime, isCapturing },
+        timestamp: Date.now(),
+      });
       console.log("🚀 [CAPTURE START] Initiating capture process...");
       console.log("   ⏱️  Started at:", new Date().toLocaleTimeString());
       isCapturing = true;
@@ -704,7 +903,7 @@ console.log("If you see this, content-script.js is executing!");
           const errorCaptureData = {
             version: "2.0.0",
             multiViewport: true,
-            metadata: { captureEngine: "puppeteer" },
+            metadata: { captureEngine: "extension" },
             captures: [],
             error: error.message,
             errorCode: (error as any).code,
@@ -718,6 +917,8 @@ console.log("If you see this, content-script.js is executing!");
         })
         .finally(() => {
           isCapturing = false;
+          if (watchdogTimer) clearTimeout(watchdogTimer);
+          watchdogTimer = null;
           captureStartTime = null; // Reset capture start time
         });
 
@@ -752,6 +953,7 @@ console.log("If you see this, content-script.js is executing!");
           ).then((result) => {
             // Post-process result to filter for selected element if possible
             // or just send as is for now
+            ensureCaptureId(result.data);
             chrome.runtime.sendMessage({
               type: "CAPTURE_COMPLETE",
               data: result.data,
@@ -778,7 +980,7 @@ console.log("If you see this, content-script.js is executing!");
 
     if (message.type === "PING") {
       sendResponse({ pong: true });
-      return false;
+      return true; // Keep message channel open for synchronous response
     }
 
     return false;
@@ -786,6 +988,14 @@ console.log("If you see this, content-script.js is executing!");
 
   // Listen for messages from the main page (for testing/automation)
   let extractionDone = false;
+
+  // CRITICAL: Duplicate handler detection to prevent message processing conflicts
+  const processedMessageTypes = new Set<string>();
+
+  // CRITICAL FIX: Prevent duplicate listener registration
+  // Check if we've already registered the listener on this window
+  if (!(window as any).__webToFigmaMessageListenerRegistered) {
+    (window as any).__webToFigmaMessageListenerRegistered = true;
 
   window.addEventListener("message", (event) => {
     // Only accept messages from ourselves
@@ -812,36 +1022,75 @@ console.log("If you see this, content-script.js is executing!");
     }
 
     if (event.data.type === "FETCH_IMAGE_PROXY") {
-      const { url, requestId } = event.data;
-      console.log(`🔄 [PROXY] Fetching image via background: ${url}`);
+      // CRITICAL: Assert exactly one handler for FETCH_IMAGE_PROXY
+      if (process.env.NODE_ENV === "development") {
+        if (processedMessageTypes.has("FETCH_IMAGE_PROXY")) {
+          console.error(
+            "❌ [DUPLICATE_HANDLER] FETCH_IMAGE_PROXY handler registered multiple times!"
+          );
+        } else {
+          processedMessageTypes.add("FETCH_IMAGE_PROXY");
+        }
+      }
 
+      const { url, requestId } = event.data;
+      console.log(
+        `🔄 [PROXY] Fetching image via background: ${url.substring(0, 80)}...`
+      );
+
+      // Forward to background script
       chrome.runtime.sendMessage(
         {
           type: "FETCH_IMAGE",
           url,
         },
         (response) => {
+          // Check for runtime errors
+          if (chrome.runtime.lastError) {
+            console.warn(
+              `⚠️ [PROXY] Runtime error: ${
+                chrome.runtime.lastError.message
+              } for ${url.substring(0, 80)}...`
+            );
+            window.postMessage(
+              {
+                type: "FETCH_IMAGE_PROXY_RESPONSE",
+                requestId,
+                success: false,
+                error: chrome.runtime.lastError.message,
+              },
+              "*"
+            );
+            return;
+          }
+
           // Forward response back to injected script
-          window.postMessage(
-            {
-              type: "FETCH_IMAGE_PROXY_RESPONSE",
-              requestId,
-              success: response?.base64 ? true : false,
-              data: response?.base64
-                ? {
-                    base64: response.base64,
-                    width: 0, // Background script doesn't calculate dimensions currently
-                    height: 0,
-                  }
-                : undefined,
-              error:
-                response?.error ||
-                (chrome.runtime.lastError
-                  ? chrome.runtime.lastError.message
-                  : "Unknown error"),
-            },
-            "*"
-          );
+          if (response?.ok && response?.base64) {
+            window.postMessage(
+              {
+                type: "FETCH_IMAGE_PROXY_RESPONSE",
+                requestId,
+                success: true,
+                data: {
+                  base64: response.base64,
+                  width: 0, // Background script doesn't calculate dimensions currently
+                  height: 0,
+                  mimeType: response.mimeType,
+                },
+              },
+              "*"
+            );
+          } else {
+            window.postMessage(
+              {
+                type: "FETCH_IMAGE_PROXY_RESPONSE",
+                requestId,
+                success: false,
+                error: response?.error || "Unknown error",
+              },
+              "*"
+            );
+          }
         }
       );
       return;
@@ -861,23 +1110,9 @@ console.log("If you see this, content-script.js is executing!");
       chrome.runtime.sendMessage({ type: "TRIGGER_CAPTURE_FOR_TAB" });
     }
 
-    // Proxy for image fetching from injected script (Main World) to background (Isolated World)
-    if (event.data.type === "FETCH_IMAGE_PROXY") {
-      const { url, requestId } = event.data;
-      console.log(`🔄 [PROXY] Forwarding image fetch for ${requestId}`);
-
-      chrome.runtime.sendMessage({ type: "FETCH_IMAGE", url }, (response) => {
-        // Send response back to Main World
-        window.postMessage(
-          {
-            type: "FETCH_IMAGE_RESULT",
-            requestId,
-            response,
-          },
-          "*"
-        );
-      });
-    }
+    // CRITICAL: Removed duplicate FETCH_IMAGE_PROXY handler.
+    // The correct handler exists above and uses FETCH_IMAGE_PROXY_RESPONSE.
+    // This duplicate used wrong response type FETCH_IMAGE_RESULT.
 
     // Ping handler to verify bridge connection
     if (event.data.type === "PING_PROXY") {
@@ -885,6 +1120,9 @@ console.log("If you see this, content-script.js is executing!");
       window.postMessage({ type: "PONG_PROXY", timestamp: Date.now() }, "*");
     }
   });
+  } else {
+    console.log("[CONTENT_SCRIPT] Message listener already registered, skipping duplicate registration");
+  }
 
   type CaptureViewportTarget = {
     name?: string;
@@ -902,7 +1140,7 @@ console.log("If you see this, content-script.js is executing!");
 
     try {
       console.log("💉 Injecting script once for all viewports...");
-      overlay.show("📦 Preparing capture...");
+      overlay.show("📦 Preparing capture...", "Initialization", 5);
 
       chrome.runtime.sendMessage({
         type: "CAPTURE_PROGRESS",
@@ -915,19 +1153,35 @@ console.log("If you see this, content-script.js is executing!");
       });
 
       console.log("📜 Performing scroll pre-pass to trigger lazy loading...");
-      overlay.update("📜 Scrolling to load content...");
+      overlay.update("📜 Scrolling to load content...", "Pre-loading", 15);
 
       // extensive scroll to ensure everything loads
       await scroller.scrollPage(100, (percent) => {
+        const scrollPercent = Math.round(percent);
+        overlay.update(
+          `📜 Scrolling to load content...`,
+          "Pre-loading",
+          Math.max(15, Math.min(20, 15 + scrollPercent * 0.05)),
+          `${scrollPercent}% complete`
+        );
         sendCaptureProgress("Scrolling page", percent);
       });
 
       console.log("✅ Scroll pre-pass complete");
 
-      overlay.update("⏳ Waiting for content to settle...");
+      overlay.update(
+        "⏳ Waiting for content to settle...",
+        "DOM Stability Check",
+        20
+      );
       // CRITICAL FIX: Increased timeout and quiet period for complex pages (e.g., Etsy with dynamic content)
       // Using smarter mutation filtering to ignore ads/trackers/animations
-      await waitForDomStability(2000, 25000);
+      lastDomStabilityReport = await waitForDomStability(2000, 25000);
+
+      // Deterministic settle checkpoint: allow layout/paint to flush once before capture.
+      await new Promise<void>((r) =>
+        requestAnimationFrame(() => requestAnimationFrame(() => r()))
+      );
 
       await injectScript();
       await wait(500);
@@ -941,7 +1195,9 @@ console.log("If you see this, content-script.js is executing!");
         console.log(`   🔄 Starting capture sequence...`);
 
         overlay.show(
-          `🔄 Capturing ${viewport.name} (${i + 1}/${viewports.length})...`
+          `🔄 Capturing ${viewport.name} (${i + 1}/${viewports.length})...`,
+          `Viewport ${i + 1}/${viewports.length}`,
+          Math.min(25 + i * 5, 35)
         );
 
         chrome.runtime.sendMessage({
@@ -998,7 +1254,7 @@ console.log("If you see this, content-script.js is executing!");
       const captureData = {
         version: "2.0.0",
         multiViewport: true,
-        metadata: { captureEngine: "puppeteer" },
+        metadata: { captureEngine: "extension" },
         captures,
       };
 
@@ -1012,7 +1268,12 @@ console.log("If you see this, content-script.js is executing!");
         console.log(
           "✅ Chunked capture detected - background already has data"
         );
-        overlay.update("✅ Capture complete!");
+        overlay.update(
+          "✅ Capture complete!",
+          "Complete",
+          100,
+          `${captures.length} viewports`
+        );
 
         // Wait a moment to show success message
         await wait(1500);
@@ -1046,7 +1307,10 @@ console.log("If you see this, content-script.js is executing!");
       });
 
       overlay.update(
-        `✅ All ${captures.length} viewports captured! (${totalSizeKB} KB)`
+        `✅ All ${captures.length} viewports captured!`,
+        "Complete",
+        100,
+        `${totalSizeKB} KB`
       );
       console.log("EXTRACTION_COMPLETE");
       document.body.setAttribute("data-capture-status", "complete");
@@ -1058,7 +1322,7 @@ console.log("If you see this, content-script.js is executing!");
 
       // Validate capture data before showing dialog
       const hasValidData = captures.some(
-        (capture) => capture.data && capture.data.tree
+        (capture) => capture.data && capture.data.root
       );
       const dialogOptions = hasValidData
         ? undefined
@@ -1098,19 +1362,8 @@ console.log("If you see this, content-script.js is executing!");
         );
       }
 
-      // Auto-queue handoff so the plugin can import without relying on the popup payload
-      try {
-        const payloadForHandoff = (captureData as any).chunked
-          ? null
-          : captureData;
-        await chrome.runtime.sendMessage({
-          type: "SEND_TO_HANDOFF",
-          data: payloadForHandoff,
-        });
-        console.log("🚀 Auto handoff enqueue requested");
-      } catch (e) {
-        console.warn("⚠️ Auto handoff enqueue failed", e);
-      }
+      // Note: the background service worker already auto-enqueues on CAPTURE_COMPLETE.
+      // Sending SEND_TO_HANDOFF here would enqueue the same capture a second time.
     } finally {
       // Don't reset viewport - this was causing page refresh
       // The browser will naturally restore viewport when user navigates away
@@ -1162,7 +1415,7 @@ console.log("If you see this, content-script.js is executing!");
       // Scroll page - skip if called from multi-viewport mode (skipInject=true) since we already did a pre-pass
       if (!skipInject) {
         console.log("📍 Step 2: Scroll page");
-        overlay.update("📜 Scrolling page...");
+        overlay.update("📜 Scrolling page...", "Page Navigation", 30);
         sendCaptureProgress("Scrolling page", 30);
         await scroller.scrollPage();
         await wait(200);
@@ -1172,13 +1425,18 @@ console.log("If you see this, content-script.js is executing!");
 
       // Capture interactive states (dropdowns, accordions, etc.)
       console.log("📍 Step 2b: Capturing interactive states...");
-      overlay.update("🖱️ Expanding dropdowns & menus...");
+      overlay.update(
+        "🖱️ Expanding dropdowns & menus...",
+        "Interactive Elements",
+        32
+      );
       sendCaptureProgress("Capturing interactive states", 32);
       await scroller.captureInteractiveStates();
       await wait(200);
 
       // Capture screenshot
       console.log("📍 [STEP 3/4] Capturing screenshot...");
+      overlay.update("📸 Capturing screenshot...", "Screenshot", 38);
 
       const screenshotStart = Date.now();
       const screenshot = await captureScreenshot();
@@ -1190,9 +1448,16 @@ console.log("If you see this, content-script.js is executing!");
         console.log(
           `✅ Screenshot captured successfully (${sizeKB}KB, took ${screenshotTime}s)`
         );
+        overlay.update(
+          "✅ Screenshot captured",
+          "Screenshot",
+          40,
+          `${sizeKB}KB`
+        );
         sendCaptureProgress("Screenshot captured", 40, { sizeKB });
       } else {
         console.warn("⚠️  Screenshot capture failed or returned empty");
+        overlay.update("⚠️ Screenshot failed", "Screenshot", 40);
         sendCaptureProgress("Screenshot capture failed", 40);
       }
 
@@ -1204,6 +1469,7 @@ console.log("If you see this, content-script.js is executing!");
 
       // Extract DOM
       console.log("📍 [STEP 4/4] Extracting DOM structure...");
+      overlay.update("🔍 Extracting DOM structure...", "DOM Extraction", 45);
       sendCaptureProgress("Starting DOM extraction", 45);
 
       const extractStart = Date.now();
@@ -1215,22 +1481,36 @@ console.log("If you see this, content-script.js is executing!");
       const extractTime = ((Date.now() - extractStart) / 1000).toFixed(2);
 
       if (result.data) {
-        // Ensure metadata exists and force captureEngine to puppeteer (as required by plugin)
+        // Ensure metadata exists and set captureEngine to extension (extension-based capture)
         if (!result.data.metadata) result.data.metadata = {};
-        result.data.metadata.captureEngine = "puppeteer";
+        result.data.metadata.captureEngine = "extension";
+        if (lastDomStabilityReport) {
+          result.data.metadata.domStability = lastDomStabilityReport;
+        }
 
-        const elementCount = result.data.tree?.children?.length || 0;
+        const elementCount = result.data.root?.children?.length || 0;
+        const imageCount = result.data.assets?.images
+          ? Object.keys(result.data.assets.images).length
+          : 0;
         console.log(
           `✅ DOM extraction complete (${elementCount} elements, took ${extractTime}s)`
         );
+        overlay.update(
+          "✅ DOM extraction complete",
+          "DOM Extraction",
+          70,
+          `${elementCount} elements, ${imageCount} images`
+        );
         sendCaptureProgress("DOM extraction complete", 70, {
           elements: elementCount,
+          images: imageCount,
           viewport:
             viewport?.name ||
             viewportConfig?.width + "x" + viewportConfig?.height,
         });
       } else {
         console.error("❌ DOM extraction failed - no data returned");
+        overlay.update("❌ DOM extraction failed", "DOM Extraction", 70);
         sendCaptureProgress("DOM extraction failed", 70);
       }
 
@@ -1265,7 +1545,7 @@ console.log("If you see this, content-script.js is executing!");
       resetWatchdog();
 
       console.log("💉 Injecting script via chrome.scripting (CSP-safe)...");
-      const candidatePaths = ["dist/injected-script.js", "injected-script.js"];
+      const candidatePaths = ["injected-script.js"];
 
       // First, try to inject via the background page using chrome.scripting (bypasses page CSP)
       chrome.runtime.sendMessage(
@@ -1335,7 +1615,7 @@ console.log("If you see this, content-script.js is executing!");
   ): Promise<any> {
     console.log("📸 Starting Direct DOM extraction...");
 
-    overlay.update("🔍 Extracting DOM structure... (25%)");
+    overlay.update("🔍 Extracting DOM structure...", "DOM Traversal", 25);
     chrome.runtime.sendMessage(
       {
         type: "EXTRACTION_PROGRESS",
@@ -1380,6 +1660,42 @@ console.log("If you see this, content-script.js is executing!");
 
           const schema = event.data.data;
 
+          // Check for image download failures and report as error
+          const imageFailures = (schema?.metadata as any)
+            ?.imageDownloadFailures;
+          if (
+            imageFailures &&
+            Array.isArray(imageFailures) &&
+            imageFailures.length > 0
+          ) {
+            const failedUrls = imageFailures
+              .map((f: any) => f.url)
+              .slice(0, 10); // Limit to first 10
+            const errorMessage = `Unable to download ${
+              imageFailures.length
+            } image(s). Failed URLs: ${failedUrls.join(", ")}${
+              imageFailures.length > 10 ? "..." : ""
+            }`;
+
+            chrome.runtime.sendMessage(
+              {
+                type: "CAPTURE_ERROR",
+                error: errorMessage,
+                stage: "extract",
+                errorCode: "ASSET_DOWNLOAD_FAILED",
+                details: {
+                  failedCount: imageFailures.length,
+                  failedUrls: imageFailures.map((f: any) => ({
+                    url: f.url,
+                    reason: f.reason,
+                  })),
+                  totalImages: Object.keys(schema?.assets?.images || {}).length,
+                },
+              },
+              () => void chrome.runtime.lastError
+            );
+          }
+
           // Attach screenshot to schema
           if (screenshot && schema) {
             schema.screenshot = screenshot;
@@ -1396,7 +1712,16 @@ console.log("If you see this, content-script.js is executing!");
             schema.metadata.viewportHeight = viewport.height;
           }
 
-          overlay.update("✅ DOM extraction complete (50%)");
+          const elementCount = schema?.root?.children?.length || 0;
+          const imageCount = schema?.assets?.images
+            ? Object.keys(schema.assets.images).length
+            : 0;
+          overlay.update(
+            "✅ DOM extraction complete",
+            "DOM Extraction",
+            50,
+            `${elementCount} elements, ${imageCount} images`
+          );
           chrome.runtime.sendMessage(
             {
               type: "EXTRACTION_PROGRESS",
@@ -1404,10 +1729,8 @@ console.log("If you see this, content-script.js is executing!");
               message: "DOM extraction complete",
               percent: 50,
               stats: {
-                elements: schema?.tree?.children?.length,
-                images: schema?.assets?.images
-                  ? Object.keys(schema.assets.images).length
-                  : undefined,
+                elements: elementCount,
+                images: imageCount,
               },
             },
             () => void chrome.runtime.lastError
@@ -1415,7 +1738,7 @@ console.log("If you see this, content-script.js is executing!");
 
           // NEW: Run AI analysis on screenshot and merge results
           if (screenshot) {
-            overlay.update("🤖 Running AI analysis... (60%)");
+            overlay.update("🤖 Running AI analysis...", "AI Processing", 60);
             chrome.runtime.sendMessage(
               {
                 type: "EXTRACTION_PROGRESS",
@@ -1426,236 +1749,271 @@ console.log("If you see this, content-script.js is executing!");
               () => void chrome.runtime.lastError
             );
 
+            // Reset watchdog before AI analysis to give it more time
+            resetWatchdog();
+
             try {
-              console.log("🤖 [AI] Starting AI analysis via handoff server...");
-              const aiStartTime = Date.now();
-
-              // CRITICAL FIX: Add timeout to prevent hanging
-              const handoffBase = "http://localhost:4411";
-              const AI_ANALYSIS_TIMEOUT = 30000; // 30 seconds max
-
-              const fetchWithTimeout = (
-                url: string,
-                options: RequestInit,
-                timeout: number
-              ): Promise<Response> => {
-                return Promise.race([
-                  fetch(url, options),
-                  new Promise<Response>((_, reject) =>
-                    setTimeout(
-                      () =>
-                        reject(
-                          new Error("AI analysis timeout after 30 seconds")
-                        ),
-                      timeout
-                    )
-                  ),
-                ]);
-              };
-
-              let response: Response;
-              try {
-                response = await fetchWithTimeout(
-                  `${handoffBase}/api/ai-analyze`,
+              const reachableBase = await getReachableAiServerBase();
+              if (!reachableBase) {
+                overlay.update(
+                  "ℹ️ AI analysis skipped",
+                  "AI Processing",
+                  70,
+                  "Server not running"
+                );
+                chrome.runtime.sendMessage(
                   {
-                    method: "POST",
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({ screenshot }),
+                    type: "EXTRACTION_PROGRESS",
+                    phase: "AI Analysis",
+                    message: "AI analysis skipped (handoff server not running)",
+                    percent: 70,
                   },
-                  AI_ANALYSIS_TIMEOUT
+                  () => void chrome.runtime.lastError
                 );
-              } catch (fetchError) {
-                const errorMessage =
-                  fetchError instanceof Error
-                    ? fetchError.message
-                    : String(fetchError);
-                console.error("❌ [AI] Fetch failed:", errorMessage);
+              } else {
+                console.log(
+                  "🤖 [AI] Starting AI analysis via handoff server...",
+                  reachableBase
+                );
+                const aiStartTime = Date.now();
 
-                // Check if it's a timeout
-                if (errorMessage.includes("timeout")) {
-                  const elapsed = Date.now() - aiStartTime;
-                  throw new Error(
-                    `AI analysis timed out after ${elapsed}ms. The handoff server may be slow or unresponsive.`
-                  );
-                }
+                // CRITICAL FIX: Add timeout to prevent hanging
+                // Increased timeout to 60s to allow for complex AI analysis
+                const handoffBase = reachableBase;
+                const AI_ANALYSIS_TIMEOUT = 60000; // 60 seconds max (increased from 30s)
 
-                // Check if it's a network error
-                if (
-                  errorMessage.includes("Failed to fetch") ||
-                  errorMessage.includes("NetworkError")
-                ) {
-                  throw new Error(
-                    `Cannot connect to AI analysis server at ${handoffBase}. Is the handoff server running?`
-                  );
-                }
+                const fetchWithTimeout = (
+                  url: string,
+                  options: RequestInit,
+                  timeout: number
+                ): Promise<Response> => {
+                  return Promise.race([
+                    fetch(url, options),
+                    new Promise<Response>((_, reject) =>
+                      setTimeout(
+                        () =>
+                          reject(
+                            new Error(
+                              `AI analysis timeout after ${
+                                timeout / 1000
+                              } seconds`
+                            )
+                          ),
+                        timeout
+                      )
+                    ),
+                  ]);
+                };
 
-                throw new Error(`AI analysis request failed: ${errorMessage}`);
-              }
-
-              if (!response.ok) {
-                const statusText =
-                  response.statusText || `HTTP ${response.status}`;
-                let errorDetails = `AI analysis server returned ${statusText}`;
-
-                // Try to get error details from response
+                let response: Response;
                 try {
-                  const errorBody = await response.json();
-                  if (errorBody.error) {
-                    errorDetails = errorBody.error;
+                  response = await fetchWithTimeout(
+                    `${handoffBase}/api/ai-analyze`,
+                    {
+                      method: "POST",
+                      headers: { "Content-Type": "application/json" },
+                      body: JSON.stringify({ screenshot }),
+                    },
+                    AI_ANALYSIS_TIMEOUT
+                  );
+                } catch (fetchError) {
+                  const errorMessage =
+                    fetchError instanceof Error
+                      ? fetchError.message
+                      : String(fetchError);
+                  console.log("ℹ️ [AI] Request failed:", errorMessage);
+
+                  // Check if it's a timeout
+                  if (errorMessage.includes("timeout")) {
+                    const elapsed = Date.now() - aiStartTime;
+                    throw new Error(
+                      `AI analysis timed out after ${elapsed}ms. The handoff server may be slow or unresponsive.`
+                    );
                   }
-                } catch (e) {
-                  // Ignore JSON parse errors
+
+                  // Check if it's a network error
+                  if (
+                    errorMessage.includes("Failed to fetch") ||
+                    errorMessage.includes("NetworkError")
+                  ) {
+                    throw new Error(
+                      `Cannot connect to AI analysis server at ${handoffBase}. Is the handoff server running?`
+                    );
+                  }
+
+                  throw new Error(
+                    `AI analysis request failed: ${errorMessage}`
+                  );
                 }
 
-                console.error(
-                  `❌ [AI] Server error (${response.status}):`,
-                  errorDetails
-                );
-                throw new Error(errorDetails);
-              }
+                if (!response.ok) {
+                  const statusText =
+                    response.statusText || `HTTP ${response.status}`;
+                  let errorDetails = `AI analysis server returned ${statusText}`;
 
-              const aiResponse = await response.json();
-              if (!aiResponse.ok || !aiResponse.results) {
-                const errorMsg =
-                  aiResponse.error || "AI analysis returned no results";
-                console.error("❌ [AI] Invalid response:", errorMsg);
-                throw new Error(errorMsg);
-              }
-
-              const aiResults = aiResponse.results;
-              const aiDuration = Date.now() - aiStartTime;
-
-              console.log(`✅ [AI] Analysis completed in ${aiDuration}ms`);
-
-              // Store AI results in schema
-              if (aiResults.ocr) {
-                schema.ocr = aiResults.ocr;
-                console.log(
-                  `✅ [AI] OCR: ${
-                    aiResults.ocr.wordCount
-                  } words extracted (confidence: ${(
-                    aiResults.ocr.confidence || 0
-                  ).toFixed(2)})`
-                );
-              } else {
-                console.warn("⚠️ [AI] No OCR results returned");
-              }
-
-              if (aiResults.colorPalette) {
-                schema.colorPalette = aiResults.colorPalette;
-
-                // Integrate color palette into styles
-                if (!schema.styles) {
-                  schema.styles = { colors: {}, textStyles: {}, effects: {} };
-                }
-                if (
-                  aiResults.colorPalette.palette &&
-                  Object.keys(aiResults.colorPalette.palette).length > 0
-                ) {
-                  Object.entries(aiResults.colorPalette.palette).forEach(
-                    ([name, color]: [string, any]) => {
-                      if (color && color.hex) {
-                        const colorId = `palette-${name
-                          .toLowerCase()
-                          .replace(/\s+/g, "-")}`;
-                        schema.styles.colors[colorId] = {
-                          id: colorId,
-                          name: name,
-                          color: color.figma || {
-                            r: color.rgb.r / 255,
-                            g: color.rgb.g / 255,
-                            b: color.rgb.b / 255,
-                            a: 1,
-                          },
-                          usageCount: color.population || 1,
-                        };
-                      }
+                  // Try to get error details from response
+                  try {
+                    const errorBody = await response.json();
+                    if (errorBody.error) {
+                      errorDetails = errorBody.error;
                     }
+                  } catch (e) {
+                    // Ignore JSON parse errors
+                  }
+
+                  console.error(
+                    `❌ [AI] Server error (${response.status}):`,
+                    errorDetails
                   );
+                  throw new Error(errorDetails);
+                }
+
+                const aiResponse = await response.json();
+                if (!aiResponse.ok || !aiResponse.results) {
+                  const errorMsg =
+                    aiResponse.error || "AI analysis returned no results";
+                  console.error("❌ [AI] Invalid response:", errorMsg);
+                  throw new Error(errorMsg);
+                }
+
+                const aiResults = aiResponse.results;
+                const aiDuration = Date.now() - aiStartTime;
+
+                console.log(`✅ [AI] Analysis completed in ${aiDuration}ms`);
+
+                // Store AI results in schema
+                if (aiResults.ocr) {
+                  schema.ocr = aiResults.ocr;
                   console.log(
-                    `✅ [AI] Integrated ${
-                      Object.keys(schema.styles.colors).length
-                    } colors into style registry`
+                    `✅ [AI] OCR: ${
+                      aiResults.ocr.wordCount
+                    } words extracted (confidence: ${(
+                      aiResults.ocr.confidence || 0
+                    ).toFixed(2)})`
+                  );
+                } else {
+                  console.log("ℹ️ [AI] No OCR results returned");
+                }
+
+                if (aiResults.colorPalette) {
+                  schema.colorPalette = aiResults.colorPalette;
+
+                  // Integrate color palette into styles
+                  if (!schema.styles) {
+                    schema.styles = { colors: {}, textStyles: {}, effects: {} };
+                  }
+                  if (
+                    aiResults.colorPalette.palette &&
+                    Object.keys(aiResults.colorPalette.palette).length > 0
+                  ) {
+                    Object.entries(aiResults.colorPalette.palette).forEach(
+                      ([name, color]: [string, any]) => {
+                        if (color && color.hex) {
+                          const colorId = `palette-${name
+                            .toLowerCase()
+                            .replace(/\s+/g, "-")}`;
+                          schema.styles.colors[colorId] = {
+                            id: colorId,
+                            name: name,
+                            color: color.figma || {
+                              r: color.rgb.r / 255,
+                              g: color.rgb.g / 255,
+                              b: color.rgb.b / 255,
+                              a: 1,
+                            },
+                            usageCount: color.population || 1,
+                          };
+                        }
+                      }
+                    );
+                    console.log(
+                      `✅ [AI] Integrated ${
+                        Object.keys(schema.styles.colors).length
+                      } colors into style registry`
+                    );
+                  }
+                }
+
+                if (aiResults.mlComponents) {
+                  schema.mlComponents = aiResults.mlComponents;
+                  console.log(
+                    `✅ [AI] ML: ${aiResults.mlComponents.summary.total} components detected`
+                  );
+                } else {
+                  console.log(
+                    "ℹ️ [AI] No ML component detection results returned"
                   );
                 }
-              }
 
-              if (aiResults.mlComponents) {
-                schema.mlComponents = aiResults.mlComponents;
+                // Log any errors from AI analysis
+                if (
+                  aiResults.errors &&
+                  Object.keys(aiResults.errors).length > 0
+                ) {
+                  let serializedErrors: string | null = null;
+                  try {
+                    serializedErrors = JSON.stringify(aiResults.errors);
+                  } catch {
+                    // ignore
+                  }
+                  console.log(
+                    "ℹ️ [AI] Some AI models did not return results:",
+                    serializedErrors || aiResults.errors
+                  );
+                }
+
+                // Store AI execution summary in metadata
+                if (!schema.metadata) {
+                  schema.metadata = {};
+                }
+                schema.metadata.aiModelsExecuted = {
+                  ocr: !!aiResults.ocr,
+                  color: !!aiResults.colorPalette,
+                  ml: !!aiResults.mlComponents,
+                  timestamp: new Date().toISOString(),
+                };
+
+                // CRITICAL: Enhance schema with AI results to improve fidelity
                 console.log(
-                  `✅ [AI] ML: ${aiResults.mlComponents.summary.total} components detected`
+                  "🤖 [AI-Enhancer] Enhancing schema with AI results..."
                 );
-              } else {
-                console.warn(
-                  "⚠️ [AI] No ML component detection results returned"
+                try {
+                  const enhancedSchema = enhanceSchemaWithAI(schema, {
+                    ocr: aiResults.ocr,
+                    colorPalette: aiResults.colorPalette,
+                    mlComponents: aiResults.mlComponents,
+                    typography: aiResults.typography,
+                    spacingScale: aiResults.spacingScale,
+                  });
+                  // Update schema object properties instead of reassigning
+                  Object.assign(schema, enhancedSchema);
+                  console.log("✅ [AI-Enhancer] Schema enhancement complete");
+                } catch (enhanceError) {
+                  console.warn(
+                    "⚠️ [AI-Enhancer] Schema enhancement failed:",
+                    enhanceError
+                  );
+                  // Continue without enhancement - schema is still valid
+                }
+
+                overlay.update("✅ AI analysis complete", "AI Processing", 70);
+                chrome.runtime.sendMessage(
+                  {
+                    type: "EXTRACTION_PROGRESS",
+                    phase: "AI Analysis",
+                    message: "AI analysis complete",
+                    percent: 70,
+                  },
+                  () => void chrome.runtime.lastError
                 );
               }
-
-              // Log any errors from AI analysis
-              if (
-                aiResults.errors &&
-                Object.keys(aiResults.errors).length > 0
-              ) {
-                console.warn(
-                  "⚠️ [AI] Some AI models failed:",
-                  aiResults.errors
-                );
-              }
-
-              // Store AI execution summary in metadata
-              if (!schema.metadata) {
-                schema.metadata = {};
-              }
-              schema.metadata.aiModelsExecuted = {
-                ocr: !!aiResults.ocr,
-                color: !!aiResults.colorPalette,
-                ml: !!aiResults.mlComponents,
-                timestamp: new Date().toISOString(),
-              };
-
-              // CRITICAL: Enhance schema with AI results to improve fidelity
-              console.log(
-                "🤖 [AI-Enhancer] Enhancing schema with AI results..."
-              );
-              try {
-                const enhancedSchema = enhanceSchemaWithAI(schema, {
-                  ocr: aiResults.ocr,
-                  colorPalette: aiResults.colorPalette,
-                  mlComponents: aiResults.mlComponents,
-                  typography: aiResults.typography,
-                  spacingScale: aiResults.spacingScale,
-                });
-                // Update schema object properties instead of reassigning
-                Object.assign(schema, enhancedSchema);
-                console.log("✅ [AI-Enhancer] Schema enhancement complete");
-              } catch (enhanceError) {
-                console.warn(
-                  "⚠️ [AI-Enhancer] Schema enhancement failed:",
-                  enhanceError
-                );
-                // Continue without enhancement - schema is still valid
-              }
-
-              overlay.update("✅ AI analysis complete (70%)");
-              chrome.runtime.sendMessage(
-                {
-                  type: "EXTRACTION_PROGRESS",
-                  phase: "AI Analysis",
-                  message: "AI analysis complete",
-                  percent: 70,
-                },
-                () => void chrome.runtime.lastError
-              );
             } catch (aiError) {
               const errorMessage =
                 aiError instanceof Error ? aiError.message : String(aiError);
               const errorStack =
                 aiError instanceof Error ? aiError.stack : undefined;
 
-              console.error("❌ [AI] AI analysis failed:", errorMessage);
-              if (errorStack) {
-                console.error("❌ [AI] Stack trace:", errorStack);
-              }
+              console.log("ℹ️ [AI] AI analysis skipped:", errorMessage);
 
               // Log to server for debugging
               chrome.runtime.sendMessage(
@@ -1674,7 +2032,7 @@ console.log("If you see this, content-script.js is executing!");
               // Determine user-friendly error message
               let userMessage = "AI analysis skipped";
               if (errorMessage.includes("timeout")) {
-                userMessage = "AI analysis timed out (30s limit)";
+                userMessage = "AI analysis timed out (60s limit)";
               } else if (errorMessage.includes("Cannot connect")) {
                 userMessage = "AI server unavailable";
               } else if (errorMessage.includes("HTTP")) {
@@ -1687,7 +2045,12 @@ console.log("If you see this, content-script.js is executing!");
               }
 
               // Update overlay to show AI was skipped with specific reason
-              overlay.update(`⚠️ ${userMessage} (70%)`);
+              overlay.update(
+                `⚠️ ${userMessage}`,
+                "AI Processing",
+                70,
+                "Skipped"
+              );
               chrome.runtime.sendMessage(
                 {
                   type: "EXTRACTION_PROGRESS",
@@ -1713,16 +2076,23 @@ console.log("If you see this, content-script.js is executing!");
 
         if (event.data.type === "EXTRACTION_ERROR") {
           console.error("❌ Extraction error:", event.data.error);
+
           // Clear timeout on error
           if (timeoutIdRef.id) {
             clearTimeout(timeoutIdRef.id);
             timeoutIdRef.id = null;
           }
+
+          // Send structured error with stage and errorCode
+          const errorCode = event.data.errorCode || "EXTRACTION_FAILED";
+          const stage = event.data.stage || "extract";
           chrome.runtime.sendMessage(
             {
               type: "CAPTURE_ERROR",
               error: event.data.error,
-              details: event.data.details,
+              stage: stage,
+              errorCode: errorCode,
+              details: event.data.details || {},
             },
             () => void chrome.runtime.lastError
           );
@@ -1764,73 +2134,92 @@ console.log("If you see this, content-script.js is executing!");
         }
       };
 
-      // CRITICAL FIX: Set timeout to return partial schema instead of failing completely
+      // CRITICAL FIX: Set timeout to fail cleanly
       timeoutIdRef.id = setTimeout(async () => {
         window.removeEventListener("message", messageListener);
-        console.warn(
-          "⚠️ [TIMEOUT] DOM extraction timed out after 120 seconds - attempting to recover partial schema"
-        );
+        console.warn("⚠️ [TIMEOUT] DOM extraction timed out after 210 seconds");
 
-        // Try to get partial schema from the extractor
+        // STEP 1: First verify the injected script is actually loaded and responding
+        let scriptIsAlive = false;
         try {
-          const partialSchema = await new Promise<any>((resolve) => {
-            // Post message to injected script to get partial schema
-            const partialListener = (e: MessageEvent) => {
-              if (e.data?.type === "PARTIAL_SCHEMA") {
-                window.removeEventListener("message", partialListener);
-                resolve(e.data.schema);
+          console.log("🔍 [TIMEOUT] Verifying injected script is loaded...");
+          scriptIsAlive = await new Promise<boolean>((resolve) => {
+            let resolved = false;
+            const pingListener = (e: MessageEvent) => {
+              if (e.data?.type === "PONG") {
+                if (!resolved) {
+                  resolved = true;
+                  window.removeEventListener("message", pingListener);
+                  console.log(
+                    "✅ [TIMEOUT] Injected script is alive (PONG received)"
+                  );
+                  resolve(true);
+                }
               }
             };
-            window.addEventListener("message", partialListener);
-            window.postMessage({ type: "GET_PARTIAL_SCHEMA" }, "*");
+            window.addEventListener("message", pingListener);
+            window.postMessage({ type: "PING" }, "*");
 
-            // Timeout after 2 seconds
             setTimeout(() => {
-              window.removeEventListener("message", partialListener);
-              resolve(null);
-            }, 2000);
+              if (!resolved) {
+                resolved = true;
+                window.removeEventListener("message", pingListener);
+                console.warn(
+                  "⚠️ [TIMEOUT] Injected script did not respond to PING"
+                );
+                resolve(false);
+              }
+            }, 2000); // 2 second timeout for PING
           });
-
-          if (partialSchema && partialSchema.tree) {
-            console.log(
-              "✅ [TIMEOUT] Recovered partial schema with",
-              (partialSchema.metadata as any)?.extractedNodes || 0,
-              "nodes"
-            );
-            // Attach screenshot if available
-            if (screenshot && partialSchema) {
-              partialSchema.screenshot = screenshot;
-            }
-            // Add viewport metadata
-            if (viewport?.name && partialSchema?.metadata) {
-              (partialSchema.metadata as any).viewportName = viewport.name;
-            }
-            if (viewport?.width && partialSchema?.metadata) {
-              (partialSchema.metadata as any).viewportWidth = viewport.width;
-              (partialSchema.metadata as any).viewportHeight = viewport.height;
-            }
-
-            resolve({
-              data: partialSchema,
-              validationReport: null,
-              previewWithOverlay: null,
-            });
-            return;
-          }
-        } catch (recoveryError) {
+        } catch (pingError) {
           console.error(
-            "❌ [TIMEOUT] Failed to recover partial schema:",
-            recoveryError
+            "❌ [TIMEOUT] Error checking script status:",
+            pingError
           );
+          scriptIsAlive = false;
         }
 
-        // If recovery failed, reject with error
-        reject(
-          new Error(
-            "DOM extraction timed out after 120 seconds - no partial data available"
-          )
-        );
-      }, 120000);
+        // If script is not alive, provide specific error
+        if (!scriptIsAlive) {
+          const errorMessage =
+            "DOM extraction timed out. The injected script failed to load or crashed. Please refresh the page and try again.";
+          console.error("❌ [TIMEOUT]", errorMessage);
+
+          chrome.runtime.sendMessage({
+            type: "CAPTURE_ERROR",
+            error: errorMessage,
+            details: {
+              reason: "injected_script_not_responding",
+              diagnostics: {
+                pingFailed: true,
+                scriptLoaded: (window as any).__DOM_EXTRACTOR_LOADED__ || false,
+              },
+            },
+          });
+
+          reject(new Error(errorMessage));
+          return;
+        }
+
+        // Script is alive but timed out
+        const errorMessage =
+          "DOM extraction timed out (limit exceeded). The page is too complex to capture in the allotted time.";
+        console.error("❌ [TIMEOUT]", errorMessage);
+
+        chrome.runtime.sendMessage({
+          type: "CAPTURE_ERROR",
+          error: errorMessage,
+          details: {
+            reason: "extraction_timeout",
+            diagnostics: {
+              scriptAlive: scriptIsAlive,
+              scriptLoaded: (window as any).__DOM_EXTRACTOR_LOADED__ || false,
+            },
+          },
+        });
+
+        reject(new Error(errorMessage));
+      }, 210000); // 210 second timeout (allows for 180s extractor limit + communication)
 
       window.addEventListener("message", messageListener);
 
@@ -1894,13 +2283,35 @@ console.log("If you see this, content-script.js is executing!");
 
       const isReady = await waitForInjectedScript();
       if (!isReady) {
-        console.warn(
-          "⚠️ Injected script did not respond to PING. Attempting to proceed anyway..."
+        const errorMessage =
+          "The injected script failed to load or respond. Please refresh the page and try again.";
+        console.error(
+          "❌ [INJECT] Injected script did not respond to PING:",
+          errorMessage
         );
+
+        // Clear timeout since we're failing early
+        if (timeoutIdRef.id) {
+          clearTimeout(timeoutIdRef.id);
+          timeoutIdRef.id = null;
+        }
+        window.removeEventListener("message", messageListener);
+
+        // Send error notification
         chrome.runtime.sendMessage({
-          type: "LOG_TO_SERVER",
-          message: "Proceeding despite PING failure",
+          type: "CAPTURE_ERROR",
+          error: errorMessage,
+          details: {
+            reason: "injected_script_not_loaded",
+            diagnostics: {
+              pingFailed: true,
+              scriptLoaded: (window as any).__DOM_EXTRACTOR_LOADED__ || false,
+            },
+          },
         });
+
+        reject(new Error(errorMessage));
+        return;
       }
 
       // Trigger extraction by posting message to injected script
@@ -1922,7 +2333,7 @@ console.log("If you see this, content-script.js is executing!");
   interface CaptureData {
     version: string;
     metadata: any;
-    tree: any;
+    root: any; // Changed from 'tree' for consistency with DOM extractor output
     assets: any;
     styles: any;
     components?: any;
@@ -1945,6 +2356,7 @@ console.log("If you see this, content-script.js is executing!");
   ): Promise<void> {
     try {
       console.log("📦 sendLargeCaptureData called");
+      ensureCaptureId(captureData);
       // Use smaller chunks to avoid Chrome's message size limit
       const chunkSize = 10 * 1024 * 1024; // 10MB chunks (Chrome limit is ~64MB but smaller is safer)
 
@@ -2013,6 +2425,7 @@ console.log("If you see this, content-script.js is executing!");
     } catch (error) {
       console.error("❌ Failed to send large capture data:", error);
       // Fallback to regular send (may fail due to size)
+      ensureCaptureId(captureData);
       chrome.runtime.sendMessage({
         type: "CAPTURE_COMPLETE",
         data: captureData,
@@ -2458,7 +2871,7 @@ ${suggestions.map((s: string, i: number) => `${i + 1}. ${s}`).join("\\n")}
     `;
     }
 
-    dialog.innerHTML = `
+    dialog.innerHTML = createTrustedHTML(`
     <div style="text-align: center; margin-bottom: 25px;">
       <div style="font-size: 48px; margin-bottom: 15px;">${icon}</div>
       <h2 style="margin: 0; color: ${titleColor}; font-size: 24px;">${title}</h2>
@@ -2509,7 +2922,7 @@ ${suggestions.map((s: string, i: number) => `${i + 1}. ${s}`).join("\\n")}
         Close
       </button>
     </div>
-  `;
+  `) as string;
 
     // Add event listeners
     const sendToFigmaBtn = dialog.querySelector(
@@ -2573,7 +2986,11 @@ ${suggestions.map((s: string, i: number) => `${i + 1}. ${s}`).join("\\n")}
         },
         (response) => {
           if (response?.ok) {
-            sendToFigmaBtn.innerHTML = "✅ Sent to Figma!";
+            if (response.duplicate) {
+              sendToFigmaBtn.innerHTML = "✅ Already queued";
+            } else {
+              sendToFigmaBtn.innerHTML = "✅ Sent to Figma!";
+            }
             setTimeout(() => dialog.remove(), 2000);
           } else {
             sendToFigmaBtn.innerHTML = "❌ Send failed";

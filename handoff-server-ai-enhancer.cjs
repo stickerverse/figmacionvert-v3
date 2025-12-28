@@ -16,6 +16,24 @@ function enhanceSchemaWithAI(extractionData, aiContext) {
     return extractionData;
   }
 
+  // Guardrails: do not paint huge containers with guessed palette colors.
+  const viewport = extractionData?.metadata?.viewport || {};
+  const viewportWidth =
+    viewport.width ||
+    viewport.layoutViewportWidth ||
+    extractionData?.metadata?.viewportWidth ||
+    extractionData?.tree?.layout?.width ||
+    1440;
+  const viewportHeight =
+    viewport.height ||
+    viewport.layoutViewportHeight ||
+    extractionData?.metadata?.viewportHeight ||
+    extractionData?.tree?.layout?.height ||
+    900;
+  const viewportArea = Math.max(1, viewportWidth * viewportHeight);
+  const MAX_PALETTE_FILLS = 200; // hard cap to prevent flooding the schema
+  const MAX_PALETTE_FILL_AREA_RATIO = 0.05; // never fill nodes larger than 5% viewport
+
   console.log(
     "[ai-enhancer] 🤖 Starting schema enhancement with AI results..."
   );
@@ -55,40 +73,13 @@ function enhanceSchemaWithAI(extractionData, aiContext) {
       }
     }
 
-    // 2. Use color palette to fill missing colors
-    // CRITICAL FIX: Never apply AI color palette to body/html nodes
-    // Body/html backgrounds should be handled by the main frame, not filled with AI palette colors
-    // This prevents orange/gold backgrounds from appearing on the entire page
+    // 2. Color palette fill (DISABLED)
+    // Evidence: palette "Vibrant" fills have caused severe regressions (e.g. large
+    // yellow/orange blocks and incorrectly filled header elements). For pixel-fidelity,
+    // we do not invent background paints from a global palette.
     const isDocumentRoot = node.htmlTag === "body" || node.htmlTag === "html";
 
-    if (
-      !isDocumentRoot &&
-      aiContext.colorPalette &&
-      aiContext.colorPalette.palette
-    ) {
-      const hasNoFills = !node.fills || node.fills.length === 0;
-      const hasTransparentFill =
-        node.fills &&
-        node.fills.some(
-          (f) => f.type === "SOLID" && f.color && f.color.a < 0.1
-        );
-
-      if (hasNoFills || hasTransparentFill) {
-        const palette = aiContext.colorPalette.palette;
-        const vibrantColor =
-          palette["Vibrant"] || palette["vibrant"] || Object.values(palette)[0];
-
-        if (vibrantColor && vibrantColor.figma) {
-          if (!node.fills) node.fills = [];
-          node.fills.push({
-            type: "SOLID",
-            color: vibrantColor.figma,
-            opacity: 1,
-          });
-          enhancements.colorsFilled++;
-        }
-      }
-    }
+    void isDocumentRoot;
 
     // 3. Use ML detections to enhance components
     if (

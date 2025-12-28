@@ -237,22 +237,61 @@ export class TransformMatrixProcessor {
     // Translation is straightforward
     const translate = { x: e, y: f };
 
-    // Extract scale and rotation
-    const scaleX = Math.sqrt(a * a + b * b);
-    const scaleY = Math.sqrt(c * c + d * d);
+    // CRITICAL FIX: Numerical stability checks for matrix decomposition
+    const EPSILON = 1e-10;
+    const SCALE_MIN = 1e-6;  // Minimum scale to prevent division by near-zero
+    
+    // Calculate determinant to check for near-singular matrices
+    const determinant = a * d - b * c;
+    const isNearSingular = Math.abs(determinant) < EPSILON;
+    
+    if (isNearSingular) {
+      console.warn(`[TRANSFORM] Near-singular matrix detected (det=${determinant}), using identity fallback`);
+      return {
+        translate,
+        scale: { x: 1, y: 1 },
+        rotate: { angle: 0 },
+        skew: { x: 0, y: 0 }
+      };
+    }
+
+    // Extract scale with numerical stability
+    let scaleXRaw = Math.sqrt(a * a + b * b);
+    let scaleYRaw = Math.sqrt(c * c + d * d);
+    
+    // Prevent division by near-zero values
+    scaleXRaw = Math.max(scaleXRaw, SCALE_MIN);
+    scaleYRaw = Math.max(scaleYRaw, SCALE_MIN);
 
     // Determine if there's a reflection
-    const determinant = a * d - b * c;
     const scale = {
-      x: determinant < 0 ? -scaleX : scaleX,
-      y: scaleY
+      x: determinant < 0 ? -scaleXRaw : scaleXRaw,
+      y: scaleYRaw
     };
 
-    // Calculate rotation angle
-    const rotation = Math.atan2(b, a);
+    // Calculate rotation angle with stability check
+    let rotation: number;
+    if (Math.abs(a) < EPSILON && Math.abs(b) < EPSILON) {
+      // Degenerate case: use alternative calculation
+      rotation = Math.atan2(d, c) + Math.PI / 2;
+    } else {
+      rotation = Math.atan2(b, a);
+    }
+    
+    // Normalize rotation to [0, 2π) range
+    if (rotation < 0) {
+      rotation += 2 * Math.PI;
+    }
 
-    // Calculate skew
-    const skewX = Math.atan2(a * c + b * d, scaleX * scaleX);
+    // Calculate skew with numerical stability
+    let skewX: number;
+    const scaleXSq = scaleXRaw * scaleXRaw;
+    if (scaleXSq < EPSILON) {
+      skewX = 0; // Avoid division by near-zero
+    } else {
+      skewX = Math.atan2(a * c + b * d, scaleXSq);
+    }
+    
     const skewY = 0; // CSS 2D transforms don't support skewY in decomposition
 
     return {

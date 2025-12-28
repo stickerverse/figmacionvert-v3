@@ -3,16 +3,19 @@
   "version": "1.0.0",
   "description": "Import web pages as editable Figma designs",
   "scripts": {
-    "build": "esbuild src/code.ts --bundle --format=cjs --platform=node --target=es6 --loader:.html=text --outfile=dist/code.js --tree-shaking=true --external:worker_threads --external:child_process --external:fs --external:path",
-    "watch": "esbuild src/code.ts --bundle --format=cjs --platform=node --target=es6 --loader:.html=text --outfile=dist/code.js --watch"
+    "clean": "rm -rf dist node_modules/.cache .cache && rm -f tsconfig.tsbuildinfo",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "build:bundle": "node esbuild.config.cjs",
+    "build": "npm run typecheck && npm run build:bundle",
+    "watch": "npm run typecheck && node esbuild.config.cjs --watch"
   },
   "devDependencies": {
     "@figma/plugin-typings": "^1.90.0",
     "@types/node": "^20.0.0",
+    "@types/pako": "^2.0.3",
     "concurrently": "^8.2.0",
     "esbuild": "^0.25.11",
-    "typescript": "^5.3.0",
-    "@types/pako": "^2.0.3"
+    "typescript": "^5.3.0"
   },
   "dependencies": {
     "pako": "^2.1.0"

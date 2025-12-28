@@ -83,10 +83,10 @@ export class LayoutValidator {
     };
 
     // Validate the tree
-    await this.validateNode(schema.tree);
+    await this.validateNode(schema.root);
 
     // Check for overlapping siblings at each level
-    await this.checkOverlappingSiblings(schema.tree, progressCallback);
+    await this.checkOverlappingSiblings(schema.root, progressCallback);
 
     // Calculate accuracy metrics
     const avgPositionAccuracy =
@@ -249,23 +249,23 @@ export class LayoutValidator {
     if (!autoLayout) return;
 
     // Check for invalid layout mode
-    if (!["HORIZONTAL", "VERTICAL", "NONE"].includes(autoLayout.layoutMode)) {
+    if (!["HORIZONTAL", "VERTICAL"].includes(autoLayout.mode)) {
       this.issues.push({
         severity: "error",
         type: "layout",
         nodeId: node.id,
         nodeName: node.name,
-        message: `Invalid Auto Layout mode: ${autoLayout.layoutMode}`,
-        suggestion: "Valid modes are HORIZONTAL, VERTICAL, or NONE",
+        message: `Invalid Auto Layout mode: ${autoLayout.mode}`,
+        suggestion: "Valid modes are HORIZONTAL or VERTICAL",
       });
     }
 
     // Check for negative padding
     if (
-      autoLayout.paddingTop < 0 ||
-      autoLayout.paddingRight < 0 ||
-      autoLayout.paddingBottom < 0 ||
-      autoLayout.paddingLeft < 0
+      autoLayout.padding.top < 0 ||
+      autoLayout.padding.right < 0 ||
+      autoLayout.padding.bottom < 0 ||
+      autoLayout.padding.left < 0
     ) {
       this.issues.push({
         severity: "warning",
@@ -333,7 +333,7 @@ export class LayoutValidator {
 
     if (!node.children || node.children.length < 2) return;
 
-    if (node.autoLayout && node.autoLayout.layoutMode !== "NONE") {
+    if (node.autoLayout && node.autoLayout.validation?.safe === true) {
       // Auto-layout siblings don't overlap by definition (usually)
       for (const child of node.children) {
         await this.checkOverlappingSiblings(child, progressCallback, startTime);
@@ -626,7 +626,7 @@ export class LayoutValidator {
     }
 
     const hasAutoLayout =
-      node.autoLayout && node.autoLayout.layoutMode !== "NONE";
+      node.autoLayout && node.autoLayout.validation?.safe === true;
 
     // Check if this should be Auto Layout but isn't
     if (!hasAutoLayout && node.children.length >= 2) {

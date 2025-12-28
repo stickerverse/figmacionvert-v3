@@ -1,4 +1,7 @@
-import { handleWebpTranscodeResult } from "./ui-bridge";
+import {
+  handleImageTranscodeResult,
+  handleWebpTranscodeResult,
+} from "./ui-bridge";
 
 // Import the static UI
 import uiHtml from "../ui/index-static.html";
@@ -10,6 +13,7 @@ import { prepareLayoutSchema } from "./layout-solver";
 import { upgradeSelectionToAutoLayout } from "./layout-upgrader";
 import { WTFParser } from "./wtf-parser";
 import { diagnostics } from "./node-builder";
+import { normalizeSchemaTreeForFigma } from "./tree-normalizer";
 import pako from "pako";
 
 // Type definitions for API responses
@@ -43,9 +47,56 @@ interface MissingFontReport {
 
 figma.showUI(uiHtml, { width: 400, height: 600 });
 
+function formatUnknownError(error: unknown): string {
+  if (error instanceof Error) {
+    const msg = error.message || String(error);
+    
+    // Improve common network error messages
+    if (msg.toLowerCase().includes('failed to fetch')) {
+      return 'Server connection failed - ensure handoff server is running on localhost:4411';
+    }
+    if (msg.includes('ECONNREFUSED') || msg.includes('connection refused')) {
+      return 'Connection refused - handoff server not running';
+    }
+    if (msg.includes('ENOTFOUND') || msg.includes('name resolution failed')) {
+      return 'Host not found - check server configuration';
+    }
+    if (msg.includes('timeout')) {
+      return 'Connection timeout - server may be overloaded';
+    }
+    
+    return msg;
+  }
+  if (typeof error === "string") {
+    // Handle string error messages
+    if (error.toLowerCase().includes('failed to fetch')) {
+      return 'Server connection failed - ensure handoff server is running on localhost:4411';
+    }
+    return error;
+  }
+  if (error === null || error === undefined) return String(error);
+  if (typeof error === "number" || typeof error === "boolean")
+    return String(error);
+  if (typeof error === "object") {
+    const maybe = error as any;
+    if (typeof maybe.message === "string" && maybe.message.trim()) {
+      return formatUnknownError(maybe.message);
+    }
+    if (typeof maybe.error === "string" && maybe.error.trim()) {
+      return formatUnknownError(maybe.error);
+    }
+    try {
+      return JSON.stringify(error);
+    } catch {
+      return Object.prototype.toString.call(error);
+    }
+  }
+  return String(error);
+}
+
 const defaultEnhancedOptions: Partial<EnhancedImportOptions> = {
   createMainFrame: true,
-  createScreenshotOverlay: true,
+  createScreenshotOverlay: false,
   enableBatchProcessing: true,
   verifyPositions: true,
   maxBatchSize: 10,
@@ -58,6 +109,52 @@ const defaultEnhancedOptions: Partial<EnhancedImportOptions> = {
   applyAutoLayout: true,
   createStyles: true,
 };
+
+function sanitizeLargeVibrantPaletteFills(schema: any): number {
+  const palette = schema?.colorPalette?.palette;
+  const vibrant = palette?.Vibrant || palette?.vibrant;
+  const vibrantColor = vibrant?.figma;
+  if (!vibrantColor) return 0;
+
+  const vp = schema?.metadata?.viewport || {};
+  const viewportWidth = vp.width || schema?.metadata?.viewportWidth || 1440;
+  const viewportHeight = vp.height || schema?.metadata?.viewportHeight || 900;
+  const viewportArea = Math.max(1, viewportWidth * viewportHeight);
+  const maxArea = viewportArea * 0.05; // must match schema guardrail threshold
+  const eps = 1e-6;
+
+  const nearlyEqual = (a: number, b: number) => Math.abs(a - b) <= eps;
+  const isVibrantSolid = (fill: any) => {
+    if (!fill || fill.type !== "SOLID" || !fill.color) return false;
+    const c = fill.color;
+    return (
+      nearlyEqual(c.r, vibrantColor.r) &&
+      nearlyEqual(c.g, vibrantColor.g) &&
+      nearlyEqual(c.b, vibrantColor.b)
+    );
+  };
+
+  let removed = 0;
+  const walk = (node: any) => {
+    if (!node) return;
+    const w = node.layout?.width || 0;
+    const h = node.layout?.height || 0;
+    const area = w * h;
+
+    if (area > maxArea && Array.isArray(node.fills) && node.fills.length > 0) {
+      const before = node.fills.length;
+      node.fills = node.fills.filter((f: any) => !isVibrantSolid(f));
+      removed += before - node.fills.length;
+    }
+
+    if (Array.isArray(node.children)) {
+      for (const child of node.children) walk(child);
+    }
+  };
+
+  walk(schema?.root || schema?.tree);
+  return removed;
+}
 
 let isImporting = false;
 
@@ -77,22 +174,17 @@ let lastTelemetry: HandoffTelemetry | null = null;
 let chromeConnectionState: "connected" | "disconnected" = "disconnected";
 let serverConnectionState: "connected" | "disconnected" = "disconnected";
 // Capture service endpoints - configured for cloud deployment
-// Note: Environment variables not available in Figma plugin sandbox
-// Temporarily disabled cloud for local testing
-const CAPTURE_SERVICE_URL = null; // 'https://capture-service-sandy.vercel.app';
-const CAPTURE_SERVICE_API_KEY =
-  "f7df13dd6f622998e79f8ec581cc2f4dc908331cadb426b74ac4b8879d186da2";
+// Handoff server configuration
 const HANDOFF_API_KEY =
   ((globalThis as any).__HANDOFF_API_KEY as string | undefined) || "";
 
-const HANDOFF_BASES = CAPTURE_SERVICE_URL
-  ? [CAPTURE_SERVICE_URL]
-  : [
-      (globalThis as any).__HANDOFF_SERVER_URL ?? "http://127.0.0.1:4411",
-      "http://localhost:4411",
-      "http://127.0.0.1:5511",
-      "http://localhost:5511",
-    ];
+const HANDOFF_BASES = [
+  (globalThis as any).__HANDOFF_SERVER_URL ?? "http://127.0.0.1:4411",
+  "http://localhost:4411",
+  // Legacy ports (kept for backward compatibility) 
+  "http://127.0.0.1:5511",
+  "http://localhost:5511",
+];
 const HANDOFF_POLL_INTERVAL = 10000;
 let handoffBaseIndex = 0;
 let handoffPollTimer: ReturnType<typeof setInterval> | null = null;
@@ -151,11 +243,11 @@ figma.ui.onmessage = async (msg) => {
     handleWebpTranscodeResult(msg);
     return;
   }
-
-  if (msg.type === "puppeteer-start-live-mode") {
-    figma.ui.postMessage({ type: "puppeteer-control-start" });
+  if (msg.type === "image-transcoded") {
+    handleImageTranscodeResult(msg);
     return;
   }
+
 
   if (
     msg.type === "import" ||
@@ -179,11 +271,69 @@ figma.ui.onmessage = async (msg) => {
     return;
   }
 
+  if (msg.type === "fix-legacy-screenshot-layer") {
+    const { removed, scannedScopes } = removeLegacyScreenshotBaseLayers(
+      msg.scope === "page" ? "page" : "selection"
+    );
+    figma.ui.postMessage({
+      type: "legacy-screenshot-fix-result",
+      removed,
+      scannedScopes,
+    });
+    if (removed > 0) {
+      figma.notify(`✅ Removed ${removed} legacy Screenshot Base Layer(s)`, {
+        timeout: 3000,
+      });
+    } else {
+      figma.notify("No legacy Screenshot Base Layer found in scope", {
+        timeout: 2500,
+      });
+    }
+    return;
+  }
+
   if (msg.type === "upgrade-auto-layout") {
     upgradeSelectionToAutoLayout();
     return;
   }
 };
+
+function removeLegacyScreenshotBaseLayers(scope: "selection" | "page"): {
+  removed: number;
+  scannedScopes: number;
+} {
+  const roots =
+    scope === "selection" && figma.currentPage.selection.length > 0
+      ? figma.currentPage.selection
+      : [figma.currentPage];
+
+  let removed = 0;
+  let scannedScopes = 0;
+
+  for (const root of roots) {
+    scannedScopes++;
+    // If the root itself is the legacy layer.
+    if (root.type === "RECTANGLE" && root.name === "Screenshot Base Layer") {
+      root.remove();
+      removed++;
+      continue;
+    }
+
+    if ("findAll" in root) {
+      const matches = (root as any).findAll(
+        (n: SceneNode) =>
+          n.type === "RECTANGLE" && n.name === "Screenshot Base Layer"
+      ) as RectangleNode[];
+
+      for (const node of matches) {
+        node.remove();
+        removed++;
+      }
+    }
+  }
+
+  return { removed, scannedScopes };
+}
 
 async function handleImportRequest(
   data: any,
@@ -241,28 +391,50 @@ async function handleImportRequest(
   // Unwrap multi-viewport format if present (checking for captures array is sufficient)
   if (Array.isArray(schema.captures) && schema.captures.length > 0) {
     console.log("🔓 Unwrapping multi-viewport capture format...");
+    console.log(
+      `[DEBUG] Found ${schema.captures.length} captures in multiViewport format`
+    );
+
+    // Debug each capture structure
+    schema.captures.forEach((cap, i) => {
+      console.log(`[DEBUG] Capture ${i}:`, {
+        viewport: cap.viewport || cap.name || "unnamed",
+        hasData: !!cap.data,
+        hasRoot: !!cap.data?.root,
+        hasTree: !!cap.data?.tree,
+        hasSchema: !!cap.data?.schema,
+        hasRawJson: !!cap.data?.rawSchemaJson,
+        directRoot: !!cap.root,
+        directTree: !!cap.tree,
+        directSchema: !!cap.schema,
+        rootChildCount:
+          cap.data?.root?.children?.length || cap.root?.children?.length || cap.data?.tree?.children?.length || cap.tree?.children?.length || 0,
+      });
+    });
+
     let picked: any = null;
     for (const cap of schema.captures) {
       if (!cap) continue;
       // Try common shapes
-      const candidate = cap.data?.tree
+      const candidate = (cap.data?.root || cap.data?.tree)
         ? cap.data
-        : cap.data?.schema?.tree
+        : (cap.data?.schema?.root || cap.data?.schema?.tree)
         ? cap.data.schema
         : cap.data?.rawSchemaJson
         ? JSON.parse(cap.data.rawSchemaJson)
         : cap.data || cap.schema;
-      if (candidate?.tree) {
+      if (candidate?.root || candidate?.tree) {
         picked = candidate;
         console.log(
-          `✅ Using viewport: ${cap.viewport || cap.name || "unnamed"}`
+          `✅ Selected viewport: ${cap.viewport || cap.name || "unnamed"}`,
+          `Root children: ${(candidate.root || candidate.tree)?.children?.length || 0}`
         );
         break;
       }
       if (cap?.rawSchemaJson && !picked) {
         try {
           const parsed = JSON.parse(cap.rawSchemaJson);
-          if (parsed?.tree) {
+          if (parsed?.root || parsed?.tree) {
             picked = parsed;
             console.log(
               `✅ Parsed rawSchemaJson for viewport: ${
@@ -278,6 +450,15 @@ async function handleImportRequest(
     }
     if (picked) {
       schema = picked;
+      console.log("[DEBUG] Schema after unwrapping:", {
+        hasRoot: !!schema.root,
+        hasTree: !!schema.tree,
+        hasMetadata: !!schema.metadata,
+        hasAssets: !!schema.assets,
+        rootType: schema.root?.type,
+        rootChildren: schema.root?.children?.length || 0,
+        rootNodeId: schema.root?.id,
+      });
     } else {
       console.error(
         "❌ Multi-viewport format detected but no valid capture data found"
@@ -291,63 +472,76 @@ async function handleImportRequest(
     }
   }
 
-  // Fallback: unwrap rawSchemaJson or nested schema if tree missing
-  if (!schema.tree) {
+  // Apply migration if legacy tree exists
+  if (schema.tree && !schema.root) {
+    console.log("🔄 [MIGRATION] Converting legacy 'tree' to canonical 'root'");
+    schema.root = schema.tree;
+    delete schema.tree;
+  }
+
+  // Fallback: unwrap rawSchemaJson or nested schema if root missing
+  if (!schema.root) {
     if (schema.rawSchemaJson && typeof schema.rawSchemaJson === "string") {
       try {
         const parsed = JSON.parse(schema.rawSchemaJson);
-        if (parsed?.tree) schema = parsed;
+        if (parsed?.root) {
+          schema = parsed;
+        } else if (parsed?.tree) {
+          console.log("🔄 [MIGRATION] Converting nested legacy 'tree' to canonical 'root'");
+          parsed.root = parsed.tree;
+          delete parsed.tree;
+          schema = parsed;
+        }
       } catch {
         // ignore parse error
       }
+    } else if (schema.schema?.root) {
+      schema = schema.schema;
     } else if (schema.schema?.tree) {
+      console.log("🔄 [MIGRATION] Converting nested legacy 'tree' to canonical 'root'");
+      schema.schema.root = schema.schema.tree;
+      delete schema.schema.tree;
       schema = schema.schema;
     }
   }
 
-  // Final validation: ensure we have tree data
-  if (!schema.tree) {
-    // Deep search for any nested object that contains a tree
+  // Final validation: ensure we have root data
+  if (!schema.root) {
+    // Deep search for any nested object that contains a root or tree
     const visited = new Set<any>();
-    const findSchemaWithTree = (obj: any): any | null => {
+    const findSchemaWithRoot = (obj: any): any | null => {
       if (!obj || typeof obj !== "object") return null;
       if (visited.has(obj)) return null;
       visited.add(obj);
-      if ((obj as any).tree) return obj;
+      if ((obj as any).root || (obj as any).tree) return obj;
       for (const value of Object.values(obj)) {
         if (value && typeof value === "object") {
-          const found = findSchemaWithTree(value);
+          const found = findSchemaWithRoot(value);
           if (found) return found;
         }
       }
       return null;
     };
-    const nested = findSchemaWithTree(schema);
+    const nested = findSchemaWithRoot(schema);
     if (nested) {
-      console.log("✅ Found nested schema with tree, using it");
+      console.log("✅ Found nested schema with root/tree, using it");
       schema = nested;
     }
   }
 
-  // ENFORCE PUPPETEER-ONLY ARCHITECTURE: Reject schemas not from Puppeteer pipeline
+  // Accept schemas from Extension capture engine
   const captureEngine =
     schema.meta?.captureEngine || schema.metadata?.captureEngine;
-  if (captureEngine && captureEngine !== "puppeteer") {
-    console.warn(`⚠️ Rejecting schema with captureEngine: ${captureEngine}`);
-    figma.ui.postMessage({
-      type: "error",
-      message: `This schema was created by "${captureEngine}" but only Puppeteer captures are supported. Please recapture using the extension.`,
-    });
-    isImporting = false;
-    return;
-  }
-  // Log if Puppeteer engine confirmed
-  if (captureEngine === "puppeteer") {
-    console.log("✅ Puppeteer capture engine confirmed");
+  if (captureEngine === "extension") {
+    console.log("✅ Extension capture engine confirmed");
+  } else if (captureEngine) {
+    console.log(
+      `ℹ️ Unknown capture engine: ${captureEngine}, proceeding anyway`
+    );
   }
 
-  if (!schema.tree) {
-    console.error("❌ No tree data available for import. Data structure:", {
+  if (!schema.root) {
+    console.error("❌ No root data available for import. Data structure:", {
       hasData: !!schema,
       dataKeys: schema && typeof schema === "object" ? Object.keys(schema) : [],
       dataType: typeof schema,
@@ -359,7 +553,7 @@ async function handleImportRequest(
     figma.ui.postMessage({
       type: "error",
       message:
-        "No tree data available for import. The schema may be in an unsupported format.",
+        "No root data available for import. The schema may be in an unsupported format.",
     });
     isImporting = false;
     return;
@@ -373,10 +567,10 @@ async function handleImportRequest(
   try {
     console.log("🚀 Starting import with schema:", {
       version: schema.version,
-      treeNodes: schema.tree ? "present" : "missing",
-      treeType: schema.tree?.type,
-      treeName: schema.tree?.name,
-      treeChildren: schema.tree?.children?.length || 0,
+      rootNodes: schema.root ? "present" : "missing",
+      rootType: schema.root?.type,
+      rootName: schema.root?.name,
+      rootChildren: schema.root?.children?.length || 0,
       assets: schema.assets
         ? Object.keys(schema.assets.images || {}).length
         : 0,
@@ -400,9 +594,32 @@ async function handleImportRequest(
       percent: 5,
     });
 
-    console.log("✅ Preparing layout schema...");
-    prepareLayoutSchema(schema);
-    console.log("✅ Schema preparation complete");
+    const treeNorm = normalizeSchemaTreeForFigma(schema);
+    if (treeNorm.removedNodes > 0 || treeNorm.renamedNodes > 0) {
+      console.log(
+        "🧹 Normalized schema tree for professional nesting:",
+        treeNorm
+      );
+    }
+
+    if (resolvedOptions.applyAutoLayout !== false) {
+      console.log("✅ Preparing layout schema (Auto Layout enabled)...");
+      prepareLayoutSchema(schema);
+      console.log("✅ Schema preparation complete");
+    } else {
+      console.log(
+        "🧷 Pixel-perfect mode: skipping prepareLayoutSchema() (Auto Layout disabled)"
+      );
+    }
+
+    // Guardrail: older jobs may contain AI-invented palette fills that can create
+    // giant orange/yellow overlays; remove those fills from large nodes.
+    const removedPaletteFills = sanitizeLargeVibrantPaletteFills(schema);
+    if (removedPaletteFills > 0) {
+      console.warn(
+        `⚠️ Removed ${removedPaletteFills} large-node Vibrant palette fill(s) for pixel fidelity`
+      );
+    }
 
     // Use enhanced importer for better Figma compatibility
     console.log("✅ Creating enhanced Figma importer...");
@@ -415,7 +632,72 @@ async function handleImportRequest(
       enableDebugMode: false,
       retryFailedImages: true,
       enableProgressiveLoading: false,
+      applyAutoLayout: resolvedOptions.applyAutoLayout,
     };
+
+
+    // ENHANCED PRE-IMPORT VALIDATION - Added to debug blank white frames issue
+    console.log("🔍 [PRE-IMPORT] Comprehensive schema validation before EnhancedFigmaImporter creation...");
+    console.log("🔍 [PRE-IMPORT] Schema overview:", {
+      schemaExists: !!schema,
+      schemaType: typeof schema,
+      schemaSize: JSON.stringify(schema).length,
+      rootKeys: schema && typeof schema === 'object' ? Object.keys(schema) : []
+    });
+
+    if (schema && schema.root) {
+      console.log("✅ [PRE-IMPORT] Root validation:", {
+        rootExists: !!schema.root,
+        rootType: typeof schema.root,
+        rootId: schema.root.id,
+        rootNodeType: schema.root.type,
+        hasChildren: Array.isArray(schema.root.children),
+        childrenCount: schema.root.children ? schema.root.children.length : 0,
+        rootKeys: schema.root && typeof schema.root === 'object' ? Object.keys(schema.root) : []
+      });
+
+      if (schema.root.children && schema.root.children.length > 0) {
+        const firstChild = schema.root.children[0];
+        console.log("✅ [PRE-IMPORT] First child sample:", {
+          childId: firstChild?.id,
+          childType: firstChild?.type,
+          childName: firstChild?.name,
+          hasLayout: !!firstChild?.layout,
+          hasStyles: !!firstChild?.styles
+        });
+      } else {
+        console.warn("⚠️ [PRE-IMPORT] Root has no children - this will likely result in blank frames");
+      }
+    } else {
+      console.error("❌ [PRE-IMPORT] CRITICAL: Schema has no tree - this WILL cause blank frames");
+    }
+
+    if (schema && schema.metadata) {
+      console.log("✅ [PRE-IMPORT] Metadata validation:", {
+        hasMetadata: !!schema.metadata,
+        metadataKeys: schema.metadata && typeof schema.metadata === 'object' ? Object.keys(schema.metadata) : [],
+        url: schema.metadata?.url,
+        viewportWidth: schema.metadata?.viewportWidth,
+        viewportHeight: schema.metadata?.viewportHeight
+      });
+    }
+
+    if (schema && schema.assets) {
+      console.log("✅ [PRE-IMPORT] Assets validation:", {
+        hasAssets: !!schema.assets,
+        assetKeys: schema.assets && typeof schema.assets === 'object' ? Object.keys(schema.assets) : [],
+        imageCount: schema.assets?.images ? Object.keys(schema.assets.images).length : 0
+      });
+    }
+
+    console.log("[DEBUG] About to create EnhancedFigmaImporter with schema:", {
+      hasRoot: !!schema.root,
+      rootType: schema.root?.type,
+      rootChildren: schema.root?.children?.length || 0,
+      hasAssets: !!schema.assets,
+      hasMetadata: !!schema.metadata,
+      schemaKeys: Object.keys(schema),
+    });
 
     const importer = new EnhancedFigmaImporter(schema, enhancedOptions);
     console.log("✅ Starting enhanced import process...");
@@ -504,6 +786,26 @@ async function handleImportRequest(
         ? error.message
         : "Import failed. See console for details.";
     console.error("Error message:", message);
+    // #region agent log
+    fetch("http://127.0.0.1:7242/ingest/ec6ff4c5-673b-403d-a943-70cb2e5565f2", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        location: "code.ts:handleImportRequest:catch",
+        message: "Top-level import error caught",
+        data: {
+          message,
+          errName: error instanceof Error ? error.name : "unknown",
+          errStack:
+            error instanceof Error ? (error.stack || "").slice(0, 800) : "",
+        },
+        timestamp: Date.now(),
+        sessionId: "debug-session",
+        runId: "run1",
+        hypothesisId: "H_IMPORT_ABORT",
+      }),
+    }).catch(() => {});
+    // #endregion
     figma.ui.postMessage({ type: "error", message });
     figma.notify(`✗ Import failed: ${message}`, { error: true });
     postHandoffStatus("error", message);
@@ -674,7 +976,7 @@ function startHandoffPolling() {
 }
 
 function currentHandoffBase(): string {
-  return HANDOFF_BASES[handoffBaseIndex] || "http://127.0.0.1:5511";
+  return HANDOFF_BASES[handoffBaseIndex] || "http://127.0.0.1:4411";
 }
 
 function rotateHandoffBase() {
@@ -799,7 +1101,8 @@ async function fetchHandoffHistory(): Promise<{
       applyTelemetry(body?.telemetry || null);
       return { jobs: body?.jobs || [], telemetry: body?.telemetry || null };
     } catch (err) {
-      lastError = err instanceof Error ? err : new Error(String(err));
+      lastError =
+        err instanceof Error ? err : new Error(formatUnknownError(err));
       continue;
     }
   }
@@ -829,7 +1132,8 @@ async function fetchHandoffJob(jobId: string): Promise<any> {
       const payload = decompressPayload(body?.job?.payload);
       return { job: body?.job, payload };
     } catch (err) {
-      lastError = err instanceof Error ? err : new Error(String(err));
+      lastError =
+        err instanceof Error ? err : new Error(formatUnknownError(err));
       continue;
     }
   }
@@ -865,17 +1169,12 @@ async function pollHandoffJobs(): Promise<void> {
       return;
     }
 
-    const isCloudService = !!CAPTURE_SERVICE_URL;
     const endpoint = `${currentHandoffBase()}/api/jobs/next`;
     console.log("[POLL] Fetching jobs from:", endpoint);
 
     const headers: Record<string, string> = buildHandoffHeaders({
       "cache-control": "no-cache",
     });
-
-    if (CAPTURE_SERVICE_API_KEY) {
-      headers["x-api-key"] = CAPTURE_SERVICE_API_KEY;
-    }
 
     const response = await fetch(endpoint, {
       method: "GET",
@@ -901,7 +1200,7 @@ async function pollHandoffJobs(): Promise<void> {
         return;
       }
       if (response.status === 204) {
-        // No jobs available (cloud service returns 204)
+        // No jobs available
         updateServerConnection("connected");
         postHandoffStatus("waiting");
         return;
@@ -914,55 +1213,37 @@ async function pollHandoffJobs(): Promise<void> {
     handoffCooldownUntil = 0;
     updateServerConnection("connected");
 
-    if (isCloudService) {
-      // Cloud service format: { jobId, state, schemaUrl, screenshotUrl, metadata }
-      const jobResult = (await response.json()) as {
-        jobId: string;
-        state: string;
-        schemaUrl?: string;
-        screenshotUrl?: string;
-        metadata?: unknown;
-      };
+    // Localhost handoff format: { job: { id, payload }, telemetry }
+    const body = (await response.json()) as HandoffJobResponse;
+    console.log("[POLL] Response body:", {
+      hasJob: !!body?.job,
+      hasPayload: !!body?.job?.payload,
+      hasTelemetry: !!body?.telemetry,
+    });
 
-      if (jobResult.state === "completed" && jobResult.schemaUrl) {
-        // Fetch the schema from signed URL
-        const schemaResponse = await fetch(jobResult.schemaUrl);
-        let schema = await schemaResponse.json();
+    applyTelemetry(body?.telemetry || null);
 
-        // Decompress if needed
-        schema = decompressPayload(schema);
-
-        postHandoffStatus("job-ready", `Importing job ${jobResult.jobId}`);
-        await handleImportRequest(schema, undefined, "auto-import");
-      } else {
-        postHandoffStatus("waiting");
-      }
+    if (body?.job?.payload) {
+      console.log("[POLL] Job found! Starting import...");
+      const payload = decompressPayload(body.job.payload);
+      postHandoffStatus("job-ready", `Importing job ${body.job.id}`);
+      await handleImportRequest(payload, undefined, "auto-import");
     } else {
-      // Legacy localhost handoff format: { job: { id, payload }, telemetry }
-      const body = (await response.json()) as HandoffJobResponse;
-      console.log("[POLL] Response body:", {
-        hasJob: !!body?.job,
-        hasPayload: !!body?.job?.payload,
-        hasTelemetry: !!body?.telemetry,
-      });
-
-      applyTelemetry(body?.telemetry || null);
-
-      if (body?.job?.payload) {
-        console.log("[POLL] Job found! Starting import...");
-        const payload = decompressPayload(body.job.payload);
-        postHandoffStatus("job-ready", `Importing job ${body.job.id}`);
-        await handleImportRequest(payload, undefined, "auto-import");
-      } else {
-        console.log("[POLL] No job in response");
-        postHandoffStatus("waiting");
-      }
-      updateServerConnection("connected");
+      console.log("[POLL] No job in response");
+      postHandoffStatus("waiting");
     }
+    updateServerConnection("connected");
   } catch (error) {
     console.error("[POLL] Error during poll:", error);
-    const message = error instanceof Error ? error.message : String(error);
-    postHandoffStatus("error", message);
+    const message = formatUnknownError(error);
+    const baseUrl = currentHandoffBase();
+    
+    // Provide context about which server failed
+    const contextualMessage = message.includes('localhost:4411') 
+      ? message 
+      : `${message} (trying ${baseUrl})`;
+      
+    postHandoffStatus("error", contextualMessage);
     updateServerConnection("disconnected");
     rotateHandoffBase();
   } finally {
@@ -970,29 +1251,94 @@ async function pollHandoffJobs(): Promise<void> {
   }
 }
 
+// Enhanced decompression function with comprehensive debugging
 function decompressPayload(payload: any): any {
+  console.log("🔍 [DECOMPRESS] Starting payload analysis...", {
+    hasPayload: !!payload,
+    payloadType: typeof payload,
+    isCompressed: !!(payload && payload.compressed),
+    hasData: !!(payload && payload.data),
+    dataType: payload && payload.data ? typeof payload.data : 'none',
+    hasSchema: !!(payload && payload.schema),
+    payloadKeys: payload && typeof payload === 'object' ? Object.keys(payload) : []
+  });
+
+  // Handle compressed payload
   if (payload && payload.compressed && typeof payload.data === "string") {
-    console.log("📦 Decompressing payload...");
+    console.log("📦 [DECOMPRESS] Processing compressed payload...", {
+      dataLength: payload.data.length,
+      compressionType: payload.compressionType || 'pako'
+    });
+    
     try {
+      console.log("📦 [DECOMPRESS] Step 1: Base64 decode...");
       const compressedData = safeBase64ToUint8(payload.data);
-      const jsonString =
-        typeof pako.inflate === "function"
-          ? pako.inflate(compressedData, { to: "string" })
-          : "";
-      const parsed = jsonString ? JSON.parse(jsonString) : null;
-      return parsed?.schema ?? parsed ?? payload;
+      console.log("✅ [DECOMPRESS] Base64 decoded successfully", {
+        originalSize: payload.data.length,
+        binarySize: compressedData.length
+      });
+
+      console.log("📦 [DECOMPRESS] Step 2: Pako inflate...");
+      if (typeof pako.inflate !== "function") {
+        throw new Error("Pako inflate function not available");
+      }
+      
+      const jsonString = pako.inflate(compressedData, { to: "string" });
+      console.log("✅ [DECOMPRESS] Pako inflate successful", {
+        inflatedSize: jsonString.length,
+        preview: jsonString.substring(0, 200) + '...'
+      });
+
+      console.log("📦 [DECOMPRESS] Step 3: JSON parse...");
+      const parsed = JSON.parse(jsonString);
+      console.log("✅ [DECOMPRESS] JSON parse successful", {
+        hasTree: !!(parsed && parsed.tree),
+        hasMetadata: !!(parsed && parsed.metadata),
+        parsedKeys: parsed && typeof parsed === 'object' ? Object.keys(parsed) : [],
+        treeChildren: parsed && parsed.tree && parsed.tree.children ? parsed.tree.children.length : 0
+      });
+
+      // Return the most appropriate data structure
+      const result = parsed?.schema ?? parsed ?? payload;
+      console.log("✅ [DECOMPRESS] Decompression completed", {
+        resultType: typeof result,
+        hasTree: !!(result && result.tree),
+        finalKeys: result && typeof result === 'object' ? Object.keys(result) : []
+      });
+      
+      return result;
     } catch (e) {
-      console.error("Failed to decompress payload:", e);
-      // Fallback: return original payload so we can still attempt import
+      console.error("❌ [DECOMPRESS] Decompression failed:", {
+        error: e instanceof Error ? e.message : String(e),
+        stack: e instanceof Error ? e.stack?.substring(0, 500) : undefined,
+        payloadPreview: JSON.stringify(payload).substring(0, 200)
+      });
+      
+      // Fallback: return original payload but log the attempt
+      console.warn("🔄 [DECOMPRESS] Falling back to original payload");
       return payload;
     }
   }
+
+  // Handle schema wrapper
   if (payload && payload.schema) {
-    // Handle zero-parse forwarding that wraps schema
+    console.log("🔍 [DECOMPRESS] Found schema wrapper, unwrapping...", {
+      schemaType: typeof payload.schema,
+      schemaKeys: payload.schema && typeof payload.schema === 'object' ? Object.keys(payload.schema) : [],
+      hasRoot: !!(payload.schema && payload.schema.root)
+    });
     return payload.schema;
   }
+
+  // Handle direct payload
+  console.log("🔍 [DECOMPRESS] Using payload directly (no compression or wrapping detected)", {
+    hasTree: !!(payload && payload.tree),
+    directKeys: payload && typeof payload === 'object' ? Object.keys(payload) : []
+  });
+  
   return payload;
 }
+
 
 function safeBase64ToUint8(base64: string): Uint8Array {
   try {
@@ -1063,15 +1409,22 @@ async function pingHandoffHealth(): Promise<void> {
       queueLength: body.queueLength,
     });
   } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
+    const message = formatUnknownError(error);
+    const baseUrl = currentHandoffBase();
+    
+    // Provide context about which server failed  
+    const contextualMessage = message.includes('localhost:4411') 
+      ? message 
+      : `${message} (checking ${baseUrl})`;
+      
     updateServerConnection("disconnected");
-    postHandoffStatus("error", message);
+    postHandoffStatus("error", contextualMessage);
     rotateHandoffBase();
-    console.warn("[handoff] Health check failed, rotating base", message);
+    console.warn("[handoff] Health check failed, rotating base", contextualMessage);
     figma.ui.postMessage({
       type: "handoff-health",
       base: currentHandoffBase(),
-      status: `error: ${message}`,
+      status: `error: ${contextualMessage}`,
       queueLength: null,
     });
   }
@@ -1117,16 +1470,29 @@ async function handleEnhancedImport(
       phase: "Initialize",
     });
 
-    console.log("✅ Preparing layout schema...");
-    prepareLayoutSchema(data);
-    console.log("✅ Layout schema prepared.");
+    const treeNorm = normalizeSchemaTreeForFigma(data);
+    if (treeNorm.removedNodes > 0 || treeNorm.renamedNodes > 0) {
+      console.log(
+        "🧹 Normalized schema tree for professional nesting:",
+        treeNorm
+      );
+    }
+
+    if (options?.autoLayout !== false) {
+      console.log("✅ Preparing layout schema (Auto Layout enabled)...");
+      prepareLayoutSchema(data);
+      console.log("✅ Layout schema prepared.");
+    } else {
+      console.log(
+        "🧷 Pixel-perfect mode: skipping prepareLayoutSchema() (Auto Layout disabled)"
+      );
+    }
 
     // Transform options from enhanced UI format
     const enhancedOptions: Partial<EnhancedImportOptions> = {
       ...defaultEnhancedOptions,
       applyAutoLayout: options?.autoLayout ?? true,
       createStyles: options?.styles ?? true,
-      createScreenshotOverlay: true,
       // These toggles map to our enhanced importer capabilities
       createMainFrame: true,
       enableBatchProcessing: true,
@@ -1264,22 +1630,36 @@ async function handleEnhancedImportV2(
       }
     }
 
-    // Fallback: unwrap rawSchemaJson or nested schema if tree missing
-    if (!schema.tree) {
+    // Migration already handled in main import flow
+
+    // Fallback: unwrap rawSchemaJson or nested schema if root missing
+    if (!schema.root) {
       if (schema.rawSchemaJson && typeof schema.rawSchemaJson === "string") {
         try {
           const parsed = JSON.parse(schema.rawSchemaJson);
-          if (parsed?.tree) schema = parsed;
+          if (parsed?.root) {
+            schema = parsed;
+          } else if (parsed?.tree) {
+            console.log("🔄 [NESTED-IMPORT] Converting rawSchemaJson legacy 'tree' to canonical 'root'");
+            parsed.root = parsed.tree;
+            delete parsed.tree;
+            schema = parsed;
+          }
         } catch {
           // ignore
         }
+      } else if (schema.schema?.root) {
+        schema = schema.schema;
       } else if (schema.schema?.tree) {
+        console.log("🔄 [NESTED-IMPORT] Converting nested legacy 'tree' to canonical 'root'");
+        schema.schema.root = schema.schema.tree;
+        delete schema.schema.tree;
         schema = schema.schema;
       }
     }
 
-    // Deep search for any nested object that contains a tree
-    if (!schema.tree) {
+    // Deep search for any nested object that contains a root
+    if (!schema.root) {
       const visited = new Set<any>();
       const findSchemaWithTree = (obj: any): any | null => {
         if (!obj || typeof obj !== "object") return null;
@@ -1325,7 +1705,7 @@ async function handleEnhancedImportV2(
 
     console.log("🚀 Starting enhanced import V2 with schema:", {
       version: schema.version,
-      treeNodes: schema.tree ? "present" : "missing",
+      rootNodes: schema.root ? "present" : "missing",
       assets: schema.assets
         ? Object.keys(schema.assets.images || {}).length
         : 0,
@@ -1333,9 +1713,30 @@ async function handleEnhancedImportV2(
     });
 
     // ✅ IMPORTANT: run the same layout preprocessing as the other path
+    // (unless pixel-perfect mode disables Auto Layout)
     console.log("✅ Preparing layout schema (V2)...");
-    prepareLayoutSchema(schema);
-    console.log("✅ Layout schema prepared (V2).");
+    const treeNorm = normalizeSchemaTreeForFigma(schema);
+    if (treeNorm.removedNodes > 0 || treeNorm.renamedNodes > 0) {
+      console.log(
+        "🧹 Normalized schema tree for professional nesting:",
+        treeNorm
+      );
+    }
+    if (options?.applyAutoLayout !== false) {
+      prepareLayoutSchema(schema);
+      console.log("✅ Layout schema prepared (V2).");
+    } else {
+      console.log(
+        "🧷 Pixel-perfect mode: skipping prepareLayoutSchema() (Auto Layout disabled)"
+      );
+    }
+
+    const removedPaletteFills = sanitizeLargeVibrantPaletteFills(schema);
+    if (removedPaletteFills > 0) {
+      console.warn(
+        `⚠️ Removed ${removedPaletteFills} large-node Vibrant palette fill(s) for pixel fidelity`
+      );
+    }
 
     // Transform options to enhanced format
     const enhancedOptions: Partial<EnhancedImportOptions> = {

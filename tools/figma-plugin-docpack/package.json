@@ -1,0 +1,23 @@
+{
+  "name": "figma-plugin-docpack",
+  "private": true,
+  "type": "module",
+  "version": "1.0.0",
+  "description": "Mirror Figma Plugin API docs to Markdown and build a local searchable index for agents.",
+  "scripts": {
+    "doc:fetch": "node ./scripts/scrape.mjs",
+    "doc:index": "node ./scripts/build-index.mjs",
+    "doc:search": "node ./scripts/search.mjs",
+    "doc:refresh": "npm run doc:fetch && npm run doc:index"
+  },
+  "dependencies": {
+    "cheerio": "^1.0.0-rc.12",
+    "lunr": "^2.3.9",
+    "p-limit": "^6.1.0",
+    "turndown": "^7.2.0",
+    "undici": "^6.21.0"
+  },
+  "engines": {
+    "node": ">=18.17.0"
+  }
+}

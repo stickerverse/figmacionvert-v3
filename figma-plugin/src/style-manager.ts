@@ -38,74 +38,154 @@ export class StyleManager {
     return undefined;
   }
 
+  // 8% HANG FIX - Timeout protected style creation
   async createFigmaStyles(): Promise<void> {
-    if (this.styles.colors) {
-      for (const [key, colorData] of Object.entries(this.styles.colors) as any[]) {
-        const style = figma.createPaintStyle();
-        style.name = `Colors/${colorData.name}`;
-        const { r, g, b } = colorData.color;
-        
-        const paint: SolidPaint = {
-          type: 'SOLID',
-          color: { r, g, b },
-          opacity: colorData.color.a ?? 1
-        };
-
-        // Try to bind to a variable if design tokens manager is available
-        if (this.designTokensManager) {
-          const tokenId = this.findColorToken({ r, g, b, a: colorData.color.a });
-          if (tokenId) {
-            const variable = this.designTokensManager.getVariableByTokenId(tokenId);
-            if (variable && variable.resolvedType === 'COLOR') {
-              // Use spread to work around readonly property
-              const paintWithBinding: SolidPaint = {
-                ...paint,
-                boundVariables: { color: { type: 'VARIABLE_ALIAS', id: variable.id } }
-              };
-              style.paints = [paintWithBinding];
-              this.paintStyles.set(key, style);
-              continue;
-            }
+    console.log("🎨 [HANG-FIX] Style creation with timeout protection");
+    const startTime = Date.now();
+    const MAX_STYLES = 100; // Prevent memory issues
+    
+    try {
+      // Timeout protection for entire operation
+      await Promise.race([
+        this.processStylesSafely(MAX_STYLES),
+        this.createTimeout("Style processing", 15000)
+      ]);
+      
+      console.log(`✅ Styles created in ${Date.now() - startTime}ms`);
+    } catch (error) {
+      console.warn("⚠️ [HANG-FIX] Style creation timeout/error:", error);
+      // Continue execution instead of hanging
+    }
+  }
+  
+  private async processStylesSafely(maxStyles: number): Promise<void> {
+    let count = 0;
+    
+    // Process colors with limits and timeouts
+    if (this.styles.colors && count < maxStyles) {
+      const colors = Object.entries(this.styles.colors).slice(0, maxStyles - count);
+      for (const [key, colorData] of colors) {
+        try {
+          await Promise.race([
+            this.createColorStyle(key, colorData),
+            this.createTimeout("Color style", 1000)
+          ]);
+          count++;
+          if (count % 10 === 0) await this.yield(); // Yield control
+        } catch (err) { /* Skip on timeout */ }
+      }
+    }
+    
+    // Process text styles with limits and timeouts
+    if (this.styles.textStyles && count < maxStyles) {
+      const textStyles = Object.entries(this.styles.textStyles).slice(0, maxStyles - count);
+      for (const [key, textData] of textStyles) {
+        try {
+          await Promise.race([
+            this.createTextStyle(key, textData),
+            this.createTimeout("Text style", 3000)
+          ]);
+          count++;
+          if (count % 5 === 0) await this.yield(); // Yield control
+        } catch (err) { /* Skip on timeout */ }
+      }
+    }
+    
+    // Process effects with limits and timeouts
+    if (this.styles.effects && count < maxStyles) {
+      const effects = Object.entries(this.styles.effects).slice(0, maxStyles - count);
+      for (const [key, effectData] of effects) {
+        try {
+          await Promise.race([
+            this.createEffectStyle(key, effectData),
+            this.createTimeout("Effect style", 1000)
+          ]);
+          count++;
+          if (count % 10 === 0) await this.yield(); // Yield control
+        } catch (err) { /* Skip on timeout */ }
+      }
+    }
+  }
+  
+  private async createColorStyle(key: string, colorData: any): Promise<void> {
+    if (!colorData?.color) return;
+    const style = figma.createPaintStyle();
+    style.name = `Colors/${colorData.name || key}`;
+    const { r = 0, g = 0, b = 0 } = colorData.color;
+    
+    const paint: SolidPaint = {
+      type: "SOLID",
+      color: { r, g, b },
+      opacity: colorData.color.a ?? 1
+    };
+    
+    if (this.designTokensManager) {
+      try {
+        const tokenId = this.findColorToken({ r, g, b, a: colorData.color.a });
+        if (tokenId) {
+          const variable = this.designTokensManager.getVariableByTokenId(tokenId);
+          if (variable && variable.resolvedType === "COLOR") {
+            const paintWithBinding: SolidPaint = {
+              ...paint,
+              boundVariables: { color: { type: "VARIABLE_ALIAS", id: variable.id } }
+            };
+            style.paints = [paintWithBinding];
+            this.paintStyles.set(key, style);
+            return;
           }
         }
-
-        style.paints = [paint];
-        this.paintStyles.set(key, style);
-      }
+      } catch (err) { /* Ignore token binding errors */ }
     }
-
-    if (this.styles.textStyles) {
-      for (const [key, textStyleData] of Object.entries(this.styles.textStyles) as any[]) {
-        const style = figma.createTextStyle();
-        style.name = `Text/${textStyleData.name}`;
-        
-        try {
-          await figma.loadFontAsync({ 
-            family: textStyleData.fontFamily, 
-            style: this.mapFontWeight(textStyleData.fontWeight)
-          });
-          
-          style.fontName = {
-            family: textStyleData.fontFamily,
-            style: this.mapFontWeight(textStyleData.fontWeight)
-          };
-          style.fontSize = textStyleData.fontSize;
-          
-          this.textStyles.set(key, style);
-        } catch (e) {
-          console.warn(`Failed to create text style: ${textStyleData.name}`);
-        }
-      }
+    
+    style.paints = [paint];
+    this.paintStyles.set(key, style);
+  }
+  
+  private async createTextStyle(key: string, textData: any): Promise<void> {
+    if (!textData?.fontFamily) return;
+    const style = figma.createTextStyle();
+    style.name = `Text/${textData.name || key}`;
+    
+    try {
+      await Promise.race([
+        figma.loadFontAsync({
+          family: textData.fontFamily,
+          style: this.mapFontWeight(textData.fontWeight || 400)
+        }),
+        this.createTimeout("Font load", 2000)
+      ]);
+      
+      style.fontName = {
+        family: textData.fontFamily,
+        style: this.mapFontWeight(textData.fontWeight || 400)
+      };
+      style.fontSize = textData.fontSize || 14;
+      this.textStyles.set(key, style);
+    } catch (fontErr) {
+      // Skip on font load timeout
     }
-
-    if (this.styles.effects) {
-      for (const [key, effectsData] of Object.entries(this.styles.effects) as any[]) {
-        const style = figma.createEffectStyle();
-        style.name = `Effects/Shadow ${Object.keys(this.effectStyles).length + 1}`;
-        style.effects = this.convertEffects(effectsData);
-        this.effectStyles.set(key, style);
-      }
+  }
+  
+  private async createEffectStyle(key: string, effectData: any): Promise<void> {
+    if (!Array.isArray(effectData)) return;
+    const style = figma.createEffectStyle();
+    style.name = `Effects/Shadow ${Object.keys(this.effectStyles).length + 1}`;
+    
+    const effects = this.convertEffects(effectData);
+    if (effects.length > 0) {
+      style.effects = effects;
+      this.effectStyles.set(key, style);
     }
+  }
+  
+  private createTimeout(op: string, ms: number): Promise<never> {
+    return new Promise((_, reject) => {
+      setTimeout(() => reject(new Error(`${op} timeout`)), ms);
+    });
+  }
+  
+  private async yield(): Promise<void> {
+    return new Promise(r => setTimeout(r, 1));
   }
 
   private convertEffects(effects: any[]): Effect[] {

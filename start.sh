@@ -28,6 +28,12 @@ set -e
 SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 cd "$SCRIPT_DIR"
 
+# Optional flags:
+#   SKIP_INSTALL=1  -> don't run npm install steps
+#   WATCH=1         -> run extension/plugin watchers after initial build
+SKIP_INSTALL="${SKIP_INSTALL:-0}"
+WATCH="${WATCH:-0}"
+
 # Colors for output
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -63,20 +69,24 @@ echo -e "${GREEN}✅ Node.js $(node -v)${NC}"
 echo ""
 
 # Install all dependencies
-echo -e "${YELLOW}📦 Installing root dependencies (including AI models)...${NC}"
-npm install
+if [ "$SKIP_INSTALL" = "1" ]; then
+  echo -e "${YELLOW}📦 SKIP_INSTALL=1 set; skipping dependency installs${NC}"
+else
+  echo -e "${YELLOW}📦 Installing root dependencies (including AI models)...${NC}"
+  npm install
 
-echo -e "${YELLOW}📦 Installing Chrome extension dependencies...${NC}"
-cd chrome-extension && npm install && cd ..
+  echo -e "${YELLOW}📦 Installing Chrome extension dependencies...${NC}"
+  cd chrome-extension && npm install && cd ..
 
-if [ -d "capture-service" ]; then
-  echo -e "${YELLOW}📦 Installing Capture Service dependencies...${NC}"
-  cd capture-service && npm install && cd ..
-fi
+  if [ -d "capture-service" ]; then
+    echo -e "${YELLOW}📦 Installing Capture Service dependencies...${NC}"
+    cd capture-service && npm install && cd ..
+  fi
 
-if [ -d "figma-plugin" ]; then
-  echo -e "${YELLOW}📦 Installing Figma Plugin dependencies...${NC}"
-  cd figma-plugin && npm install 2>/dev/null || true && cd ..
+  if [ -d "figma-plugin" ]; then
+    echo -e "${YELLOW}📦 Installing Figma Plugin dependencies...${NC}"
+    cd figma-plugin && npm install && cd ..
+  fi
 fi
 
 echo ""
@@ -153,23 +163,73 @@ echo ""
 
 # Test AI model loading (quick check)
 echo -e "${CYAN}🧪 Testing AI model loading...${NC}"
-if node -e "
-  try {
-    require('./vision-analyzer.cjs');
-    require('./color-analyzer.cjs');
-    require('./typography-analyzer.cjs');
-    require('./yolo-detector.cjs');
-    console.log('✅ All AI models can be loaded');
-    process.exit(0);
-  } catch (e) {
-    console.error('❌ AI model loading failed:', e.message);
-    process.exit(1);
+MODEL_TEST_OUTPUT=$(node -e "
+  const models = [
+    { name: 'vision-analyzer.cjs', file: './vision-analyzer.cjs' },
+    { name: 'color-analyzer.cjs', file: './color-analyzer.cjs' },
+    { name: 'typography-analyzer.cjs', file: './typography-analyzer.cjs' },
+    { name: 'yolo-detector.cjs', file: './yolo-detector.cjs' }
+  ];
+  
+  let allPassed = true;
+  let hasNativeDepIssue = false;
+  const failedModels = [];
+  
+  for (const model of models) {
+    try {
+      require(model.file);
+    } catch (e) {
+      allPassed = false;
+      const errorMsg = e.message || String(e);
+      const isNativeError = errorMsg.includes('native') || 
+                           errorMsg.includes('NODE_MODULE_VERSION') ||
+                           errorMsg.includes('Cannot find module') ||
+                           errorMsg.includes('was compiled against');
+      if (isNativeError) {
+        hasNativeDepIssue = true;
+      }
+      failedModels.push({ name: model.name, isNative: isNativeError });
+    }
   }
-" 2>/dev/null; then
+  
+  if (allPassed) {
+    console.log('SUCCESS');
+  } else if (hasNativeDepIssue) {
+    console.log('NATIVE_DEP');
+  } else {
+    console.log('ERROR');
+  }
+  if (failedModels.length > 0) {
+    failedModels.forEach(m => console.log('FAILED:' + m.name + ':' + (m.isNative ? 'native' : 'error')));
+  }
+" 2>&1)
+
+MODEL_TEST_STATUS=$(echo "$MODEL_TEST_OUTPUT" | head -1)
+
+if [ "$MODEL_TEST_STATUS" = "SUCCESS" ]; then
   echo -e "${GREEN}✅ AI models can be loaded${NC}"
-else
-  echo -e "${YELLOW}⚠️  AI model loading test failed (may be due to missing native dependencies)${NC}"
+elif [ "$MODEL_TEST_STATUS" = "NATIVE_DEP" ]; then
+  echo -e "${YELLOW}⚠️  AI model loading test failed (native dependencies may not load until first use)${NC}"
   echo -e "${YELLOW}   This is usually OK - models will load when actually used${NC}"
+  # Show which models had issues if DEBUG is enabled
+  if [ "${DEBUG:-0}" = "1" ]; then
+    echo "$MODEL_TEST_OUTPUT" | grep "^FAILED:" | while IFS=':' read -r _ model status; do
+      if [ "$status" = "native" ]; then
+        echo -e "  ${CYAN}- ${model}: Native dep (OK)${NC}"
+      else
+        echo -e "  ${CYAN}- ${model}: Error${NC}"
+      fi
+    done
+  fi
+else
+  echo -e "${YELLOW}⚠️  AI model loading test failed${NC}"
+  echo -e "${YELLOW}   This may be due to missing native dependencies${NC}"
+  echo -e "${YELLOW}   Models will attempt to load when actually used${NC}"
+  # Show error details if DEBUG is enabled
+  if [ "${DEBUG:-0}" = "1" ]; then
+    echo -e "${CYAN}Debug info:${NC}"
+    echo "$MODEL_TEST_OUTPUT" | head -10
+  fi
 fi
 
 echo ""
@@ -192,6 +252,36 @@ if [ -d "figma-plugin" ]; then
   echo ""
 fi
 
+# Optional: Watch extension/plugin builds
+EXT_WATCH_PID=""
+PLUGIN_WATCH_PID=""
+if [ "$WATCH" = "1" ]; then
+  echo -e "${YELLOW}👀 WATCH=1 set; starting build watchers...${NC}"
+
+  echo -e "${YELLOW}  - Chrome extension: npm run watch${NC}"
+  (cd chrome-extension && npm run watch) &
+  EXT_WATCH_PID=$!
+
+  if [ -d "figma-plugin" ]; then
+    echo -e "${YELLOW}  - Figma plugin: npm run watch${NC}"
+    (cd figma-plugin && npm run watch) &
+    PLUGIN_WATCH_PID=$!
+  fi
+
+  # Quick sanity check that watchers didn't immediately die
+  sleep 1
+  if ! kill -0 "$EXT_WATCH_PID" >/dev/null 2>&1; then
+    echo -e "${RED}❌ Extension watcher failed to start${NC}"
+    exit 1
+  fi
+  if [ -n "$PLUGIN_WATCH_PID" ] && ! kill -0 "$PLUGIN_WATCH_PID" >/dev/null 2>&1; then
+    echo -e "${RED}❌ Plugin watcher failed to start${NC}"
+    exit 1
+  fi
+  echo -e "${GREEN}✅ Watchers running${NC}"
+  echo ""
+fi
+
 # Function to cleanup on exit
 cleanup() {
   echo ""
@@ -205,21 +295,98 @@ trap cleanup SIGINT SIGTERM
 echo -e "${BLUE}🚀 Starting Handoff Server on port 4411...${NC}"
 
 # Kill any existing handoff server to prevent port conflicts
-pkill -f "node handoff-server" 2>/dev/null && echo -e "${YELLOW}♻️  Killed existing handoff server${NC}" && sleep 1
+echo -e "${YELLOW}🔍 Checking for existing server on port 4411...${NC}"
 
-node handoff-server.cjs &
+# Method 1: Kill by process name
+if pkill -f "handoff-server\\.cjs" 2>/dev/null; then
+  echo -e "${YELLOW}♻️  Killed existing handoff server process${NC}"
+  sleep 1
+fi
+
+# Method 2: Kill by port (more reliable)
+if command_exists lsof; then
+  PORT_PIDS=$(lsof -ti:4411 2>/dev/null || true)
+  if [ -n "$PORT_PIDS" ]; then
+    echo -e "${YELLOW}♻️  Killing process(es) using port 4411: $PORT_PIDS${NC}"
+    echo "$PORT_PIDS" | xargs kill -9 2>/dev/null || true
+    sleep 1
+  fi
+fi
+
+# Verify port is free (use || true to prevent set -e from exiting)
+if command_exists lsof; then
+  if lsof -ti:4411 >/dev/null 2>&1; then
+    echo -e "${RED}⚠️  Port 4411 is still in use. Trying to continue anyway...${NC}"
+    echo -e "${YELLOW}   You may need to manually kill the process: lsof -ti:4411 | xargs kill -9${NC}"
+  else
+    echo -e "${GREEN}✅ Port 4411 is free${NC}"
+  fi
+else
+  echo -e "${YELLOW}⚠️  lsof not available, skipping port verification${NC}"
+fi
+
+# Start server in background with output redirection
+echo -e "${CYAN}🚀 Starting server process...${NC}"
+node handoff-server.cjs > handoff-server.log 2>&1 &
 HANDOFF_PID=$!
-echo -e "${GREEN}✅ Handoff Server started (PID: $HANDOFF_PID)${NC}"
 
-# Wait for server to be ready
+# Wait a moment for process to start
 sleep 2
 
-# Check if server is responding
-if curl -s http://127.0.0.1:4411/api/status > /dev/null 2>&1; then
-  echo -e "${GREEN}✅ Handoff Server is responding${NC}"
-else
-  echo -e "${YELLOW}⚠️  Waiting for server to start...${NC}"
-  sleep 3
+# Verify the process is still running
+if ! kill -0 "$HANDOFF_PID" 2>/dev/null; then
+  echo -e "${RED}❌ Handoff Server failed to start (process died immediately)${NC}"
+  echo -e "${YELLOW}   Check handoff-server.log for errors:${NC}"
+  if [ -f handoff-server.log ]; then
+    tail -20 handoff-server.log
+  else
+    echo "   (log file not found)"
+  fi
+  exit 1
+fi
+
+echo -e "${GREEN}✅ Handoff Server started (PID: $HANDOFF_PID)${NC}"
+
+# Wait for server to be ready and check if it's responding
+echo -e "${CYAN}⏳ Waiting for server to initialize...${NC}"
+MAX_RETRIES=10
+RETRY_COUNT=0
+SERVER_RESPONDING=false
+
+while [ $RETRY_COUNT -lt $MAX_RETRIES ]; do
+  # Check if process is still running
+  if ! kill -0 "$HANDOFF_PID" 2>/dev/null; then
+    echo -e "${RED}❌ Server process died (PID: $HANDOFF_PID)${NC}"
+    if [ -f handoff-server.log ]; then
+      echo -e "${YELLOW}   Last log entries:${NC}"
+      tail -20 handoff-server.log
+    fi
+    exit 1
+  fi
+  
+  # Try to connect to the server
+  if curl -s -f http://127.0.0.1:4411/api/health > /dev/null 2>&1 || \
+     curl -s -f http://127.0.0.1:4411/api/status > /dev/null 2>&1; then
+    echo -e "${GREEN}✅ Handoff Server is responding${NC}"
+    SERVER_RESPONDING=true
+    break
+  else
+    RETRY_COUNT=$((RETRY_COUNT + 1))
+    if [ $RETRY_COUNT -lt $MAX_RETRIES ]; then
+      echo -e "${YELLOW}   Waiting for server... ($RETRY_COUNT/$MAX_RETRIES)${NC}"
+      sleep 2
+    fi
+  fi
+done
+
+if [ "$SERVER_RESPONDING" = false ]; then
+  echo -e "${YELLOW}⚠️  Server started but not responding to health checks yet${NC}"
+  echo -e "${YELLOW}   Server may still be initializing. Check handoff-server.log for details.${NC}"
+  if [ -f handoff-server.log ]; then
+    echo -e "${CYAN}   Last 10 log lines:${NC}"
+    tail -10 handoff-server.log
+  fi
+  echo -e "${YELLOW}   You can check server status with: curl http://localhost:4411/api/health${NC}"
 fi
 
 echo ""
@@ -240,9 +407,13 @@ echo -e "${YELLOW}Next Steps:${NC}"
 echo "  1. Load Chrome extension from: chrome-extension/dist"
 echo "  2. Open Figma plugin"
 echo "  3. Navigate to a webpage and click 'Capture'"
-echo ""
-echo -e "${YELLOW}To test headless capture:${NC}"
-echo "  node puppeteer-auto-import.cjs https://stripe.com"
+if [ "$WATCH" = "1" ]; then
+  echo ""
+  echo -e "${YELLOW}Watch Mode:${NC}"
+  echo "  - Chrome extension rebuilds automatically (dev)"
+  echo "  - Figma plugin rebuilds automatically (watch)"
+  echo "  - Reload extension/plugin in their UIs to pick up changes"
+fi
 echo ""
 echo -e "${YELLOW}To test AI analysis endpoint:${NC}"
 echo "  curl -X POST http://localhost:4411/api/ai-analyze \\"

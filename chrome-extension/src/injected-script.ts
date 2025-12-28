@@ -73,30 +73,6 @@ const messageListener = async (event: MessageEvent) => {
     return;
   }
 
-  // CRITICAL FIX: Handle partial schema request for timeout recovery
-  if (event.data.type === "GET_PARTIAL_SCHEMA") {
-    const extractor = (window as any).__CURRENT_EXTRACTOR__;
-    if (extractor && typeof extractor.getPartialSchema === "function") {
-      const partial = extractor.getPartialSchema();
-      window.postMessage(
-        {
-          type: "PARTIAL_SCHEMA",
-          schema: partial,
-        },
-        "*"
-      );
-    } else {
-      window.postMessage(
-        {
-          type: "PARTIAL_SCHEMA",
-          schema: null,
-        },
-        "*"
-      );
-    }
-    return;
-  }
-
   if (event.data.type === "START_EXTRACTION") {
     (window as any).__EXTRACTION_COUNT__++;
     console.log(
@@ -146,7 +122,7 @@ const messageListener = async (event: MessageEvent) => {
         const schema = await extractor.extractPageToSchema();
         console.log("✅ [INJECT] extractPageToSchema() returned successfully");
         console.log("✅ [INJECT] Schema structure:", {
-          nodes: schema.tree ? "present" : "missing",
+          nodes: schema.root ? "present" : "missing",
           assets: Object.keys(schema.assets.images).length,
         });
 
@@ -162,8 +138,17 @@ const messageListener = async (event: MessageEvent) => {
       } finally {
         // Always clear the heartbeat interval
         clearInterval(heartbeatInterval);
-        // Clear extractor reference
-        (window as any).__CURRENT_EXTRACTOR__ = null;
+        // ENHANCED: Keep extractor available for timeout recovery
+        // Don't clear immediately - timeout handler might need it
+        // Clear after a delay to allow timeout recovery to access it
+        setTimeout(() => {
+          if ((window as any).__CURRENT_EXTRACTOR__) {
+            console.log(
+              "🧹 [INJECT] Clearing extractor after completion delay"
+            );
+            (window as any).__CURRENT_EXTRACTOR__ = null;
+          }
+        }, 5000); // Keep extractor for 5s after completion for timeout recovery
       }
     } catch (error) {
       console.error("❌ [INJECT] Extraction failed:", error);
@@ -171,13 +156,33 @@ const messageListener = async (event: MessageEvent) => {
         "❌ [INJECT] Error stack:",
         error instanceof Error ? error.stack : "No stack"
       );
+
+      // ENHANCED: Try to get partial schema even on error
+      const partialSchema: any = null;
+
+      // Send structured error with stage information
+      const errorMessage =
+        error instanceof Error ? error.message : String(error);
       window.postMessage(
         {
           type: "EXTRACTION_ERROR",
-          error: error instanceof Error ? error.message : String(error),
+          error: errorMessage,
+          stage: "extract",
+          errorCode: "EXTRACTION_FAILED",
+          details: {
+            hasPartialSchema: !!partialSchema,
+            nodeCount: partialSchema?.root
+              ? (partialSchema.metadata as any)?.extractedNodes || 0
+              : 0,
+          },
         },
         "*"
       );
+
+      // Keep extractor for timeout recovery even on error
+      setTimeout(() => {
+        (window as any).__CURRENT_EXTRACTOR__ = null;
+      }, 5000);
     }
   }
 };

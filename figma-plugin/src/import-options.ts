@@ -8,4 +8,6 @@ export interface ImportOptions {
   usePixelPerfectPositioning: boolean;
   createScreenshotOverlay: boolean;
   showValidationMarkers: boolean;
+  enableDebugMode?: boolean;
+  useHierarchyInference?: boolean; // Default: true - use hierarchy inference to improve tree structure
 }
