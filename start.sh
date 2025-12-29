@@ -30,9 +30,17 @@ cd "$SCRIPT_DIR"
 
 # Optional flags:
 #   SKIP_INSTALL=1  -> don't run npm install steps
+#   SKIP_BUILD=1    -> don't run npm build steps
 #   WATCH=1         -> run extension/plugin watchers after initial build
 SKIP_INSTALL="${SKIP_INSTALL:-0}"
+SKIP_BUILD="${SKIP_BUILD:-0}"
 WATCH="${WATCH:-0}"
+
+# Auto-skip install if node_modules already exists
+if [ -d "node_modules" ] && [ "$SKIP_INSTALL" = "0" ]; then
+  echo -e "${CYAN}ℹ️ node_modules detected, skipping npm install (use SKIP_INSTALL=0 to force)${NC}"
+  SKIP_INSTALL=1
+fi
 
 # Colors for output
 RED='\033[0;31m'
@@ -235,24 +243,29 @@ fi
 echo ""
 
 # Build Chrome extension first
-echo -e "${YELLOW}🔨 Building Chrome extension...${NC}"
-cd chrome-extension
-npm run build
-cd ..
-echo -e "${GREEN}✅ Chrome extension built${NC}"
-echo ""
-
-# Build Figma Plugin
-if [ -d "figma-plugin" ]; then
-  echo -e "${YELLOW}🔨 Building Figma Plugin...${NC}"
-  cd figma-plugin
+if [ "$SKIP_BUILD" = "1" ]; then
+  echo -e "${YELLOW}🔨 SKIP_BUILD=1 set; skipping build steps${NC}"
+else
+  echo -e "${YELLOW}🔨 Building Chrome extension...${NC}"
+  cd chrome-extension
   npm run build
   cd ..
-  echo -e "${GREEN}✅ Figma Plugin built${NC}"
+  echo -e "${GREEN}✅ Chrome extension built${NC}"
   echo ""
+
+  # Build Figma Plugin
+  if [ -d "figma-plugin" ]; then
+    echo -e "${YELLOW}🔨 Building Figma Plugin...${NC}"
+    cd figma-plugin
+    npm run build
+    cd ..
+    echo -e "${GREEN}✅ Figma Plugin built${NC}"
+  fi
 fi
 
-# Optional: Watch extension/plugin builds
+echo ""
+
+
 EXT_WATCH_PID=""
 PLUGIN_WATCH_PID=""
 if [ "$WATCH" = "1" ]; then
@@ -327,7 +340,7 @@ fi
 
 # Start server in background with output redirection
 echo -e "${CYAN}🚀 Starting server process...${NC}"
-node handoff-server.cjs > handoff-server.log 2>&1 &
+node handoff-server.cjs >> handoff-server.log 2>&1 &
 HANDOFF_PID=$!
 
 # Wait a moment for process to start
@@ -335,17 +348,15 @@ sleep 2
 
 # Verify the process is still running
 if ! kill -0 "$HANDOFF_PID" 2>/dev/null; then
-  echo -e "${RED}❌ Handoff Server failed to start (process died immediately)${NC}"
-  echo -e "${YELLOW}   Check handoff-server.log for errors:${NC}"
-  if [ -f handoff-server.log ]; then
-    tail -20 handoff-server.log
-  else
-    echo "   (log file not found)"
-  fi
-  exit 1
+    echo -e "${RED}❌ Handoff Server failed to start (process died immediately)${NC}"
+    echo -e "${YELLOW}   Check handoff-server.log for errors:${NC}"
+    if [ -f handoff-server.log ]; then
+        tail -20 handoff-server.log
+    fi
+    exit 1
 fi
 
-echo -e "${GREEN}✅ Handoff Server started (PID: $HANDOFF_PID)${NC}"
+echo -e "${GREEN}✅ Handoff Server process is active (PID: $HANDOFF_PID)${NC}"
 
 # Wait for server to be ready and check if it's responding
 echo -e "${CYAN}⏳ Waiting for server to initialize...${NC}"

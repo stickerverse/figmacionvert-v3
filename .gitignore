@@ -36,3 +36,25 @@ fidelity-audit-output.txt
 
 handoff-jobs.json
 eng.traineddata
+
+# Test artifacts and captures
+page-capture-*.json
+*-report.json
+*.backup
+*.backup[0-9]
+*.old
+*.swp
+*~
+
+# Browser test profiles
+.puppeteer-profile*/
+.chrome-profile*/
+
+# Archived files
+scripts/archive/
+docs/archive/
+
+# Temporary test outputs
+test-output/
+capture-output/
+debug-*.json

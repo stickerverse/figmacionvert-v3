@@ -6,13 +6,15 @@
   "type": "commonjs",
   "scripts": {
     "start": "./start.sh",
-    "install:all": "npm install && cd chrome-extension && npm install && cd ../figma-plugin && npm install",
+    "build": "npm run build:all",
     "build:extension": "cd chrome-extension && npm run build",
     "build:plugin": "cd figma-plugin && npm run build",
     "build:all": "npm run build:extension && npm run build:plugin",
+    "install:all": "npm install && cd chrome-extension && npm install && cd ../figma-plugin && npm install",
     "validate:pixels": "node tools/validation/pixel-diff.js",
     "validate:schema": "node tools/validation/schema-guardrails.js",
     "verify-models": "node verify-models.js",
+    "clean": "npm run clean:extension && rm -rf node_modules",
     "clean:extension": "rm -rf chrome-extension/dist chrome-extension/node_modules/.cache node_modules/.cache && rm -f chrome-extension/tsconfig.tsbuildinfo tsconfig.tsbuildinfo"
   },
   "dependencies": {

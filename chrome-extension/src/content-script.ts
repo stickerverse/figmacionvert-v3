@@ -716,6 +716,12 @@ console.log("If you see this, content-script.js is executing!");
     // For small payloads, send directly
     if (totalSize < CHUNK_SIZE) {
       console.log(`📦 Small payload (${totalSizeKB}KB), sending directly`);
+      console.log(`🔍 Payload Stats Check (Direct Send):`, {
+        totalElements: captureData.metadata?.extractionSummary?.totalElements,
+        rootChildren: captureData.root?.children?.length,
+        dataSize: totalSize,
+        hasRoot: !!captureData.root,
+      });
       await chrome.runtime.sendMessage({
         type: "CAPTURE_COMPLETE",
         data: captureData,
@@ -770,54 +776,8 @@ console.log("If you see this, content-script.js is executing!");
     console.log("📨 [CONTENT SCRIPT] Received message:", message.type);
     console.log("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
 
-    // Handle theme activation
-    if (message.type === "ACTIVATE_THEME") {
-      (async () => {
-        try {
-          const { ThemeDetector } = await import("./utils/theme-detector");
-          const detector = new ThemeDetector();
-          const result = await detector.activateTheme(message.theme);
-
-          // Store detector instance for cleanup
-          (window as any)._themeDetector = detector;
-
-          sendResponse(result);
-        } catch (error) {
-          console.error("Theme activation error:", error);
-          sendResponse({
-            success: false,
-            errorCode: "ACTIVATION_FAILED",
-            errorMessage:
-              error instanceof Error ? error.message : "Unknown error",
-            appliedChanges: [],
-          });
-        }
-      })();
-      return true; // Indicate async response
-    }
-
-    // Handle theme cleanup
-    if (message.type === "CLEANUP_THEME") {
-      (async () => {
-        try {
-          const detector = (window as any)._themeDetector;
-          if (detector) {
-            await detector.cleanup();
-            delete (window as any)._themeDetector;
-            console.log("Theme cleanup completed");
-          }
-          sendResponse({ success: true });
-        } catch (error) {
-          console.error("Theme cleanup error:", error);
-          sendResponse({
-            success: false,
-            errorMessage:
-              error instanceof Error ? error.message : "Unknown error",
-          });
-        }
-      })();
-      return true; // Indicate async response
-    }
+    // Theme activation handlers removed - theme-detector.ts is unused
+    // Removed ACTIVATE_THEME and CLEANUP_THEME message handlers
 
     // Only allow capture orchestration from the top frame; sandboxed iframes (about:blank) should ignore
     const isTopFrame = window.top === window;
@@ -997,131 +957,133 @@ console.log("If you see this, content-script.js is executing!");
   if (!(window as any).__webToFigmaMessageListenerRegistered) {
     (window as any).__webToFigmaMessageListenerRegistered = true;
 
-  window.addEventListener("message", (event) => {
-    // Only accept messages from ourselves
-    if (event.source !== window) return;
+    window.addEventListener("message", (event) => {
+      // Only accept messages from ourselves
+      if (event.source !== window) return;
 
-    // Reset watchdog on any valid message from injected script
-    if (event.data.type && event.data.type.startsWith("EXTRACTION_")) {
-      resetWatchdog();
-    }
+      // Reset watchdog on any valid message from injected script
+      if (event.data.type && event.data.type.startsWith("EXTRACTION_")) {
+        resetWatchdog();
+      }
 
-    if (event.data.type === "EXTRACTION_COMPLETE") {
-      extractionDone = true;
-    }
+      if (event.data.type === "EXTRACTION_COMPLETE") {
+        extractionDone = true;
+      }
 
-    if (event.data.type === "EXTRACTION_ERROR") {
-      if (extractionDone) {
-        console.warn(
-          "[CAPTURE] EXTRACTION_ERROR ignored after completion:",
-          event.data.error
+      if (event.data.type === "EXTRACTION_ERROR") {
+        if (extractionDone) {
+          console.warn(
+            "[CAPTURE] EXTRACTION_ERROR ignored after completion:",
+            event.data.error
+          );
+          return;
+        }
+        // Continue with normal error handling...
+      }
+
+      if (event.data.type === "FETCH_IMAGE_PROXY") {
+        // CRITICAL: Assert exactly one handler for FETCH_IMAGE_PROXY
+        if (process.env.NODE_ENV === "development") {
+          if (processedMessageTypes.has("FETCH_IMAGE_PROXY")) {
+            console.error(
+              "❌ [DUPLICATE_HANDLER] FETCH_IMAGE_PROXY handler registered multiple times!"
+            );
+          } else {
+            processedMessageTypes.add("FETCH_IMAGE_PROXY");
+          }
+        }
+
+        const { url, requestId } = event.data;
+        console.log(
+          `🔄 [PROXY] Fetching image via background: ${url.substring(0, 80)}...`
+        );
+
+        // Forward to background script
+        chrome.runtime.sendMessage(
+          {
+            type: "FETCH_IMAGE",
+            url,
+          },
+          (response) => {
+            // Check for runtime errors
+            if (chrome.runtime.lastError) {
+              console.warn(
+                `⚠️ [PROXY] Runtime error: ${
+                  chrome.runtime.lastError.message
+                } for ${url.substring(0, 80)}...`
+              );
+              window.postMessage(
+                {
+                  type: "FETCH_IMAGE_PROXY_RESPONSE",
+                  requestId,
+                  success: false,
+                  error: chrome.runtime.lastError.message,
+                },
+                "*"
+              );
+              return;
+            }
+
+            // Forward response back to injected script
+            if (response?.ok && response?.base64) {
+              window.postMessage(
+                {
+                  type: "FETCH_IMAGE_PROXY_RESPONSE",
+                  requestId,
+                  success: true,
+                  data: {
+                    base64: response.base64,
+                    width: 0, // Background script doesn't calculate dimensions currently
+                    height: 0,
+                    mimeType: response.mimeType,
+                  },
+                },
+                "*"
+              );
+            } else {
+              window.postMessage(
+                {
+                  type: "FETCH_IMAGE_PROXY_RESPONSE",
+                  requestId,
+                  success: false,
+                  error: response?.error || "Unknown error",
+                },
+                "*"
+              );
+            }
+          }
         );
         return;
       }
-      // Continue with normal error handling...
-    }
 
-    if (event.data.type === "FETCH_IMAGE_PROXY") {
-      // CRITICAL: Assert exactly one handler for FETCH_IMAGE_PROXY
-      if (process.env.NODE_ENV === "development") {
-        if (processedMessageTypes.has("FETCH_IMAGE_PROXY")) {
-          console.error(
-            "❌ [DUPLICATE_HANDLER] FETCH_IMAGE_PROXY handler registered multiple times!"
-          );
-        } else {
-          processedMessageTypes.add("FETCH_IMAGE_PROXY");
-        }
+      if (event.data.type === "START_CAPTURE_TEST") {
+        document.body.setAttribute("data-debug-postmessage", "received");
+        console.log("🧪 [TEST] Received capture trigger via postMessage");
+        // Simulate the runtime message
+        const mockMessage = {
+          type: "start-capture",
+          allowNavigation: false,
+          viewports: event.data.viewports,
+        };
+
+        // Trigger via background
+        chrome.runtime.sendMessage({ type: "TRIGGER_CAPTURE_FOR_TAB" });
       }
 
-      const { url, requestId } = event.data;
-      console.log(
-        `🔄 [PROXY] Fetching image via background: ${url.substring(0, 80)}...`
-      );
+      // CRITICAL: Removed duplicate FETCH_IMAGE_PROXY handler.
+      // The correct handler exists above and uses FETCH_IMAGE_PROXY_RESPONSE.
+      // This duplicate used wrong response type FETCH_IMAGE_RESULT.
 
-      // Forward to background script
-      chrome.runtime.sendMessage(
-        {
-          type: "FETCH_IMAGE",
-          url,
-        },
-        (response) => {
-          // Check for runtime errors
-          if (chrome.runtime.lastError) {
-            console.warn(
-              `⚠️ [PROXY] Runtime error: ${
-                chrome.runtime.lastError.message
-              } for ${url.substring(0, 80)}...`
-            );
-            window.postMessage(
-              {
-                type: "FETCH_IMAGE_PROXY_RESPONSE",
-                requestId,
-                success: false,
-                error: chrome.runtime.lastError.message,
-              },
-              "*"
-            );
-            return;
-          }
-
-          // Forward response back to injected script
-          if (response?.ok && response?.base64) {
-            window.postMessage(
-              {
-                type: "FETCH_IMAGE_PROXY_RESPONSE",
-                requestId,
-                success: true,
-                data: {
-                  base64: response.base64,
-                  width: 0, // Background script doesn't calculate dimensions currently
-                  height: 0,
-                  mimeType: response.mimeType,
-                },
-              },
-              "*"
-            );
-          } else {
-            window.postMessage(
-              {
-                type: "FETCH_IMAGE_PROXY_RESPONSE",
-                requestId,
-                success: false,
-                error: response?.error || "Unknown error",
-              },
-              "*"
-            );
-          }
-        }
-      );
-      return;
-    }
-
-    if (event.data.type === "START_CAPTURE_TEST") {
-      document.body.setAttribute("data-debug-postmessage", "received");
-      console.log("🧪 [TEST] Received capture trigger via postMessage");
-      // Simulate the runtime message
-      const mockMessage = {
-        type: "start-capture",
-        allowNavigation: false,
-        viewports: event.data.viewports,
-      };
-
-      // Trigger via background
-      chrome.runtime.sendMessage({ type: "TRIGGER_CAPTURE_FOR_TAB" });
-    }
-
-    // CRITICAL: Removed duplicate FETCH_IMAGE_PROXY handler.
-    // The correct handler exists above and uses FETCH_IMAGE_PROXY_RESPONSE.
-    // This duplicate used wrong response type FETCH_IMAGE_RESULT.
-
-    // Ping handler to verify bridge connection
-    if (event.data.type === "PING_PROXY") {
-      console.log("🏓 [PROXY] Ping received, sending pong");
-      window.postMessage({ type: "PONG_PROXY", timestamp: Date.now() }, "*");
-    }
-  });
+      // Ping handler to verify bridge connection
+      if (event.data.type === "PING_PROXY") {
+        console.log("🏓 [PROXY] Ping received, sending pong");
+        window.postMessage({ type: "PONG_PROXY", timestamp: Date.now() }, "*");
+      }
+    });
   } else {
-    console.log("[CONTENT_SCRIPT] Message listener already registered, skipping duplicate registration");
+    console.log(
+      "[CONTENT_SCRIPT] Message listener already registered, skipping duplicate registration"
+    );
   }
 
   type CaptureViewportTarget = {
@@ -1659,6 +1621,12 @@ console.log("If you see this, content-script.js is executing!");
           window.removeEventListener("message", messageListener);
 
           const schema = event.data.data;
+          console.log("🔍 [DEBUG] RAW SCHEMA RECEIVED:", {
+            hasRoot: !!schema?.root,
+            rootType: schema?.root?.type,
+            childrenCount: schema?.root?.children?.length,
+            metadata: schema?.metadata,
+          });
 
           // Check for image download failures and report as error
           const imageFailures = (schema?.metadata as any)

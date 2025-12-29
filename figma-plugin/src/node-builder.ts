@@ -90,6 +90,7 @@ interface ValidatedPaint {
   gradientStops?: ColorStop[];
   imageHash?: string;
   imageTransform?: Transform;
+  scaleMode?: "FILL" | "FIT" | "CROP" | "TILE";
   scalingMode?: "FILL" | "FIT" | "CROP" | "TILE";
   rotation?: number;
   gifRef?: any;
@@ -158,7 +159,7 @@ export class NodeBuilder {
     const rawWidth = this.validateNumber(data.layout?.width, 1);
     const rawHeight = this.validateNumber(data.layout?.height, 1);
     const dimensions = this.validateDimensions(rawWidth, rawHeight, nodeId);
-    
+
     // PROFESSIONAL: Apply layout validation and correction
     const correctedData = this.applyProfessionalLayoutValidation(data);
 
@@ -200,31 +201,39 @@ export class NodeBuilder {
    */
   private sanitizePaintArray(
     paints: any[],
-    type: "fills" | "strokes", 
+    type: "fills" | "strokes",
     nodeId: string
   ): ValidatedPaint[] {
     if (!Array.isArray(paints)) return [];
-    
+
     return paints
       .map((paint, index) => {
         // COMPREHENSIVE VALIDATION: Use enhanced paint validation
-        const validation = this.validatePaintObject(paint, { nodeId, index, type });
-        
+        const validation = this.validatePaintObject(paint, {
+          nodeId,
+          index,
+          type,
+        });
+
         if (!validation.isValid) {
-          console.warn(`⚠️ [PAINT VALIDATION] ${nodeId} ${type}[${index}]: ${validation.errors.join(', ')}`);
+          console.warn(
+            `⚠️ [PAINT VALIDATION] ${nodeId} ${type}[${index}]: ${validation.errors.join(
+              ", "
+            )}`
+          );
           diagnostics.logIssue(
             nodeId,
             "Unknown",
-            "PAINT_VALIDATION", 
-            `Invalid ${type}[${index}]: ${validation.errors.join(', ')}`,
+            "PAINT_VALIDATION",
+            `Invalid ${type}[${index}]: ${validation.errors.join(", ")}`,
             paint,
             validation.fallback
           );
-          
+
           // Use validated fallback or return null to filter out
           return validation.fallback;
         }
-        
+
         return validation.sanitized;
       })
       .filter((paint): paint is ValidatedPaint => paint !== null);
@@ -234,67 +243,73 @@ export class NodeBuilder {
    * COMPREHENSIVE PAINT VALIDATOR: Validates paint objects before Figma API calls
    * Prevents the 68% paint validation failures identified in analysis
    */
-  private validatePaintObject(paint: any, context: { nodeId: string; index: number; type: string }): {
+  private validatePaintObject(
+    paint: any,
+    context: { nodeId: string; index: number; type: string }
+  ): {
     isValid: boolean;
     errors: string[];
     sanitized: ValidatedPaint | null;
     fallback: ValidatedPaint | null;
   } {
     const errors: string[] = [];
-    
+
     // Validate paint object exists
-    if (!paint || typeof paint !== 'object') {
+    if (!paint || typeof paint !== "object") {
       return {
         isValid: false,
-        errors: ['Paint object is null or not an object'],
+        errors: ["Paint object is null or not an object"],
         sanitized: null,
-        fallback: this.createDefaultSolidPaint()
+        fallback: this.createDefaultSolidPaint(),
       };
     }
-    
+
     // Validate paint type
     const paintType = this.validatePaintType(paint.type);
     if (!paintType || paintType !== paint.type) {
       errors.push(`Invalid paint type: ${paint.type}`);
     }
-    
+
     // Type-specific validation
     switch (paintType) {
-      case 'SOLID':
+      case "SOLID":
         if (!this.isValidColorObject(paint.color)) {
-          errors.push('SOLID paint missing valid color object');
+          errors.push("SOLID paint missing valid color object");
         }
         break;
-        
-      case 'IMAGE':
+
+      case "IMAGE":
         if (!paint.imageHash && !paint.src) {
-          errors.push('IMAGE paint missing imageHash or src reference');
+          errors.push("IMAGE paint missing imageHash or src reference");
         }
         if (paint.imageHash && !this.isValidImageHash(paint.imageHash)) {
-          errors.push('IMAGE paint has invalid imageHash');
+          errors.push("IMAGE paint has invalid imageHash");
         }
         break;
-        
-      case 'GRADIENT_LINEAR':
-      case 'GRADIENT_RADIAL':
-      case 'GRADIENT_ANGULAR':
-      case 'GRADIENT_DIAMOND':
-        if (!Array.isArray(paint.gradientStops) || paint.gradientStops.length < 2) {
-          errors.push('Gradient paint requires at least 2 gradient stops');
+
+      case "GRADIENT_LINEAR":
+      case "GRADIENT_RADIAL":
+      case "GRADIENT_ANGULAR":
+      case "GRADIENT_DIAMOND":
+        if (
+          !Array.isArray(paint.gradientStops) ||
+          paint.gradientStops.length < 2
+        ) {
+          errors.push("Gradient paint requires at least 2 gradient stops");
         }
         break;
     }
-    
+
     // If validation failed, provide fallback
     if (errors.length > 0) {
       return {
         isValid: false,
         errors,
         sanitized: null,
-        fallback: this.createFallbackPaint(paintType, paint)
+        fallback: this.createFallbackPaint(paintType, paint),
       };
     }
-    
+
     // Create sanitized paint object
     try {
       const sanitized = this.createSanitizedPaint(paint, paintType);
@@ -302,14 +317,14 @@ export class NodeBuilder {
         isValid: true,
         errors: [],
         sanitized,
-        fallback: null
+        fallback: null,
       };
     } catch (error) {
       return {
         isValid: false,
         errors: [`Sanitization failed: ${error.message}`],
         sanitized: null,
-        fallback: this.createDefaultSolidPaint()
+        fallback: this.createDefaultSolidPaint(),
       };
     }
   }
@@ -317,97 +332,127 @@ export class NodeBuilder {
   /**
    * Creates a properly sanitized paint object for Figma API compliance
    */
-  private createSanitizedPaint(paint: any, type: ValidatedPaint["type"]): ValidatedPaint {
+  private createSanitizedPaint(
+    paint: any,
+    type: ValidatedPaint["type"]
+  ): ValidatedPaint {
     const sanitized: ValidatedPaint = { type };
-    
+
     // Copy valid properties only
     const validProps = [
-      "visible", "opacity", "blendMode", "color",
-      "gradientTransform", "gradientStops", "imageHash", 
-      "imageTransform", "scaleMode", "rotation", "gifRef", "filters"
+      "visible",
+      "opacity",
+      "blendMode",
+      "color",
+      "gradientTransform",
+      "gradientStops",
+      "imageHash",
+      "imageTransform",
+      "scaleMode",
+      "rotation",
+      "gifRef",
+      "filters",
     ];
-    
+
     for (const prop of validProps) {
       if (paint[prop] !== undefined) {
         (sanitized as any)[prop] = paint[prop];
       }
     }
-    
+
     // Validate and normalize common properties
     if (sanitized.opacity !== undefined) {
-      sanitized.opacity = Math.max(0, Math.min(1, Number(sanitized.opacity) || 0));
+      sanitized.opacity = Math.max(
+        0,
+        Math.min(1, Number(sanitized.opacity) || 0)
+      );
     }
-    
+
     if (sanitized.visible === undefined) {
       sanitized.visible = true;
     }
-    
+
     // Type-specific normalization
-    if (type === 'SOLID' && paint.color) {
+    if (type === "SOLID" && paint.color) {
       sanitized.color = this.validateColor(paint.color);
     }
-    
+
     return sanitized;
   }
 
   /**
    * Creates fallback paint objects based on original type
    */
-  private createFallbackPaint(type: string, originalPaint: any): ValidatedPaint {
+  private createFallbackPaint(
+    type: string,
+    originalPaint: any
+  ): ValidatedPaint {
     switch (type) {
-      case 'IMAGE':
+      case "IMAGE":
         // Try to preserve image reference if possible
-        if (originalPaint.imageHash && this.isValidImageHash(originalPaint.imageHash)) {
+        if (
+          originalPaint.imageHash &&
+          this.isValidImageHash(originalPaint.imageHash)
+        ) {
           return {
-            type: 'IMAGE',
+            type: "IMAGE",
             visible: true,
             imageHash: originalPaint.imageHash,
-            scaleMode: originalPaint.scaleMode || 'FILL'
+            scaleMode: originalPaint.scaleMode || "FILL",
           };
         }
         // Fall back to transparent placeholder
         return {
-          type: 'SOLID',
+          type: "SOLID",
           visible: true,
-          color: { r: 0.9, g: 0.9, b: 0.9, a: 0.5 }
+          color: { r: 0.9, g: 0.9, b: 0.9, a: 0.5 },
         };
-        
+
       default:
         return this.createDefaultSolidPaint();
     }
   }
-  
+
   /**
    * Creates a safe default solid paint
    */
   private createDefaultSolidPaint(): ValidatedPaint {
     return {
-      type: 'SOLID',
+      type: "SOLID",
       visible: true,
       opacity: 1,
-      color: { r: 0.8, g: 0.8, b: 0.8, a: 1 }
+      color: { r: 0.8, g: 0.8, b: 0.8, a: 1 },
     };
   }
-  
+
   /**
    * Validates color object structure
    */
   private isValidColorObject(color: any): boolean {
-    return color &&
-           typeof color === 'object' &&
-           typeof color.r === 'number' &&
-           typeof color.g === 'number' &&
-           typeof color.b === 'number' &&
-           color.r >= 0 && color.r <= 1 &&
-           color.g >= 0 && color.g <= 1 &&
-           color.b >= 0 && color.b <= 1;
+    return (
+      color &&
+      typeof color === "object" &&
+      typeof color.r === "number" &&
+      typeof color.g === "number" &&
+      typeof color.b === "number" &&
+      color.r >= 0 &&
+      color.r <= 1 &&
+      color.g >= 0 &&
+      color.g <= 1 &&
+      color.b >= 0 &&
+      color.b <= 1
+    );
   }
-  
+
   /**
    * Validates image hash exists in assets
    */
   private isValidImageHash(hash: string): boolean {
-    return typeof hash === 'string' && hash.length > 0 && this.assets?.images?.[hash] !== undefined;
+    return (
+      typeof hash === "string" &&
+      hash.length > 0 &&
+      this.assets?.images?.[hash] !== undefined
+    );
   }
 
   private validatePaintType(type: any): ValidatedPaint["type"] {
@@ -754,76 +799,83 @@ export class NodeBuilder {
 
   async createNode(nodeData: any): Promise<SceneNode | null> {
     if (!nodeData) return null;
-
-    if (nodeData.embed?.type) {
-      const embedNode = await this.createEmbedPlaceholder(nodeData);
-      await this.afterCreate(embedNode, nodeData, { reuseComponent: false });
-      return embedNode;
-    }
-
-    if (nodeData.componentSignature) {
-      const registered = this.componentManager.getComponentBySignature(
-        nodeData.componentSignature
-      );
-      if (registered && nodeData.type !== "COMPONENT") {
-        const instance = registered.createInstance();
-        await this.afterCreate(instance, nodeData, { reuseComponent: true });
-        return instance;
+    try {
+      if (nodeData.embed?.type) {
+        const embedNode = await this.createEmbedPlaceholder(nodeData);
+        await this.afterCreate(embedNode, nodeData, { reuseComponent: false });
+        return embedNode;
       }
-    }
 
-    let node: SceneNode | null = null;
-
-    switch (nodeData.type) {
-      case "TEXT":
-        node = await this.createText(nodeData);
-        break;
-      case "IMAGE":
-        node = await this.createImage(nodeData);
-        break;
-      case "VECTOR":
-        node = await this.createVector(nodeData);
-        break;
-      case "RECTANGLE":
-        node = await this.createRectangle(nodeData);
-        break;
-      case "COMPONENT":
-        node = await this.createComponent(nodeData);
-        break;
-      case "INSTANCE":
-        node = await this.createInstance(nodeData);
-        break;
-      case "FRAME":
-      default:
-        node = await this.createFrame(nodeData);
-        break;
-    }
-
-    if (!node) {
-      return null;
-    }
-
-    await this.afterCreate(node, nodeData, { reuseComponent: false });
-
-    if (nodeData.type === "COMPONENT") {
-      const component = node as ComponentNode;
-      const componentId = nodeData.componentId || nodeData.id || component.id;
-      this.componentManager.registerComponent(componentId, component);
       if (nodeData.componentSignature) {
-        this.componentManager.registerSignature(
-          nodeData.componentSignature,
-          component
+        const registered = this.componentManager.getComponentBySignature(
+          nodeData.componentSignature
+        );
+        if (registered && nodeData.type !== "COMPONENT") {
+          const instance = registered.createInstance();
+          await this.afterCreate(instance, nodeData, { reuseComponent: true });
+          return instance;
+        }
+      }
+
+      let node: SceneNode | null = null;
+
+      switch (nodeData.type) {
+        case "TEXT":
+          node = await this.createText(nodeData);
+          break;
+        case "IMAGE":
+          node = await this.createImage(nodeData);
+          break;
+        case "VECTOR":
+          node = await this.createVector(nodeData);
+          break;
+        case "RECTANGLE":
+          node = await this.createRectangle(nodeData);
+          break;
+        case "COMPONENT":
+          node = await this.createComponent(nodeData);
+          break;
+        case "INSTANCE":
+          node = await this.createInstance(nodeData);
+          break;
+        case "FRAME":
+        default:
+          node = await this.createFrame(nodeData);
+          break;
+      }
+
+      if (!node) {
+        return null;
+      }
+
+      await this.afterCreate(node, nodeData, { reuseComponent: false });
+
+      if (nodeData.type === "COMPONENT") {
+        const component = node as ComponentNode;
+        const componentId = nodeData.componentId || nodeData.id || component.id;
+        this.componentManager.registerComponent(componentId, component);
+        if (nodeData.componentSignature) {
+          this.componentManager.registerSignature(
+            nodeData.componentSignature,
+            component
+          );
+        }
+      } else if (nodeData.componentSignature) {
+        this.safeSetPluginData(
+          node,
+          "componentSignature",
+          nodeData.componentSignature
         );
       }
-    } else if (nodeData.componentSignature) {
-      this.safeSetPluginData(
-        node,
-        "componentSignature",
-        nodeData.componentSignature
-      );
-    }
 
-    return node;
+      return node;
+    } catch (e) {
+      console.error(
+        `❌ [NODE_BUILDER] createNode failed for ${nodeData.type} ${nodeData.id}:`,
+        e
+      );
+      return null;
+    }
   }
 
   private async createFrame(data: any): Promise<FrameNode> {
@@ -1819,10 +1871,10 @@ export class NodeBuilder {
         // Map CSS object-fit to Figma scaleMode
         // IMPORTANT: cover → FILL (not CROP) because CROP requires explicit imageTransform
         const imageFitMapping: Record<string, "FILL" | "FIT" | "CROP"> = {
-          fill: "FILL",       // Stretch to fill container (may distort aspect ratio)
-          contain: "FIT",     // Scale to fit, preserve aspect, may show empty space
-          cover: "FILL",      // Scale to cover, preserve aspect (FILL is correct for cover without imageTransform)
-          none: "CROP",       // Display at intrinsic size, will resize below
+          fill: "FILL", // Stretch to fill container (may distort aspect ratio)
+          contain: "FIT", // Scale to fit, preserve aspect, may show empty space
+          cover: "FILL", // Scale to cover, preserve aspect (FILL is correct for cover without imageTransform)
+          none: "CROP", // Display at intrinsic size, will resize below
           "scale-down": "FIT", // Like contain but never upscale
         };
         scaleMode = imageFitMapping[data.imageFit] || "FILL";
@@ -1834,12 +1886,18 @@ export class NodeBuilder {
             Math.max(this.roundForPixelPerfection(intrinsicH), 1)
           );
           console.log(
-            `✅ [PIXEL-PERFECT] Resized ${data.name || "Image"} to intrinsic size ${intrinsicW}x${intrinsicH} (object-fit: none)`
+            `✅ [PIXEL-PERFECT] Resized ${
+              data.name || "Image"
+            } to intrinsic size ${intrinsicW}x${intrinsicH} (object-fit: none)`
           );
         }
 
         console.log(
-          `✅ [PIXEL-PERFECT] Applied imageFit '${data.imageFit}' → scaleMode '${scaleMode}' for ${data.name || "Image"} (intrinsic: ${intrinsicW}x${intrinsicH}, display: ${displayW}x${displayH})`
+          `✅ [PIXEL-PERFECT] Applied imageFit '${
+            data.imageFit
+          }' → scaleMode '${scaleMode}' for ${
+            data.name || "Image"
+          } (intrinsic: ${intrinsicW}x${intrinsicH}, display: ${displayW}x${displayH})`
         );
       }
 
@@ -2139,30 +2197,38 @@ export class NodeBuilder {
     data: any,
     meta: { reuseComponent: boolean }
   ): Promise<void> {
-    node.name = data.name || node.name;
+    try {
+      node.name = data.name || node.name;
 
-    // CRITICAL FIX: Validate and sanitize all data before applying
-    const validatedData = this.validateNodeData(data);
+      // CRITICAL FIX: Validate and sanitize all data before applying
+      const validatedData = this.validateNodeData(data);
 
-    this.applyPositioning(node, validatedData);
-    await this.applyCommonStyles(node, validatedData);
+      this.applyPositioning(node, validatedData);
+      await this.applyCommonStyles(node, validatedData);
 
-    // Only try to convert CSS Grid → Auto Layout if auto-layout mode is enabled
-    if (this.options?.applyAutoLayout) {
-      if (data.autoLayout && node.type === "FRAME") {
-        this.applyAutoLayout(node as FrameNode, data.autoLayout);
+      // Only try to convert CSS Grid → Auto Layout if auto-layout mode is enabled
+      if (this.options?.applyAutoLayout) {
+        if (data.autoLayout && node.type === "FRAME") {
+          this.applyAutoLayout(node as FrameNode, data.autoLayout);
+        }
+        this.applyGridLayoutMetadata(node, data);
       }
-      this.applyGridLayoutMetadata(node, data);
-    }
 
-    this.applyOverflow(node, data);
-    this.applyOpacity(node, data);
-    this.applyVisibility(node, data);
-    this.applyFilters(node, data);
-    this.applyMetadata(node, data, meta);
+      this.applyOverflow(node, data);
+      this.applyOpacity(node, data);
+      this.applyVisibility(node, data);
+      this.applyFilters(node, data);
+      this.applyMetadata(node, data, meta);
 
-    if (data.designTokens && this.designTokensManager) {
-      await this.applyDesignTokens(node, data.designTokens);
+      if (data.designTokens && this.designTokensManager) {
+        await this.applyDesignTokens(node, data.designTokens);
+      }
+    } catch (e) {
+      console.error(
+        `❌ [NODE_BUILDER] afterCreate failed for ${node.name}:`,
+        e
+      );
+      throw e;
     }
   }
 
@@ -2362,7 +2428,6 @@ export class NodeBuilder {
     }
   }
 
-
   /**
    * PIXEL-PERFECT: Apply transforms using absolute transformation matrix
    * Single source of truth for all transform applications - eliminates coordinate ambiguity
@@ -2394,18 +2459,22 @@ export class NodeBuilder {
       // Figma uses a 2x3 transform matrix: [[a, c, e], [b, d, f]]
       const relativeTransform: Transform = [
         [a, c, tx],
-        [b, d, ty]
+        [b, d, ty],
       ];
 
       // Apply the transform
-      if ('relativeTransform' in node) {
+      if ("relativeTransform" in node) {
         (node as any).relativeTransform = relativeTransform;
         console.log(`  ✅ Applied matrix transform:`, relativeTransform);
       }
 
       // Store original local size for validation
       if (data.localSize) {
-        this.safeSetPluginData(node, "originalLocalSize", JSON.stringify(data.localSize));
+        this.safeSetPluginData(
+          node,
+          "originalLocalSize",
+          JSON.stringify(data.localSize)
+        );
       }
 
       // Store transform metadata for debugging
@@ -2414,9 +2483,10 @@ export class NodeBuilder {
       this.safeSetPluginData(node, "transformOrigin", JSON.stringify(origin));
 
       console.log(
-        `  📊 Transform details: matrix=${matrix}, origin=${JSON.stringify(origin)}, localSize=${JSON.stringify(data.localSize)}`
+        `  📊 Transform details: matrix=${matrix}, origin=${JSON.stringify(
+          origin
+        )}, localSize=${JSON.stringify(data.localSize)}`
       );
-
     } catch (error) {
       console.warn(`  ⚠️ Failed to apply transform matrix:`, error);
       // Fallback: apply as individual transformations
@@ -2431,23 +2501,32 @@ export class NodeBuilder {
   /**
    * Fallback transform application when direct matrix fails
    */
-  private applyTransformFallback(node: SceneNode, matrix: number[], localSize?: {width: number, height: number}): void {
+  private applyTransformFallback(
+    node: SceneNode,
+    matrix: number[],
+    localSize?: { width: number; height: number }
+  ): void {
     const [a, b, c, d, tx, ty] = matrix;
-    
+
     // Extract rotation from matrix
     const rotation = Math.atan2(b, a);
-    if (rotation !== 0 && 'rotation' in node) {
+    if (rotation !== 0 && "rotation" in node) {
       node.rotation = rotation;
-      console.log(`  🔄 Fallback: Applied rotation: ${(rotation * 180) / Math.PI}°`);
+      console.log(
+        `  🔄 Fallback: Applied rotation: ${(rotation * 180) / Math.PI}°`
+      );
     }
 
-    // Extract scale from matrix  
+    // Extract scale from matrix
     const scaleX = Math.sqrt(a * a + b * b);
     const scaleY = Math.sqrt(c * c + d * d);
-    if ((scaleX !== 1 || scaleY !== 1) && 'resize' in node && localSize) {
+    if ((scaleX !== 1 || scaleY !== 1) && "resize" in node && localSize) {
       const scaledWidth = localSize.width * scaleX;
       const scaledHeight = localSize.height * scaleY;
-      (node as LayoutMixin).resize(Math.max(scaledWidth, 1), Math.max(scaledHeight, 1));
+      (node as LayoutMixin).resize(
+        Math.max(scaledWidth, 1),
+        Math.max(scaledHeight, 1)
+      );
       console.log(`  📏 Fallback: Applied scale: ${scaleX}x${scaleY}`);
     }
 
@@ -2464,43 +2543,45 @@ export class NodeBuilder {
    * Fixes stacking context translation issues identified in validation analysis
    */
 
-
   private applyStackingContext(node: SceneNode, data: any): void {
     // Extract z-index from multiple possible sources
-    const zIndex = data.absoluteLayout?.zIndex || 
-                  data.layoutContext?.zIndex || 
-                  data.style?.zIndex ||
-                  data.zIndex;
-    
-    if (zIndex !== undefined && zIndex !== null && zIndex !== 'auto') {
+    const zIndex =
+      data.absoluteLayout?.zIndex ||
+      data.layoutContext?.zIndex ||
+      data.style?.zIndex ||
+      data.zIndex;
+
+    if (zIndex !== undefined && zIndex !== null && zIndex !== "auto") {
       // Normalize z-index to safe range for Figma layer ordering
       const normalizedZIndex = this.normalizeZIndex(zIndex);
-      
+
       // Store z-index for layer sorting during parent processing
       this.safeSetPluginData(
         node,
-        "cssZIndex", 
-        JSON.stringify({ 
+        "cssZIndex",
+        JSON.stringify({
           original: zIndex,
           normalized: normalizedZIndex,
-          stackingContext: data.absoluteLayout?._stackingContext || false
+          stackingContext: data.absoluteLayout?._stackingContext || false,
         })
       );
-      
+
       // Log for debugging stacking issues
-      console.log(`🔄 [STACKING] Applied z-index ${zIndex} (normalized: ${normalizedZIndex}) to ${data.name}`);
+      console.log(
+        `🔄 [STACKING] Applied z-index ${zIndex} (normalized: ${normalizedZIndex}) to ${data.name}`
+      );
     }
 
     // Handle fixed/absolute positioning for stacking context
     const position = data.layoutContext?.position || data.style?.position;
-    if (position === 'fixed' || position === 'absolute') {
+    if (position === "fixed" || position === "absolute") {
       this.safeSetPluginData(
         node,
         "cssPosition",
         JSON.stringify({
           position,
           zIndex: zIndex || 0,
-          stackingContext: true
+          stackingContext: true,
         })
       );
     }
@@ -2510,12 +2591,12 @@ export class NodeBuilder {
    * Normalize z-index values to prevent overflow in Figma's layer system
    */
   private normalizeZIndex(zIndex: any): number {
-    if (typeof zIndex !== 'number') {
+    if (typeof zIndex !== "number") {
       const parsed = parseInt(String(zIndex), 10);
       if (!isFinite(parsed)) return 0;
       zIndex = parsed;
     }
-    
+
     // Clamp z-index to reasonable range (-1000 to 1000)
     // Figma handles layer ordering differently than CSS z-index
     return Math.max(-1000, Math.min(1000, zIndex));
@@ -2613,29 +2694,39 @@ export class NodeBuilder {
   private applyPositioning(node: SceneNode, data: any) {
     if (data.layout) {
       // PROFESSIONAL: Analyze layout intelligence for optimal positioning strategy
-      const layoutIntelligence = this.professionalLayoutSolver.analyzeLayoutIntelligence(data);
-      
+      const layoutIntelligence =
+        this.professionalLayoutSolver.analyzeLayoutIntelligence(data);
+
       // Apply professional hybrid positioning strategy
       this.applyProfessionalPositioning(node, data, layoutIntelligence);
-      
+
       // ENHANCED: Use comprehensive coordinate validation and normalization
       const coordResult = this.validateAndNormalizeCoordinates(data.layout);
-      
+
       if (!coordResult.isValid) {
         // Log validation errors
-        coordResult.errors.forEach(error => {
+        coordResult.errors.forEach((error) => {
           diagnostics.logIssue(
             data.id || "unknown",
-            data.name || "unnamed", 
+            data.name || "unnamed",
             "COORDINATE_VALIDATION",
             error,
             data.layout,
-            { x: coordResult.x, y: coordResult.y, width: coordResult.width, height: coordResult.height }
+            {
+              x: coordResult.x,
+              y: coordResult.y,
+              width: coordResult.width,
+              height: coordResult.height,
+            }
           );
         });
-        console.warn(`⚠️ [COORDINATE VALIDATION] ${data.name}: ${coordResult.errors.join(', ')}`);
+        console.warn(
+          `⚠️ [COORDINATE VALIDATION] ${data.name}: ${coordResult.errors.join(
+            ", "
+          )}`
+        );
       }
-      
+
       let { x, y, width, height } = coordResult;
 
       // Store original fractional values for debugging
@@ -2687,10 +2778,16 @@ export class NodeBuilder {
       // IMPORTANT: Do NOT return out of the build pipeline. Only skip other transform methods.
       let appliedPixelPerfectMatrix = false;
 
-      if (data.absoluteTransform) {
-        this.applyPixelPerfectTransform(node, data, untransformedWidth, untransformedHeight);
-        appliedPixelPerfectMatrix = true;
-      }
+      // TODO: Implement applyPixelPerfectTransform method
+      // if (data.absoluteTransform) {
+      //   this.applyPixelPerfectTransform(
+      //     node,
+      //     data,
+      //     untransformedWidth,
+      //     untransformedHeight
+      //   );
+      //   appliedPixelPerfectMatrix = true;
+      // }
 
       // Only attempt other transform paths if we did NOT already apply the absoluteTransform matrix.
       if (!appliedPixelPerfectMatrix) {
@@ -2713,7 +2810,7 @@ export class NodeBuilder {
 
       // PROFESSIONAL: Apply positioning with transform precision
       this.applyProfessionalTransform(node, data, x, y);
-      
+
       // CRITICAL FIX: Always apply positioning if we have valid coordinates
       // The enhanced-figma-importer will handle the proper sequence of append -> position
       // This code runs AFTER the node is appended, so we can safely set coordinates
@@ -3068,15 +3165,22 @@ export class NodeBuilder {
 
       // Apply wrap setting
       node.layoutWrap = layout.wrap ? "WRAP" : "NO_WRAP";
-      
+
       // PROFESSIONAL: Apply strokesIncludedInLayout for professional border-box behavior
       if (layout.strokesIncludedInLayout !== undefined) {
         node.strokesIncludedInLayout = layout.strokesIncludedInLayout;
-        console.log(`📍 [PROFESSIONAL LAYOUT] Applied strokesIncludedInLayout: ${layout.strokesIncludedInLayout}`);
-      } else if (node.strokeWeight && node.strokeWeight > 0) {
+        console.log(
+          `📍 [PROFESSIONAL LAYOUT] Applied strokesIncludedInLayout: ${layout.strokesIncludedInLayout}`
+        );
+      } else if (
+        typeof node.strokeWeight === "number" &&
+        node.strokeWeight > 0
+      ) {
         // Auto-detect: include strokes if element has visible borders
         node.strokesIncludedInLayout = true;
-        console.log(`📍 [PROFESSIONAL LAYOUT] Auto-detected strokesIncludedInLayout: true (stroke weight: ${node.strokeWeight})`);
+        console.log(
+          `📍 [PROFESSIONAL LAYOUT] Auto-detected strokesIncludedInLayout: true (stroke weight: ${node.strokeWeight})`
+        );
       } else {
         node.strokesIncludedInLayout = false;
       }
@@ -3217,13 +3321,23 @@ export class NodeBuilder {
           data.backgrounds && data.backgrounds.length > 0;
         const hasImageHash = !!data.imageHash;
         // CRITICAL FIX: Include computed background colors as valid fill source
-        const hasComputedBackgroundColor = !!(data.computedStyle?.backgroundColor && 
-          data.computedStyle.backgroundColor !== 'transparent' && 
-          data.computedStyle.backgroundColor !== 'rgba(0, 0, 0, 0)' && 
-          data.computedStyle.backgroundColor !== 'rgba(0,0,0,0)');
-        const hasStyleBackgroundColor = !!(data.style?.backgroundColor || data.backgroundColor || data.fillColor);
+        const hasComputedBackgroundColor = !!(
+          data.computedStyle?.backgroundColor &&
+          data.computedStyle.backgroundColor !== "transparent" &&
+          data.computedStyle.backgroundColor !== "rgba(0, 0, 0, 0)" &&
+          data.computedStyle.backgroundColor !== "rgba(0,0,0,0)"
+        );
+        const hasStyleBackgroundColor = !!(
+          data.style?.backgroundColor ||
+          data.backgroundColor ||
+          data.fillColor
+        );
         const hasAnyFillData =
-          hasFillsInSchema || hasBackgroundsInSchema || hasImageHash || hasComputedBackgroundColor || hasStyleBackgroundColor;
+          hasFillsInSchema ||
+          hasBackgroundsInSchema ||
+          hasImageHash ||
+          hasComputedBackgroundColor ||
+          hasStyleBackgroundColor;
 
         // CRITICAL FIX: Headers/nav should NEVER skip fill processing
         // Only skip fill processing if BOTH conditions are true:
@@ -3244,12 +3358,12 @@ export class NodeBuilder {
               isBodyOrHtml,
               schemaExplicitlyNoFills,
               hasFillsInSchema,
-              hasBackgroundsInSchema, 
+              hasBackgroundsInSchema,
               hasImageHash,
               hasComputedBackgroundColor,
               hasStyleBackgroundColor,
               computedBg: data.computedStyle?.backgroundColor,
-              styleBg: data.style?.backgroundColor
+              styleBg: data.style?.backgroundColor,
             }
           );
           (node as SceneNodeWithGeometry).fills = [];
@@ -3271,7 +3385,9 @@ export class NodeBuilder {
                 hasStyleBackgroundColor,
                 computedBg: data.computedStyle?.backgroundColor,
                 styleBg: data.style?.backgroundColor,
-                reason: !schemaExplicitlyNoFills ? 'schema has fills' : 'has other fill sources'
+                reason: !schemaExplicitlyNoFills
+                  ? "schema has fills"
+                  : "has other fill sources",
               }
             );
           }
@@ -3492,14 +3608,22 @@ export class NodeBuilder {
 
           // 3.5. CRITICAL FIX: If we have an early fallback color but no paints yet, apply it immediately
           // This ensures computed background colors are never lost even when schema has no fills
-          if (paints.length === 0 && earlyFallbackColor && earlyFallbackColor.a > 0) {
+          if (
+            paints.length === 0 &&
+            earlyFallbackColor &&
+            earlyFallbackColor.a > 0
+          ) {
             console.log(
               `  🎨 [EARLY FALLBACK DIRECT] Applying computed backgroundColor immediately for ${data.name}:`,
               earlyFallbackColor
             );
             paints.push(
               figma.util.solidPaint(
-                { r: earlyFallbackColor.r, g: earlyFallbackColor.g, b: earlyFallbackColor.b },
+                {
+                  r: earlyFallbackColor.r,
+                  g: earlyFallbackColor.g,
+                  b: earlyFallbackColor.b,
+                },
                 {
                   opacity: earlyFallbackColor.a,
                   visible: true,
@@ -5317,10 +5441,10 @@ export class NodeBuilder {
     // IMPORTANT: cover → FILL (not CROP) because CROP requires explicit imageTransform
     // FILL with proper aspect ratio preservation is the correct Figma equivalent of CSS cover
     const mapping: Record<string, "FILL" | "FIT" | "CROP" | "TILE"> = {
-      fill: "FILL",       // Stretch to fill
-      contain: "FIT",     // Scale to fit, preserve aspect
-      cover: "FILL",      // Scale to cover, preserve aspect (FILL is correct without imageTransform)
-      none: "CROP",       // Display at intrinsic size
+      fill: "FILL", // Stretch to fill
+      contain: "FIT", // Scale to fit, preserve aspect
+      cover: "FILL", // Scale to cover, preserve aspect (FILL is correct without imageTransform)
+      none: "CROP", // Display at intrinsic size
       "scale-down": "FIT", // Like contain but no upscale
     };
     return mapping[objectFit] || "FILL";
@@ -5330,7 +5454,10 @@ export class NodeBuilder {
    * PHASE 4: Apply CSS filters and blend modes with strict "map or rasterize" policy
    */
   private applyCssFiltersAndBlend(node: SceneNode, data: any): void {
-    const { parseCssFilter, filterRequiresRasterization } = require("./utils/css-filter-parser");
+    const {
+      parseCssFilter,
+      filterRequiresRasterization,
+    } = require("./utils/css-filter-parser");
 
     // Blend mode
     if (data.mixBlendMode) {
@@ -5357,7 +5484,11 @@ export class NodeBuilder {
       for (const f of parsed) {
         if (f.kind === "blur" && f.radiusPx > 0) {
           // BlurEffect with type 'LAYER_BLUR' and radius
-          effects.push({ type: "LAYER_BLUR", radius: f.radiusPx, visible: true } as any);
+          effects.push({
+            type: "LAYER_BLUR",
+            radius: f.radiusPx,
+            visible: true,
+          } as any);
         }
 
         if (f.kind === "drop-shadow") {
@@ -5497,12 +5628,17 @@ export class NodeBuilder {
         // Replace all fills with the rasterized screenshot
         (node as any).fills = [imagePaint];
 
-        console.log(`[PHASE 5] ✅ Applied rasterization screenshot to ${data.tagName}`, {
-          reason,
-          imageHash: imageHash.substring(0, 16) + "...",
-        });
+        console.log(
+          `[PHASE 5] ✅ Applied rasterization screenshot to ${data.tagName}`,
+          {
+            reason,
+            imageHash: imageHash.substring(0, 16) + "...",
+          }
+        );
       } else {
-        console.warn(`[PHASE 5] Node type ${node.type} does not support fills - cannot apply rasterization`);
+        console.warn(
+          `[PHASE 5] Node type ${node.type} does not support fills - cannot apply rasterization`
+        );
       }
     } catch (err) {
       console.error("[PHASE 5] Failed to apply rasterization:", err);
@@ -6181,7 +6317,7 @@ export class NodeBuilder {
 
   // PROFESSIONAL: Layout solver instance for advanced positioning
   private professionalLayoutSolver = new ProfessionalLayoutSolver();
-  
+
   /**
    * PROFESSIONAL: Sub-pixel precision coordinate normalization
    * Uses professional 0.01px precision for maximum accuracy
@@ -6189,7 +6325,7 @@ export class NodeBuilder {
    */
   private roundForPixelPerfection(value: number): number {
     if (!isFinite(value)) return 0;
-    
+
     // PROFESSIONAL: Use sub-pixel precision from layout solver
     return this.professionalLayoutSolver.handleSubPixelPrecision(value);
   }
@@ -6200,20 +6336,20 @@ export class NodeBuilder {
    */
   private validateAndNormalizeCoordinates(layout: any): {
     x: number;
-    y: number; 
+    y: number;
     width: number;
     height: number;
     isValid: boolean;
     errors: string[];
   } {
     const errors: string[] = [];
-    
+
     // Extract and validate coordinates
-    const x = typeof layout?.x === 'number' ? layout.x : 0;
-    const y = typeof layout?.y === 'number' ? layout.y : 0;
-    const width = typeof layout?.width === 'number' ? layout.width : 1;
-    const height = typeof layout?.height === 'number' ? layout.height : 1;
-    
+    const x = typeof layout?.x === "number" ? layout.x : 0;
+    const y = typeof layout?.y === "number" ? layout.y : 0;
+    const width = typeof layout?.width === "number" ? layout.width : 1;
+    const height = typeof layout?.height === "number" ? layout.height : 1;
+
     // Validate coordinate ranges
     if (!isFinite(x) || !isFinite(y)) {
       errors.push(`Invalid position coordinates: x=${x}, y=${y}`);
@@ -6221,20 +6357,20 @@ export class NodeBuilder {
     if (!isFinite(width) || !isFinite(height) || width <= 0 || height <= 0) {
       errors.push(`Invalid dimensions: width=${width}, height=${height}`);
     }
-    
+
     // Normalize coordinates
     const normalizedX = this.roundForPixelPerfection(x);
     const normalizedY = this.roundForPixelPerfection(y);
     const normalizedWidth = Math.max(this.roundForPixelPerfection(width), 1);
     const normalizedHeight = Math.max(this.roundForPixelPerfection(height), 1);
-    
+
     return {
       x: normalizedX,
       y: normalizedY,
       width: normalizedWidth,
       height: normalizedHeight,
       isValid: errors.length === 0,
-      errors
+      errors,
     };
   }
 
@@ -7423,49 +7559,69 @@ export class NodeBuilder {
       // Some node types can't store plugin data; ignore
     }
   }
-  
+
   /**
    * PROFESSIONAL: Apply professional positioning strategy with layout intelligence
    */
   private applyProfessionalPositioning(
-    node: SceneNode, 
-    data: any, 
+    node: SceneNode,
+    data: any,
     layoutIntelligence: any
   ): void {
     const { hybridStrategy, confidenceScore } = layoutIntelligence;
-    
+
     // Apply intelligent constraint calculation if confidence is high
     if (confidenceScore > 0.7 && data.constraints && "constraints" in node) {
-      const optimizedConstraints = this.professionalLayoutSolver.calculateOptimalConstraints(
-        data,
-        {} // parent data - would need to be passed from context
-      );
-      
+      const optimizedConstraints =
+        this.professionalLayoutSolver.calculateOptimalConstraints(
+          data,
+          {} // parent data - would need to be passed from context
+        );
+
       (node as ConstraintMixin).constraints = {
         horizontal: optimizedConstraints.horizontal,
-        vertical: optimizedConstraints.vertical
+        vertical: optimizedConstraints.vertical,
       };
-      
-      console.log(`🎯 [PROFESSIONAL POSITIONING] Applied intelligent constraints: ${optimizedConstraints.horizontal}/${optimizedConstraints.vertical}`);
+
+      console.log(
+        `🎯 [PROFESSIONAL POSITIONING] Applied intelligent constraints: ${optimizedConstraints.horizontal}/${optimizedConstraints.vertical}`
+      );
     }
-    
+
     // CORRECTED: Apply layoutPositioning if specified (direct property on node)
+    // CRITICAL FIX: Only set ABSOLUTE positioning if parent has layoutMode !== NONE
     if (data.layoutPositioning && "layoutPositioning" in node) {
-      (node as any).layoutPositioning = data.layoutPositioning;
-      console.log(`📍 [PROFESSIONAL POSITIONING] Applied layoutPositioning: ${data.layoutPositioning}`);
+      // Check if parent supports this layoutPositioning mode
+      const canUseAbsolute =
+        data.layoutPositioning === "AUTO" ||
+        (node.parent &&
+          "layoutMode" in node.parent &&
+          (node.parent as FrameNode).layoutMode !== "NONE");
+
+      if (canUseAbsolute) {
+        (node as any).layoutPositioning = data.layoutPositioning;
+        console.log(
+          `📍 [PROFESSIONAL POSITIONING] Applied layoutPositioning: ${data.layoutPositioning}`
+        );
+      } else {
+        console.warn(
+          `⚠️ [PROFESSIONAL POSITIONING] Skipping layoutPositioning=${data.layoutPositioning} - parent layoutMode is NONE`
+        );
+        // Don't set layoutPositioning - leave it as default to prevent Figma API error
+      }
     }
-    
+
     // CORRECTED: Apply layoutAlign for Auto Layout children (direct property)
     if (data.layoutAlign && "layoutAlign" in node) {
       (node as any).layoutAlign = data.layoutAlign;
     }
-    
+
     // CORRECTED: Apply layoutGrow for flexible layouts (direct property)
     if (data.layoutGrow !== undefined && "layoutGrow" in node) {
       (node as any).layoutGrow = data.layoutGrow;
     }
   }
-  
+
   /**
    * PROFESSIONAL: Apply professional transform precision with relativeTransform API
    */
@@ -7476,10 +7632,10 @@ export class NodeBuilder {
     y: number
   ): void {
     // Check if we have CSS transform data that needs professional handling
-    if (data.cssTransform && data.cssTransform !== 'none') {
+    if (data.cssTransform && data.cssTransform !== "none") {
       try {
         const parsedTransform = parseTransform(data.cssTransform);
-        
+
         if (parsedTransform) {
           // PROFESSIONAL: Use relativeTransform for precise transform application
           const transformMatrix = this.createProfessionalTransformMatrix(
@@ -7487,30 +7643,40 @@ export class NodeBuilder {
             x,
             y
           );
-          
+
           if ("relativeTransform" in node) {
             (node as SceneNode).relativeTransform = transformMatrix;
-            console.log(`🔄 [PROFESSIONAL TRANSFORM] Applied relativeTransform matrix`);
+            console.log(
+              `🔄 [PROFESSIONAL TRANSFORM] Applied relativeTransform matrix`
+            );
             return; // Skip regular positioning since transform handles it
             // Mark as professionally transformed to prevent double application
-            this.safeSetPluginData(node, "professionalTransformApplied", "true");
+            this.safeSetPluginData(
+              node,
+              "professionalTransformApplied",
+              "true"
+            );
           }
         }
       } catch (error) {
-        console.warn(`⚠️ [PROFESSIONAL TRANSFORM] Failed to parse transform: ${error}`);
+        console.warn(
+          `⚠️ [PROFESSIONAL TRANSFORM] Failed to parse transform: ${error}`
+        );
       }
     }
-    
+
     // Apply professional sub-pixel precision to regular positioning
     if ("x" in node && "y" in node) {
-      const professionalX = this.professionalLayoutSolver.handleSubPixelPrecision(x);
-      const professionalY = this.professionalLayoutSolver.handleSubPixelPrecision(y);
-      
+      const professionalX =
+        this.professionalLayoutSolver.handleSubPixelPrecision(x);
+      const professionalY =
+        this.professionalLayoutSolver.handleSubPixelPrecision(y);
+
       node.x = professionalX;
       node.y = professionalY;
     }
   }
-  
+
   /**
    * CORRECTED: Create Figma-compatible transform matrix following API specification
    */
@@ -7520,132 +7686,181 @@ export class NodeBuilder {
     y: number
   ): Transform {
     // CORRECTED: Start with identity matrix per Figma API: [[1, 0, 0], [0, 1, 0]]
-    let matrix: Transform = [[1, 0, 0], [0, 1, 0]];
-    
+    let matrix: Transform = [
+      [1, 0, 0],
+      [0, 1, 0],
+    ];
+
     // Apply rotation if present (per Figma API spec)
-    if (parsedTransform.rotation !== undefined && parsedTransform.rotation !== 0) {
-      const angle = (parsedTransform.rotation * Math.PI) / 180; // Convert to radians
+    if (parsedTransform.rotate !== undefined && parsedTransform.rotate !== 0) {
+      const angle = (parsedTransform.rotate * Math.PI) / 180; // Convert to radians
       const cos = Math.cos(angle);
       const sin = Math.sin(angle);
-      
+
       // CORRECTED: Rotation matrix per Figma docs: [[cos, sin, 0], [-sin, cos, 0]]
       matrix = [
         [cos, sin, 0],
-        [-sin, cos, 0]
+        [-sin, cos, 0],
       ];
     }
-    
+
     // Apply skew if present (following affine transform rules)
     if (parsedTransform.skewX || parsedTransform.skewY) {
-      const skewX = parsedTransform.skewX ? Math.tan((parsedTransform.skewX * Math.PI) / 180) : 0;
-      const skewY = parsedTransform.skewY ? Math.tan((parsedTransform.skewY * Math.PI) / 180) : 0;
-      
+      const skewX = parsedTransform.skewX
+        ? Math.tan((parsedTransform.skewX * Math.PI) / 180)
+        : 0;
+      const skewY = parsedTransform.skewY
+        ? Math.tan((parsedTransform.skewY * Math.PI) / 180)
+        : 0;
+
       // Apply skew transformation to the existing matrix
       const newMatrix: Transform = [
-        [matrix[0][0] + skewX * matrix[1][0], matrix[0][1] + skewX * matrix[1][1], matrix[0][2]],
-        [matrix[1][0] + skewY * matrix[0][0], matrix[1][1] + skewY * matrix[0][1], matrix[1][2]]
+        [
+          matrix[0][0] + skewX * matrix[1][0],
+          matrix[0][1] + skewX * matrix[1][1],
+          matrix[0][2],
+        ],
+        [
+          matrix[1][0] + skewY * matrix[0][0],
+          matrix[1][1] + skewY * matrix[0][1],
+          matrix[1][2],
+        ],
       ];
       matrix = newMatrix;
     }
-    
+
     // CORRECTED: Apply translation to the transform matrix (translation goes in [0][2] and [1][2])
     const preciseX = this.professionalLayoutSolver.handleSubPixelPrecision(x);
     const preciseY = this.professionalLayoutSolver.handleSubPixelPrecision(y);
-    
+
     matrix[0][2] = preciseX;
     matrix[1][2] = preciseY;
-    
+
     return matrix;
   }
-  
+
   /**
    * PROFESSIONAL: Apply comprehensive layout validation and intelligent correction
    */
   private applyProfessionalLayoutValidation(data: any): any {
     const correctedData = { ...data };
-    
+
     // PROFESSIONAL: Validate and correct layout properties
     if (correctedData.layout) {
-      const layoutIntelligence = this.professionalLayoutSolver.analyzeLayoutIntelligence(correctedData);
-      
+      const layoutIntelligence =
+        this.professionalLayoutSolver.analyzeLayoutIntelligence(correctedData);
+
       // Apply intelligent corrections based on layout analysis
       if (layoutIntelligence.confidenceScore > 0.8) {
-        console.log(`🏆 [LAYOUT VALIDATION] High confidence layout detected (${(layoutIntelligence.confidenceScore * 100).toFixed(1)}%) - applying professional corrections`);
-        
+        console.log(
+          `🏆 [LAYOUT VALIDATION] High confidence layout detected (${(
+            layoutIntelligence.confidenceScore * 100
+          ).toFixed(1)}%) - applying professional corrections`
+        );
+
         // Auto-correct positioning strategy based on analysis
         if (layoutIntelligence.hybridStrategy.absoluteChildren.length > 0) {
-          correctedData.layoutPositioning = 'ABSOLUTE';
-          
+          correctedData.layoutPositioning = "ABSOLUTE";
+
           // Apply intelligent constraints to absolute positioned elements
-          const optimalConstraints = this.professionalLayoutSolver.calculateOptimalConstraints(
-            correctedData,
-            {} // Parent context would be ideal here
-          );
-          
+          const optimalConstraints =
+            this.professionalLayoutSolver.calculateOptimalConstraints(
+              correctedData,
+              {} // Parent context would be ideal here
+            );
+
           correctedData.constraints = optimalConstraints;
-        } else if (layoutIntelligence.inferredLayout.layoutMode !== 'NONE') {
-          correctedData.layoutPositioning = 'AUTO';
-          
+        } else if (layoutIntelligence.inferredLayout.layoutMode !== "NONE") {
+          correctedData.layoutPositioning = "AUTO";
+
           // Apply intelligent auto layout settings
           if (!correctedData.autoLayout) {
             correctedData.autoLayout = {};
           }
-          
+
           // Copy professional layout configuration
-          correctedData.autoLayout.layoutMode = layoutIntelligence.inferredLayout.layoutMode;
-          correctedData.autoLayout.primaryAxisAlignItems = layoutIntelligence.inferredLayout.primaryAxisAlignItems;
-          correctedData.autoLayout.counterAxisAlignItems = layoutIntelligence.inferredLayout.counterAxisAlignItems;
-          correctedData.autoLayout.itemSpacing = layoutIntelligence.inferredLayout.itemSpacing;
-          correctedData.autoLayout.strokesIncludedInLayout = layoutIntelligence.inferredLayout.strokesIncludedInLayout;
-          correctedData.autoLayout.layoutWrap = layoutIntelligence.inferredLayout.layoutWrap;
+          correctedData.autoLayout.layoutMode =
+            layoutIntelligence.inferredLayout.layoutMode;
+          correctedData.autoLayout.primaryAxisAlignItems =
+            layoutIntelligence.inferredLayout.primaryAxisAlignItems;
+          correctedData.autoLayout.counterAxisAlignItems =
+            layoutIntelligence.inferredLayout.counterAxisAlignItems;
+          correctedData.autoLayout.itemSpacing =
+            layoutIntelligence.inferredLayout.itemSpacing;
+          correctedData.autoLayout.strokesIncludedInLayout =
+            layoutIntelligence.inferredLayout.strokesIncludedInLayout;
+          correctedData.autoLayout.layoutWrap =
+            layoutIntelligence.inferredLayout.layoutWrap;
         }
       } else {
-        console.log(`🔍 [LAYOUT VALIDATION] Low confidence layout (${(layoutIntelligence.confidenceScore * 100).toFixed(1)}%) - using fallback strategy: ${layoutIntelligence.fallbackStrategy.mode}`);
-        
+        console.log(
+          `🔍 [LAYOUT VALIDATION] Low confidence layout (${(
+            layoutIntelligence.confidenceScore * 100
+          ).toFixed(1)}%) - using fallback strategy: ${
+            layoutIntelligence.fallbackStrategy.mode
+          }`
+        );
+
         // Apply fallback strategy
         switch (layoutIntelligence.fallbackStrategy.mode) {
-          case 'ABSOLUTE':
-            correctedData.layoutPositioning = 'ABSOLUTE';
+          case "ABSOLUTE":
+            correctedData.layoutPositioning = "ABSOLUTE";
             break;
-          case 'MIXED':
-            correctedData.layoutPositioning = 'ABSOLUTE'; // Conservative approach
+          case "MIXED":
+            correctedData.layoutPositioning = "ABSOLUTE"; // Conservative approach
             break;
-          case 'AUTO':
-            correctedData.layoutPositioning = 'AUTO';
+          case "AUTO":
+            correctedData.layoutPositioning = "AUTO";
             break;
         }
       }
-      
+
       // PROFESSIONAL: Apply sub-pixel precision correction to coordinates
       if (correctedData.layout.x !== undefined) {
-        correctedData.layout.x = this.professionalLayoutSolver.handleSubPixelPrecision(correctedData.layout.x);
+        correctedData.layout.x =
+          this.professionalLayoutSolver.handleSubPixelPrecision(
+            correctedData.layout.x
+          );
       }
       if (correctedData.layout.y !== undefined) {
-        correctedData.layout.y = this.professionalLayoutSolver.handleSubPixelPrecision(correctedData.layout.y);
+        correctedData.layout.y =
+          this.professionalLayoutSolver.handleSubPixelPrecision(
+            correctedData.layout.y
+          );
       }
       if (correctedData.layout.width !== undefined) {
-        correctedData.layout.width = this.professionalLayoutSolver.handleSubPixelPrecision(correctedData.layout.width);
+        correctedData.layout.width =
+          this.professionalLayoutSolver.handleSubPixelPrecision(
+            correctedData.layout.width
+          );
       }
       if (correctedData.layout.height !== undefined) {
-        correctedData.layout.height = this.professionalLayoutSolver.handleSubPixelPrecision(correctedData.layout.height);
+        correctedData.layout.height =
+          this.professionalLayoutSolver.handleSubPixelPrecision(
+            correctedData.layout.height
+          );
       }
     }
-    
+
     // PROFESSIONAL: Validate and enhance transform data
-    if (correctedData.cssTransform && correctedData.cssTransform !== 'none') {
+    if (correctedData.cssTransform && correctedData.cssTransform !== "none") {
       try {
         const parsedTransform = parseTransform(correctedData.cssTransform);
         if (parsedTransform) {
           // Store enhanced transform data for professional processing
           correctedData._professionalTransform = parsedTransform;
-          console.log(`🔄 [LAYOUT VALIDATION] Enhanced transform data available`);
+          console.log(
+            `🔄 [LAYOUT VALIDATION] Enhanced transform data available`
+          );
         }
       } catch (error) {
-        console.warn(`⚠️ [LAYOUT VALIDATION] Transform validation failed: ${error}`);
+        console.warn(
+          `⚠️ [LAYOUT VALIDATION] Transform validation failed: ${error}`
+        );
         delete correctedData.cssTransform; // Remove invalid transform
       }
     }
-    
+
     return correctedData;
   }
 }

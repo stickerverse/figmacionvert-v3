@@ -405,6 +405,73 @@ let chunkedDataBuffer: string[] = [];
 let expectedChunks = 0;
 let receivedChunks = 0;
 
+// ===== PERSISTENT CAPTURE STATE =====
+// Store capture state so it persists across popup window close/reopen
+interface CaptureState {
+  isCapturing: boolean;
+  stage: string;
+  jobId: string | null;
+  progress: number;
+  statusMessage: string;
+  startTime: number | null;
+  tabId: number | null;
+  logs: Array<{ timestamp: number; message: string; level: string }>;
+}
+
+let currentCaptureState: CaptureState = {
+  isCapturing: false,
+  stage: "idle",
+  jobId: null,
+  progress: 0,
+  statusMessage: "",
+  startTime: null,
+  tabId: null,
+  logs: [],
+};
+
+// Save capture state to chrome.storage
+async function saveCaptureState() {
+  try {
+    await chrome.storage.local.set({ captureState: currentCaptureState });
+  } catch (error) {
+    console.error("[STATE] Failed to save capture state:", error);
+  }
+}
+
+// Load capture state from chrome.storage
+async function loadCaptureState(): Promise<CaptureState | null> {
+  try {
+    const result = await chrome.storage.local.get("captureState");
+    return result.captureState || null;
+  } catch (error) {
+    console.error("[STATE] Failed to load capture state:", error);
+    return null;
+  }
+}
+
+// Broadcast capture state update to popup window
+function broadcastCaptureState(updates: Partial<CaptureState> = {}) {
+  // Update current state
+  currentCaptureState = { ...currentCaptureState, ...updates };
+
+  // Save to storage
+  saveCaptureState();
+
+  // Broadcast to popup window
+  if (popupWindowId !== null) {
+    chrome.runtime.sendMessage(
+      {
+        type: "CAPTURE_STATE_UPDATE",
+        state: currentCaptureState,
+      },
+      () => {
+        // Ignore "no listeners" errors (popup may not be ready yet)
+        void chrome.runtime.lastError;
+      }
+    );
+  }
+}
+
 chrome.action.onClicked.addListener(async (tab) => {
   // Proactively inject content script if possible
   if (tab.id) {
@@ -413,8 +480,22 @@ chrome.action.onClicked.addListener(async (tab) => {
     );
   }
 
-  // Popup will open automatically via action.default_popup in manifest
-  // Side panel behavior disabled - using normal popup instead
+  // Open or focus the persistent popup window
+  if (popupWindowId !== null) {
+    // Window already exists - focus it
+    try {
+      await chrome.windows.update(popupWindowId, { focused: true });
+      console.log("[POPUP] Focused existing popup window");
+    } catch (error) {
+      // Window was closed - create new one
+      console.log("[POPUP] Previous window closed, creating new one");
+      popupWindowId = null;
+      createPersistentWindow();
+    }
+  } else {
+    // Create new popup window
+    createPersistentWindow();
+  }
 });
 
 chrome.commands.onCommand.addListener(async (command) => {
@@ -485,6 +566,31 @@ let captureMode: "send" | "download" = "send";
 // The logic is now handled directly in the message handler or via content script flow
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  // Handle popup requesting current capture state
+  if (message.type === "GET_CAPTURE_STATE") {
+    console.log("[STATE] Popup requested capture state");
+    sendResponse({ state: currentCaptureState });
+    return false; // Synchronous response
+  }
+
+  // Handle popup requesting to clear capture state
+  if (message.type === "CLEAR_CAPTURE_STATE") {
+    console.log("[STATE] Clearing capture state");
+    currentCaptureState = {
+      isCapturing: false,
+      stage: "idle",
+      jobId: null,
+      progress: 0,
+      statusMessage: "",
+      startTime: null,
+      tabId: null,
+      logs: [],
+    };
+    saveCaptureState();
+    sendResponse({ ok: true });
+    return false; // Synchronous response
+  }
+
   if (message.type === "SET_CAPTURE_MODE") {
     captureMode = message.mode;
     console.log(`[background] Capture mode set to: ${captureMode}`);
@@ -606,6 +712,22 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   }
 
   if (message.type === "CAPTURE_PROGRESS") {
+    // Update capture state with progress
+    broadcastCaptureState({
+      isCapturing: true,
+      stage: message.phase || message.stage || "capturing",
+      progress: message.percent || message.progress || 0,
+      statusMessage: message.message || message.status || "Capturing...",
+      logs: [
+        ...(currentCaptureState.logs || []),
+        {
+          timestamp: Date.now(),
+          message: message.message || message.status || "Progress update",
+          level: "info",
+        },
+      ].slice(-50), // Keep last 50 logs
+    });
+
     // Relay capture progress (multi-viewport or step-level) to popup
     chrome.runtime.sendMessage(message, () => void chrome.runtime.lastError);
     sendResponse?.({ ok: true });
@@ -623,12 +745,45 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           throw new Error("No tab ID provided");
         }
 
+        // Initialize capture state
+        broadcastCaptureState({
+          isCapturing: true,
+          stage: "starting",
+          progress: 0,
+          statusMessage: "Starting capture...",
+          startTime: Date.now(),
+          tabId: tabId,
+          logs: [
+            {
+              timestamp: Date.now(),
+              message: "Capture started",
+              level: "info",
+            },
+          ],
+        });
+
         // Ensure content script is ready
         const isReady = await ensureContentScript(tabId);
         if (!isReady) {
           const errorMsg =
             "Please refresh the page to enable capture (extension updated).";
           console.warn("[capture] Aborting capture, content script not ready");
+
+          // Update state to show error
+          broadcastCaptureState({
+            isCapturing: false,
+            stage: "error",
+            statusMessage: errorMsg,
+            logs: [
+              ...(currentCaptureState.logs || []),
+              {
+                timestamp: Date.now(),
+                message: errorMsg,
+                level: "error",
+              },
+            ],
+          });
+
           sendResponse?.({ ok: false, error: errorMsg });
           chrome.runtime.sendMessage({
             type: "CAPTURE_ERROR",
@@ -694,6 +849,22 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
   if (message.type === "CAPTURE_ERROR") {
     console.error("[background] Received CAPTURE_ERROR:", message.error);
+
+    // Update capture state to show error
+    broadcastCaptureState({
+      isCapturing: false,
+      stage: "error",
+      statusMessage: message.error || "Capture failed",
+      logs: [
+        ...(currentCaptureState.logs || []),
+        {
+          timestamp: Date.now(),
+          message: message.error || "Capture failed",
+          level: "error",
+        },
+      ],
+    });
+
     // Forward to popup/other extension contexts so UI can update
     if (sender.tab?.id) {
       chrome.runtime.sendMessage(message, () => void chrome.runtime.lastError);
@@ -808,6 +979,22 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       sendResponse?.({ ok: false, error: "No capture payload received" });
       return false;
     }
+
+    // Update capture state to show completion
+    broadcastCaptureState({
+      isCapturing: true, // Still processing (sending to Figma)
+      stage: "complete",
+      progress: 95,
+      statusMessage: "Capture complete, sending to Figma...",
+      logs: [
+        ...(currentCaptureState.logs || []),
+        {
+          timestamp: Date.now(),
+          message: "Capture completed successfully",
+          level: "success",
+        },
+      ],
+    });
 
     const shouldDownloadOnly = captureDeliveryMode === "download";
     // For chunked transfers, the real payload lives in lastCapturedPayload (reassembled),
@@ -1629,8 +1816,16 @@ function normalizeSchemaAndScreenshot(payload: any): {
 
   // Case 1: Already { schema, screenshot }
   if ("schema" in payload && payload.schema) {
-    const schema = payload.schema;
+    let schema = payload.schema;
     const screenshot = payload.screenshot || schema?.screenshot;
+    
+    // CRITICAL FIX: Ensure schema has 'root' property (migrate from 'tree' if needed)
+    if (schema.tree && !schema.root) {
+      console.log("[NORMALIZE] Migrating 'tree' to 'root' in schema");
+      schema.root = schema.tree;
+      delete schema.tree;
+    }
+    
     return { schema, screenshot };
   }
 
@@ -1647,20 +1842,45 @@ function normalizeSchemaAndScreenshot(payload: any): {
       captures.captures.find((c) => c?.data && (c.data.root || c.data.tree)) ||
       captures.captures[0];
 
-    const schema = primary?.data || payload;
+    let schema = primary?.data || payload;
     const screenshot = primary?.previewWithOverlay || schema?.screenshot;
+    
+    // CRITICAL FIX: Ensure schema has 'root' property (migrate from 'tree' if needed)
+    if (schema.tree && !schema.root) {
+      console.log("[NORMALIZE] Migrating 'tree' to 'root' in multi-viewport schema");
+      schema.root = schema.tree;
+      delete schema.tree;
+    }
+    
     return { schema, screenshot };
   }
 
   // Case 3: Direct schema
   if (payload.root || payload.tree || payload.assets || payload.metadata) {
-    const schema = payload;
+    let schema = payload;
     const screenshot = schema.screenshot;
+    
+    // CRITICAL FIX: Ensure schema has 'root' property (migrate from 'tree' if needed)
+    if (schema.tree && !schema.root) {
+      console.log("[NORMALIZE] Migrating 'tree' to 'root' in direct schema");
+      schema.root = schema.tree;
+      delete schema.tree;
+    }
+    
     return { schema, screenshot };
   }
 
   // Fallback
-  return { schema: payload, screenshot: payload.screenshot };
+  let fallbackSchema = payload;
+  if (fallbackSchema && typeof fallbackSchema === "object") {
+    // CRITICAL FIX: Ensure fallback schema has 'root' property
+    if (fallbackSchema.tree && !fallbackSchema.root) {
+      console.log("[NORMALIZE] Migrating 'tree' to 'root' in fallback schema");
+      fallbackSchema.root = fallbackSchema.tree;
+      delete fallbackSchema.tree;
+    }
+  }
+  return { schema: fallbackSchema, screenshot: fallbackSchema?.screenshot };
 }
 
 function optimizeScreenshotDataUrl(dataUrl: string): string {
@@ -1828,6 +2048,20 @@ async function postToHandoffServer(payload: any): Promise<void> {
     // Ensure screenshot is attached to schema if not already
     if (screenshot && !schema.screenshot) {
       schema.screenshot = screenshot;
+    }
+
+    // CRITICAL FIX: Ensure schema has 'root' property before sending
+    if (schema.tree && !schema.root) {
+      console.log("[POST] Migrating 'tree' to 'root' before sending");
+      schema.root = schema.tree;
+      delete schema.tree;
+    }
+    
+    // Validate schema has root before sending
+    if (!schema.root && !schema.tree) {
+      console.error("[POST] ❌ Schema missing both 'root' and 'tree' properties!");
+      console.error("[POST] Schema keys:", Object.keys(schema));
+      throw new Error("Schema must have either 'root' or 'tree' property");
     }
 
     // Ensure metadata exists and set captureEngine to 'extension' for extension-captured data

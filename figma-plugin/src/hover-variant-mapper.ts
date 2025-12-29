@@ -207,7 +207,10 @@ async function createVariantFromHoverState(
 /**
  * Copy node properties from source to target
  */
-function copyNodeProperties(source: FrameNode, target: FrameNode): void {
+function copyNodeProperties(
+  source: FrameNode | ComponentNode,
+  target: FrameNode | ComponentNode
+): void {
   // Copy fills
   if (source.fills && source.fills !== figma.mixed) {
     target.fills = JSON.parse(JSON.stringify(source.fills));

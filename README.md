@@ -158,6 +158,15 @@ node puppeteer-auto-import.js https://example.com
 npm run validate:pixels  # Compare original vs Figma output
 ```
 
+
+
+
+
+
+
+
+
+
 ### **Custom Cloud Deployment**
 - See `capture-service/DEPLOYMENT.md` for AWS, Kubernetes, Docker options
 - Configure custom domains and SSL certificates

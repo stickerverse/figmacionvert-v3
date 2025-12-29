@@ -190,3 +190,170 @@ export interface CaptureResponseBody {
 export interface JobWithSchema extends JobRecord {
   schema?: WebToFigmaSchema;
 }
+
+// ============================================================================
+// DIAGNOSTIC EXPORT TYPES (For Pixel-Perfect Fidelity Debugging)
+// ============================================================================
+
+export type PipelinePhase =
+  | "CREATED"
+  | "PARENTED"
+  | "RESIZED"
+  | "TRANSFORM_APPLIED"
+  | "FILTERS_APPLIED"
+  | "FILLS_APPLIED"
+  | "STROKES_APPLIED"
+  | "EFFECTS_APPLIED"
+  | "CHILDREN_PROCESSED"
+  | "COMPLETE";
+
+export type FailureType =
+  | "EARLY_RETURN"
+  | "WHITE_BLANK_FRAME"
+  | "DIMENSION_MISMATCH"
+  | "TRANSFORM_FAILED"
+  | "RASTERIZATION_FAILED"
+  | "MISSING_FILLS"
+  | "MISSING_CHILDREN"
+  | "UNKNOWN";
+
+export type RasterizationReason =
+  | "FILTER"
+  | "BLEND_MODE"
+  | "UNSUPPORTED_VISUAL"
+  | "COMPLEX_TRANSFORM"
+  | "USER_OVERRIDE";
+
+export type CaptureMethod =
+  | "NATIVE_TAB_CAPTURE"
+  | "FOREIGN_OBJECT_SVG"
+  | "FAILED";
+
+export interface RasterizationAttempt {
+  method: CaptureMethod;
+  success: boolean;
+  timestamp: number;
+  errorMessage?: string;
+  captureSize?: { width: number; height: number };
+  validation?: {
+    passed: boolean;
+    issues: string[];
+  };
+}
+
+export interface RasterizationAudit {
+  nodeId: string;
+  reason: RasterizationReason;
+  cssFeatures: string[]; // Specific CSS properties that triggered rasterization
+  attempts: RasterizationAttempt[];
+  finalMethod: CaptureMethod | null;
+  fallbackChain: CaptureMethod[];
+}
+
+export interface NodePipelineStatus {
+  schemaNodeId: string;
+  figmaNodeId: string | null;
+  completedPhases: PipelinePhase[];
+  failedAt?: PipelinePhase;
+  earlyReturnDetected: boolean;
+  completionTimestamp?: number;
+  errorMessages: string[];
+}
+
+export interface SchemaMappingVerification {
+  schemaNodeId: string;
+  figmaNodeId: string | null;
+  schemaType: string; // tagName from AnalyzedNode
+  figmaType: string | null; // "FRAME", "RECTANGLE", "TEXT", etc.
+  expectedDimensions: { width: number; height: number };
+  actualDimensions?: { width: number; height: number };
+  transformApplied: boolean;
+  fillsCount: { expected: number; actual: number };
+  strokesCount: { expected: number; actual: number };
+  effectsCount: { expected: number; actual: number };
+  childrenCount: { expected: number; actual: number };
+  dimensionMismatch: boolean;
+  countMismatches: string[]; // ["fills", "children", etc.]
+}
+
+export interface LayoutSolverDecision {
+  nodeId: string;
+  cssLayoutMode: string; // "flex", "grid", "block", "inline", etc.
+  cssFlexDirection?: string; // "row", "column", etc.
+  inferredLayoutMode: "HORIZONTAL" | "VERTICAL" | "NONE";
+  autoLayoutApplied: boolean;
+  autoLayoutProperties?: {
+    layoutMode: "HORIZONTAL" | "VERTICAL";
+    primaryAxisSizingMode?: string;
+    counterAxisSizingMode?: string;
+    primaryAxisAlignItems?: string;
+    counterAxisAlignItems?: string;
+    itemSpacing?: number;
+    paddingLeft?: number;
+    paddingRight?: number;
+    paddingTop?: number;
+    paddingBottom?: number;
+  };
+  fallbackReason?: string; // Why it fell back to absolute positioning
+}
+
+export interface VisualDiffRegion {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
+export interface PixelDiffResult {
+  nodeId: string;
+  pixelDiffPercentage: number;
+  diffRegions: VisualDiffRegion[];
+  diffType: "color" | "position" | "size" | "missing" | "multiple";
+  severity: "critical" | "major" | "minor";
+  expectedHash?: string;
+  actualHash?: string;
+}
+
+export interface NodeDiagnostic {
+  nodeId: string;
+  pipelineStatus: NodePipelineStatus;
+  mappingVerification?: SchemaMappingVerification;
+  rasterizationAudit?: RasterizationAudit;
+  layoutDecision?: LayoutSolverDecision;
+  visualDiff?: PixelDiffResult;
+  warnings: string[];
+  errors: string[];
+}
+
+export interface ImportDiagnosticSummary {
+  totalNodes: number;
+  successfulNodes: number;
+  failedNodes: string[]; // Node IDs
+  whiteBlankFrames: string[]; // Node IDs with no fills
+  rasterizedNodes: number;
+  autoLayoutNodes: number;
+  transformedNodes: number;
+  earlyReturns: string[]; // Node IDs with detected early returns
+  criticalFailures: number; // Count of critical severity issues
+}
+
+export interface ImportDiagnosticExport {
+  importId: string;
+  timestamp: string; // ISO 8601
+  schemaVersion: string;
+  sourceUrl: string;
+  summary: ImportDiagnosticSummary;
+  nodeDetails: NodeDiagnostic[];
+  performanceMetrics?: {
+    totalImportDurationMs: number;
+    averageNodeBuildTimeMs: number;
+    rasterizationTimeMs: number;
+    layoutSolverTimeMs: number;
+  };
+  visualDiffs?: PixelDiffResult[]; // Optional: from pixel-diff validation
+  systemInfo?: {
+    figmaVersion: string;
+    pluginVersion: string;
+    platform: string;
+  };
+}

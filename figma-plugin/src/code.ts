@@ -15,6 +15,18 @@ import { WTFParser } from "./wtf-parser";
 import { diagnostics } from "./node-builder";
 import { normalizeSchemaTreeForFigma } from "./tree-normalizer";
 import pako from "pako";
+import { debugLogger } from "./debug-logger";
+
+// Import shared schema types (CRITICAL: Single source of truth)
+import type { WebToFigmaSchema, AnalyzedNode } from "../../shared/schema";
+
+// Log the imported schema type at module load to verify import
+console.log("[SCHEMA IMPORT CHECK] WebToFigmaSchema type imported from shared/schema.ts");
+
+// Type definitions for incoming data formats (extension → plugin)
+// Using 'any' for now to maintain compatibility with existing code
+// TODO: Add proper TypeScript types after verifying schema import works
+type IncomingSchemaData = any;
 
 // Type definitions for API responses
 interface HandoffJobResponse {
@@ -336,7 +348,7 @@ function removeLegacyScreenshotBaseLayers(scope: "selection" | "page"): {
 }
 
 async function handleImportRequest(
-  data: any,
+  data: IncomingSchemaData,
   options: Partial<EnhancedImportOptions> | undefined,
   trigger: "import" | "auto-import" | "live-import"
 ): Promise<void> {
@@ -690,28 +702,63 @@ async function handleImportRequest(
       });
     }
 
-    console.log("[DEBUG] About to create EnhancedFigmaImporter with schema:", {
+    const schemaDebugInfo = {
       hasRoot: !!schema.root,
       rootType: schema.root?.type,
       rootChildren: schema.root?.children?.length || 0,
       hasAssets: !!schema.assets,
       hasMetadata: !!schema.metadata,
       schemaKeys: Object.keys(schema),
-    });
+    };
+
+    console.log("[DEBUG] About to create EnhancedFigmaImporter with schema:", schemaDebugInfo);
+    debugLogger.log('DEBUG', 'Schema structure received', schemaDebugInfo);
+
+    // CRITICAL DEBUG: Log first few children to verify structure
+    if (schema.root?.children?.length > 0) {
+      const childrenSample = schema.root.children.slice(0, 3).map((child: any) => ({
+        id: child.id,
+        type: child.type,
+        tagName: child.tagName,
+        hasChildren: !!child.children,
+        childCount: child.children?.length || 0,
+      }));
+
+      console.log("[DEBUG] First 3 children in root:", childrenSample);
+      debugLogger.log('DEBUG', 'Root children sample', childrenSample);
+    } else {
+      const errorInfo = {
+        root: schema.root,
+        rootKeys: schema.root ? Object.keys(schema.root) : 'root is null/undefined',
+      };
+
+      console.error("❌ [CRITICAL] schema.root has NO children!");
+      console.error("Root structure:", errorInfo);
+      debugLogger.log('ERROR', 'schema.root has NO children!', errorInfo);
+    }
 
     const importer = new EnhancedFigmaImporter(schema, enhancedOptions);
     console.log("✅ Starting enhanced import process...");
+    debugLogger.log('INFO', 'Starting enhanced import process');
+
     const verificationReport = await importer.runImport();
     console.log("✅ Enhanced import process completed successfully");
+    debugLogger.log('INFO', 'Enhanced import process completed successfully');
 
     // Log verification results
-    console.log("📐 Import verification:", {
+    const verificationInfo = {
       totalElements: verificationReport.totalElements,
       withinTolerance: verificationReport.positionsWithinTolerance,
       outsideTolerance: verificationReport.positionsOutsideTolerance,
       maxDeviation: verificationReport.maxDeviation.toFixed(2) + "px",
       averageDeviation: verificationReport.averageDeviation.toFixed(2) + "px",
-    });
+    };
+
+    console.log("📐 Import verification:", verificationInfo);
+    debugLogger.log('INFO', 'Import verification results', verificationInfo);
+
+    // Finish logging and send to UI for file download
+    debugLogger.finish();
 
     const enhancedStats = {
       elements: verificationReport.totalElements,
@@ -1069,7 +1116,7 @@ async function findMissingFonts(schema: any): Promise<MissingFontReport[]> {
       for (const child of node.children) walkTextFonts(child);
     }
   };
-  walkTextFonts(schema?.tree);
+  walkTextFonts(schema?.root);
 
   return Array.from(missing.entries()).map(([family, styles]) => ({
     family,
@@ -1292,9 +1339,11 @@ function decompressPayload(payload: any): any {
       console.log("📦 [DECOMPRESS] Step 3: JSON parse...");
       const parsed = JSON.parse(jsonString);
       console.log("✅ [DECOMPRESS] JSON parse successful", {
+        hasRoot: !!(parsed && parsed.root),
         hasTree: !!(parsed && parsed.tree),
         hasMetadata: !!(parsed && parsed.metadata),
         parsedKeys: parsed && typeof parsed === 'object' ? Object.keys(parsed) : [],
+        rootChildren: parsed && parsed.root && parsed.root.children ? parsed.root.children.length : 0,
         treeChildren: parsed && parsed.tree && parsed.tree.children ? parsed.tree.children.length : 0
       });
 
@@ -1302,10 +1351,19 @@ function decompressPayload(payload: any): any {
       const result = parsed?.schema ?? parsed ?? payload;
       console.log("✅ [DECOMPRESS] Decompression completed", {
         resultType: typeof result,
+        hasRoot: !!(result && result.root),
         hasTree: !!(result && result.tree),
         finalKeys: result && typeof result === 'object' ? Object.keys(result) : []
       });
-      
+
+      // Validate result has expected schema structure
+      if (!result || typeof result !== 'object') {
+        throw new Error(`Decompressed payload is not an object: ${typeof result}`);
+      }
+      if (!result.root && !result.tree) {
+        throw new Error(`Decompressed payload missing both 'root' and 'tree' fields. Keys: ${Object.keys(result).join(', ')}`);
+      }
+
       return result;
     } catch (e) {
       console.error("❌ [DECOMPRESS] Decompression failed:", {
@@ -1313,10 +1371,11 @@ function decompressPayload(payload: any): any {
         stack: e instanceof Error ? e.stack?.substring(0, 500) : undefined,
         payloadPreview: JSON.stringify(payload).substring(0, 200)
       });
-      
-      // Fallback: return original payload but log the attempt
-      console.warn("🔄 [DECOMPRESS] Falling back to original payload");
-      return payload;
+
+      // CRITICAL: Don't silently return corrupted data
+      // If decompression failed, the payload is likely unusable
+      // Re-throw the error so import fails loudly rather than silently
+      throw new Error(`Schema decompression failed: ${e instanceof Error ? e.message : String(e)}`);
     }
   }
 
@@ -1332,6 +1391,7 @@ function decompressPayload(payload: any): any {
 
   // Handle direct payload
   console.log("🔍 [DECOMPRESS] Using payload directly (no compression or wrapping detected)", {
+    hasRoot: !!(payload && payload.root),
     hasTree: !!(payload && payload.tree),
     directKeys: payload && typeof payload === 'object' ? Object.keys(payload) : []
   });
@@ -1534,7 +1594,7 @@ async function handleEnhancedImport(
 
 // Enhanced import handler V2 with pixel-perfect positioning and verification
 async function handleEnhancedImportV2(
-  data: any,
+  data: IncomingSchemaData,
   options: Partial<EnhancedImportOptions> | undefined
 ): Promise<void> {
   if (isImporting) {
@@ -1556,6 +1616,19 @@ async function handleEnhancedImportV2(
   isImporting = true;
 
   try {
+    // CRITICAL DEBUG: Log incoming data structure before processing
+    console.log("[SCHEMA DEBUG] Incoming data structure:", {
+      hasRoot: !!data?.root,
+      hasTree: !!data?.tree,
+      hasCaptures: !!data?.captures,
+      hasRawSchemaJson: !!data?.rawSchemaJson,
+      hasSchema: !!data?.schema,
+      capturesLength: data?.captures?.length,
+      dataKeys: data ? Object.keys(data).slice(0, 20) : [],
+      firstCaptureKeys: data?.captures?.[0] ? Object.keys(data.captures[0]).slice(0, 20) : [],
+      firstCaptureDataKeys: data?.captures?.[0]?.data ? Object.keys(data.captures[0].data).slice(0, 20) : [],
+    });
+
     // Unwrap rawSchemaJson if present (chunked transfer format from Chrome extension)
     let schema = data;
     if (data.rawSchemaJson && typeof data.rawSchemaJson === "string") {
@@ -1564,7 +1637,10 @@ async function handleEnhancedImportV2(
       );
       try {
         schema = JSON.parse(data.rawSchemaJson);
-        console.log("✅ Successfully parsed rawSchemaJson");
+        console.log("✅ Successfully parsed rawSchemaJson", {
+          hasRoot: !!schema?.root,
+          hasTree: !!schema?.tree,
+        });
       } catch (parseError) {
         const errorMsg =
           parseError instanceof Error ? parseError.message : "Parse failed";
@@ -1584,24 +1660,25 @@ async function handleEnhancedImportV2(
       let picked: any = null;
       for (const cap of schema.captures) {
         if (!cap) continue;
-        const candidate = cap.data?.tree
+        // Check for both modern 'root' and legacy 'tree' fields
+        const candidate = (cap.data?.root || cap.data?.tree)
           ? cap.data
-          : cap.data?.schema?.tree
+          : (cap.data?.schema?.root || cap.data?.schema?.tree)
           ? cap.data.schema
           : cap.data?.rawSchemaJson
           ? JSON.parse(cap.data.rawSchemaJson)
           : cap.data || cap.schema;
-        if (candidate?.tree) {
+        if (candidate?.root || candidate?.tree) {
           picked = candidate;
           console.log(
-            `✅ Using viewport: ${cap.viewport || cap.name || "unnamed"} (V2)`
+            `✅ Using viewport: ${cap.viewport || cap.name || "unnamed"} (V2), has ${candidate.root ? 'root' : 'tree'}`
           );
           break;
         }
         if (cap?.rawSchemaJson && !picked) {
           try {
             const parsed = JSON.parse(cap.rawSchemaJson);
-            if (parsed?.tree) {
+            if (parsed?.root || parsed?.tree) {
               picked = parsed;
               console.log(
                 `✅ Parsed rawSchemaJson for viewport: ${
@@ -1630,7 +1707,12 @@ async function handleEnhancedImportV2(
       }
     }
 
-    // Migration already handled in main import flow
+    // Apply migration if legacy tree exists
+    if (schema.tree && !schema.root) {
+      console.log("🔄 [V2-MIGRATION] Converting legacy 'tree' to canonical 'root'");
+      schema.root = schema.tree;
+      delete schema.tree;
+    }
 
     // Fallback: unwrap rawSchemaJson or nested schema if root missing
     if (!schema.root) {
@@ -1658,36 +1740,42 @@ async function handleEnhancedImportV2(
       }
     }
 
-    // Deep search for any nested object that contains a root
+    // Deep search for any nested object that contains a root or tree
     if (!schema.root) {
       const visited = new Set<any>();
-      const findSchemaWithTree = (obj: any): any | null => {
+      const findSchemaWithRoot = (obj: any): any | null => {
         if (!obj || typeof obj !== "object") return null;
         if (visited.has(obj)) return null;
         visited.add(obj);
-        if ((obj as any).tree) return obj;
+        if ((obj as any).root || (obj as any).tree) return obj;
         for (const value of Object.values(obj)) {
           if (value && typeof value === "object") {
-            const found = findSchemaWithTree(value);
+            const found = findSchemaWithRoot(value);
             if (found) return found;
           }
         }
         return null;
       };
-      const nested = findSchemaWithTree(schema);
+      const nested = findSchemaWithRoot(schema);
       if (nested) {
-        console.log("✅ Found nested schema with tree (V2), using it");
+        console.log("✅ Found nested schema with root/tree (V2), using it");
         schema = nested;
+        // Migrate if tree found
+        if (nested.tree && !nested.root) {
+          console.log("🔄 [NESTED-V2] Converting nested 'tree' to canonical 'root'");
+          nested.root = nested.tree;
+          delete nested.tree;
+        }
       }
     }
 
     // Final validation
-    if (!schema.tree) {
+    if (!schema.root) {
       const preview =
         typeof schema === "object"
           ? JSON.stringify(schema).substring(0, 500)
           : String(schema).substring(0, 500);
-      console.error("❌ No tree data available (V2). Data structure:", {
+      console.error("❌ No root data available (V2). Data structure:", {
         hasData: !!schema,
         dataKeys:
           schema && typeof schema === "object" ? Object.keys(schema) : [],
@@ -1697,7 +1785,7 @@ async function handleEnhancedImportV2(
       figma.ui.postMessage({
         type: "error",
         message:
-          "No tree data available for import. The schema may be in an unsupported format.",
+          "No root data available for import. The schema may be in an unsupported format.",
       });
       isImporting = false;
       return;
@@ -1705,7 +1793,10 @@ async function handleEnhancedImportV2(
 
     console.log("🚀 Starting enhanced import V2 with schema:", {
       version: schema.version,
-      rootNodes: schema.root ? "present" : "missing",
+      rootPresent: !!schema.root,
+      rootType: schema.root?.type,
+      rootName: schema.root?.name,
+      rootChildren: schema.root?.children?.length || 0,
       assets: schema.assets
         ? Object.keys(schema.assets.images || {}).length
         : 0,

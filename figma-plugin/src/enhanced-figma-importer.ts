@@ -30,6 +30,12 @@ import {
 } from "./hierarchy-inference/diagnostics";
 import { ProfessionalLayoutSolver, prepareLayoutSchema } from "./layout-solver";
 
+// Import shared schema types (CRITICAL: Single source of truth)
+import type { WebToFigmaSchema, AnalyzedNode } from "../../shared/schema";
+
+// Import diagnostic collector for fidelity debugging
+import { DiagnosticCollector } from "./diagnostic-collector";
+
 // ============================================================================
 // TYPE DEFINITIONS WITH STRICT VALIDATION
 // ============================================================================
@@ -107,6 +113,8 @@ export interface ImportVerificationReport {
   textValidationFailures: number;
   failedNodes: FailedNodeReport[];
   samplingUsed?: boolean;
+  sampleSize?: number;
+  estimatedAccuracy?: number;
   memoryUsage?: {
     imageCache: number;
     nodeCache: number;
@@ -208,7 +216,9 @@ class ValidationUtils {
 
   static validateNodeData(data: unknown): ValidatedNodeData | null {
     if (!data || typeof data !== "object") {
-      console.error("❌ [VALIDATION] Invalid node data: not an object", { data });
+      console.error("❌ [VALIDATION] Invalid node data: not an object", {
+        data,
+      });
       return null;
     }
 
@@ -216,21 +226,38 @@ class ValidationUtils {
 
     // Required fields
     if (!node.id || typeof node.id !== "string") {
-      console.error("❌ [VALIDATION] Invalid node data: missing or invalid id", {
-        hasId: !!node.id,
-        idType: typeof node.id,
-        node: node
-      });
+      console.error(
+        "❌ [VALIDATION] Invalid node data: missing or invalid id",
+        {
+          hasId: !!node.id,
+          idType: typeof node.id,
+          node: node,
+        }
+      );
       return null;
     }
 
+    // CRITICAL FIX: Migrate 'tagName' (from shared schema) to 'type' (expected by plugin)
+    // The shared/schema.ts uses 'tagName' but the plugin expects 'type'
+    if (!node.type && node.tagName && typeof node.tagName === "string") {
+      console.log(
+        `🔄 [SCHEMA-MIGRATION] Node ${node.id}: Converting tagName='${node.tagName}' to type`
+      );
+      node.type = node.tagName;
+    }
+
     if (!node.type || typeof node.type !== "string") {
-      console.error(`❌ [VALIDATION] Node ${node.id}: missing or invalid type`, {
-        hasType: !!node.type,
-        typeValue: node.type,
-        typeType: typeof node.type,
-        nodeKeys: Object.keys(node)
-      });
+      console.error(
+        `❌ [VALIDATION] Node ${node.id}: missing or invalid type`,
+        {
+          hasType: !!node.type,
+          typeValue: node.type,
+          typeType: typeof node.type,
+          hasTagName: !!node.tagName,
+          tagNameValue: node.tagName,
+          nodeKeys: Object.keys(node).slice(0, 20),
+        }
+      );
       return null;
     }
 
@@ -328,6 +355,7 @@ export class EnhancedFigmaImporter {
   private processedNodeCount: number = 0;
   private loadedFonts = new Set<string>();
   private mainFrame: FrameNode | null = null;
+  public diagnosticCollector: DiagnosticCollector; // Public so NodeBuilder can access
 
   constructor(private data: any, options: Partial<EnhancedImportOptions> = {}) {
     (this as any).importStartTime = Date.now();
@@ -337,7 +365,8 @@ export class EnhancedFigmaImporter {
       hasRoot: !!data?.root,
       rootType: data?.root?.type,
       rootChildren: data?.root?.children?.length || 0,
-      dataKeys: data && typeof data === 'object' ? Object.keys(data) : 'not-object'
+      dataKeys:
+        data && typeof data === "object" ? Object.keys(data) : "not-object",
     });
     this.options = {
       createMainFrame: true,
@@ -361,6 +390,11 @@ export class EnhancedFigmaImporter {
     }
 
     this.logImporterInit();
+
+    // Initialize diagnostic collector for fidelity debugging
+    const sourceUrl = data?.url || data?.metadata?.url || "unknown";
+    this.diagnosticCollector = new DiagnosticCollector(sourceUrl);
+    console.log("📊 [DIAGNOSTICS] Diagnostic collector initialized for import tracking");
 
     // ENHANCED: Scale factor is now fixed at 1.0 because the extractor provides CSS pixels.
     // Legacy support for devicePixelRatio is kept for logging but NOT used for scaling coordinates.
@@ -401,17 +435,23 @@ export class EnhancedFigmaImporter {
   // ============================================================================
 
   private validateDataStructure(data: any): boolean {
-    console.log("🔍 [VALIDATION] Starting comprehensive data structure validation...", {
-      hasData: !!data,
-      dataType: typeof data,
-      dataKeys: data && typeof data === 'object' ? Object.keys(data) : [],
-      dataStringified: data && typeof data === 'object' ? JSON.stringify(data).substring(0, 300) + '...' : String(data)
-    });
+    console.log(
+      "🔍 [VALIDATION] Starting comprehensive data structure validation...",
+      {
+        hasData: !!data,
+        dataType: typeof data,
+        dataKeys: data && typeof data === "object" ? Object.keys(data) : [],
+        dataStringified:
+          data && typeof data === "object"
+            ? JSON.stringify(data).substring(0, 300) + "..."
+            : String(data),
+      }
+    );
 
     if (!data || typeof data !== "object") {
       console.error("❌ [VALIDATION] Data is not an object", {
         received: typeof data,
-        value: String(data).substring(0, 100)
+        value: String(data).substring(0, 100),
       });
       return false;
     }
@@ -419,19 +459,23 @@ export class EnhancedFigmaImporter {
     if (!data.root) {
       console.error("❌ [VALIDATION] Missing root data", {
         availableKeys: Object.keys(data),
-        hasRootProperty: 'root' in data,
-        rootValue: data.root
+        hasRootProperty: "root" in data,
+        rootValue: data.root,
       });
       return false;
     }
 
     console.log("✅ [VALIDATION] Root exists, validating structure...", {
       rootType: typeof data.root,
-      rootKeys: data.root && typeof data.root === 'object' ? Object.keys(data.root) : [],
+      rootKeys:
+        data.root && typeof data.root === "object"
+          ? Object.keys(data.root)
+          : [],
       hasId: !!(data.root && data.root.id),
       hasType: !!(data.root && data.root.type),
       hasChildren: !!(data.root && data.root.children),
-      childrenCount: data.root && data.root.children ? data.root.children.length : 0
+      childrenCount:
+        data.root && data.root.children ? data.root.children.length : 0,
     });
 
     if (!data.root.id || !data.root.type) {
@@ -440,7 +484,7 @@ export class EnhancedFigmaImporter {
         hasType: !!(data.root && data.root.type),
         rootId: data.root?.id,
         rootType: data.root?.type,
-        rootStructure: JSON.stringify(data.root).substring(0, 200)
+        rootStructure: JSON.stringify(data.root).substring(0, 200),
       });
       return false;
     }
@@ -451,9 +495,9 @@ export class EnhancedFigmaImporter {
       childrenCount: data.root.children ? data.root.children.length : 0,
       hasMetadata: !!data.metadata,
       hasAssets: !!data.assets,
-      hasStyles: !!data.styles
+      hasStyles: !!data.styles,
     });
-    
+
     return true;
   }
 
@@ -528,12 +572,15 @@ export class EnhancedFigmaImporter {
           await Promise.race([
             this.styleManager.createFigmaStyles(),
             new Promise((_, reject) => {
-              setTimeout(() => reject(new Error("Style creation timeout")), 30000);
-            })
+              setTimeout(
+                () => reject(new Error("Style creation timeout")),
+                30000
+              );
+            }),
           ]);
           const styleTime = Date.now() - styleStartTime;
           this.postProgress(`Styles created successfully (${styleTime}ms)`, 12);
-          
+
           if (this.data.colorPalette?.palette) {
             await this.integrateColorPalette(this.data.colorPalette);
           }
@@ -541,8 +588,14 @@ export class EnhancedFigmaImporter {
             await this.integrateTypographyAnalysis(this.data.typography);
           }
         } catch (styleError) {
-          console.warn("⚠️ [ENHANCED-IMPORTER] Style creation failed/timeout, continuing:", styleError);
-          this.postProgress("Skipping styles due to timeout, continuing import...", 12);
+          console.warn(
+            "⚠️ [ENHANCED-IMPORTER] Style creation failed/timeout, continuing:",
+            styleError
+          );
+          this.postProgress(
+            "Skipping styles due to timeout, continuing import...",
+            12
+          );
           // Continue without styles rather than hanging
         }
 
@@ -798,6 +851,10 @@ export class EnhancedFigmaImporter {
 
       // Enhanced completion report with schema statistics
       this.logImportCompletionReport(report);
+
+      // Export diagnostic data for fidelity debugging
+      this.exportDiagnosticReport();
+
       return report;
     } catch (error) {
       const errorMessage =
@@ -1524,20 +1581,112 @@ export class EnhancedFigmaImporter {
   private async processNodesWithBatchingRobust(
     parentFrame: FrameNode
   ): Promise<void> {
-    if (!this.data.root) {
-      throw new Error("No root data available");
+    // 🚨 EMERGENCY DIAGNOSTIC LOGGING - Capture complete schema structure
+    console.log("\n" + "=".repeat(80));
+    console.log("🚨 [EMERGENCY DIAGNOSTIC] SCHEMA STRUCTURE ANALYSIS");
+    console.log("=".repeat(80));
+
+    // Log all top-level keys in schema
+    const schemaKeys = this.data ? Object.keys(this.data) : [];
+    console.log("📋 Top-level schema keys:", schemaKeys);
+
+    // Check root field
+    console.log("\n🔍 Checking this.data.root:");
+    if (this.data.root === undefined) {
+      console.log("  ❌ this.data.root is UNDEFINED");
+    } else if (this.data.root === null) {
+      console.log("  ❌ this.data.root is NULL");
+    } else {
+      console.log("  ✅ this.data.root EXISTS");
+      console.log("  Type:", typeof this.data.root);
+      console.log("  Constructor:", this.data.root.constructor?.name);
+      console.log("  Keys:", Object.keys(this.data.root).slice(0, 20));
+      console.log("  .type:", this.data.root.type);
+      console.log("  .htmlTag:", this.data.root.htmlTag);
+      console.log("  .children type:", Array.isArray(this.data.root.children) ? "Array" : typeof this.data.root.children);
+      console.log("  .children length:", this.data.root.children?.length);
+      if (this.data.root.children?.length > 0) {
+        console.log("  First child:", {
+          type: this.data.root.children[0]?.type,
+          htmlTag: this.data.root.children[0]?.htmlTag,
+          id: this.data.root.children[0]?.id,
+        });
+      }
     }
 
+    // Check tree field
+    console.log("\n🔍 Checking this.data.tree:");
+    if (this.data.tree === undefined) {
+      console.log("  ℹ️ this.data.tree is UNDEFINED (expected for schema v2)");
+    } else if (this.data.tree === null) {
+      console.log("  ❌ this.data.tree is NULL");
+    } else {
+      console.log("  ✅ this.data.tree EXISTS (schema v1 compatibility)");
+      console.log("  Type:", typeof this.data.tree);
+      console.log("  .children length:", this.data.tree.children?.length);
+    }
+
+    // Check other critical fields
+    console.log("\n📊 Other schema fields:");
+    console.log("  .version:", this.data.version);
+    console.log("  .schemaVersion:", (this.data as any).schemaVersion);
+    console.log("  .metadata exists:", !!this.data.metadata);
+    console.log("  .assets exists:", !!this.data.assets);
+    console.log("  .styles exists:", !!this.data.styles);
+
+    console.log("=".repeat(80) + "\n");
+    // 🚨 END EMERGENCY DIAGNOSTIC LOGGING
+
+    // BACKWARDS COMPATIBILITY: Support both schema v2 (root) and v1 (tree)
+    if (!this.data.root && !this.data.tree) {
+      throw new Error("No root data available (expected 'root' or 'tree' field in schema)");
+    }
+
+    // BACKWARDS COMPATIBILITY: Support both schema v2 (root) and v1 (tree)
+    const rootNode = this.data.root || this.data.tree;
+
+    if (!rootNode) {
+      throw new Error(
+        `CRITICAL: No root node found in schema. ` +
+        `Expected 'root' (schema v2) or 'tree' (schema v1), but got: ${Object.keys(this.data || {})}`
+      );
+    }
+
+    console.log("🔍 [SCHEMA] Root node structure:", {
+      field: this.data.root ? 'root' : 'tree',
+      type: rootNode.type,
+      htmlTag: rootNode.htmlTag,
+      hasChildren: !!rootNode.children,
+      childCount: rootNode.children?.length || 0,
+      hasLayout: !!rootNode.layout,
+      schemaKeys: Object.keys(this.data || {}),
+    });
+
     // PHASE 1 OPTIMIZATION: Pre-analyze schema for better planning
-    const analysis = this.analyzeSchema(this.data.root);
+    const analysis = this.analyzeSchema(rootNode);
     console.log(
       `🌳 Schema Analysis: ${analysis.totalNodes} nodes, ${analysis.requiredFonts.size} fonts, ${analysis.imageHashes.size} images, depth: ${analysis.depth}`
     );
 
+    // CRITICAL CHECK: If analysis found 0 nodes, something is wrong
+    if (analysis.totalNodes === 0) {
+      console.error("❌ [CRITICAL] Schema analysis found 0 nodes!");
+      console.error("Root node details:", {
+        type: rootNode?.type,
+        htmlTag: rootNode?.htmlTag,
+        hasChildren: !!rootNode?.children,
+        childrenType: Array.isArray(rootNode?.children) ? 'array' : typeof rootNode?.children,
+        childCount: rootNode?.children?.length,
+        rootKeys: Object.keys(rootNode || {}),
+      });
+
+      console.warn("⚠️ Proceeding with 0 nodes - this will likely result in blank frame");
+    }
+
     this.postProgress(`Pre-analyzing schema...`, 5);
 
     // PHASE 2: Pre-process schema (normalize values upfront)
-    this.preprocessSchema(this.data.root);
+    this.preprocessSchema(rootNode);
 
     // PROFESSIONAL: Prepare layout schema with professional layout intelligence
     console.log(
@@ -1570,7 +1719,8 @@ export class EnhancedFigmaImporter {
     this.postProgress(`Processing ${analysis.totalNodes} elements...`, 10);
 
     // HIERARCHY INFERENCE: Improve tree structure before building
-    let treeToBuild = this.data.root;
+    // BACKWARDS COMPATIBILITY: Use rootNode (which is already root || tree)
+    let treeToBuild = rootNode;
     let inferredTreeMetrics: any = null;
 
     if (this.options.useHierarchyInference !== false) {
@@ -1749,18 +1899,29 @@ export class EnhancedFigmaImporter {
 
     if (treeToBuild.htmlTag === "html") {
       console.log("🔄 Root is <html>, finding <body> child...");
-      const bodyChild = treeToBuild.children?.find((child: any) => child.htmlTag === "body");
+      const bodyChild = treeToBuild.children?.find(
+        (child: any) => child.htmlTag === "body"
+      );
       if (bodyChild) {
         console.log("✅ Found <body> child, processing from there");
         bodyNode = bodyChild;
       } else {
-        console.warn("⚠️ No <body> child found in <html> root, processing html children directly");
+        console.warn(
+          "⚠️ No <body> child found in <html> root, processing html children directly"
+        );
       }
     }
 
     // Only do special body processing if we have a body or html node
-    if ((bodyNode.htmlTag === "body" || bodyNode.htmlTag === "html") && bodyNode.children) {
-      console.log(`🔄 Processing ${bodyNode.children.length} children from <${bodyNode.htmlTag || bodyNode.name}>`);
+    if (
+      (bodyNode.htmlTag === "body" || bodyNode.htmlTag === "html") &&
+      bodyNode.children
+    ) {
+      console.log(
+        `🔄 Processing ${bodyNode.children.length} children from <${
+          bodyNode.htmlTag || bodyNode.name
+        }>`
+      );
 
       // CRITICAL FIX: Check if first child is a full-page container with dark background
       // Many sites (like Facebook) have a root container that covers the entire page
@@ -1838,7 +1999,9 @@ export class EnhancedFigmaImporter {
         // Track build success/failure for debugging white frame bug
         let successCount = 0;
         let failCount = 0;
-        console.log(`[DEBUG] Building ${bodyNode.children.length} child nodes...`);
+        console.log(
+          `[DEBUG] Building ${bodyNode.children.length} child nodes...`
+        );
 
         for (const child of bodyNode.children) {
           const result = await buildHierarchy(child, parentFrame);
@@ -1851,18 +2014,20 @@ export class EnhancedFigmaImporter {
               tagName: child.tagName,
               hasRect: !!child.rect,
               hasLayout: !!child.layout,
-              childCount: child.children?.length || 0
+              childCount: child.children?.length || 0,
             });
           }
         }
 
-        console.log(`[DEBUG] Build results: ${successCount} success, ${failCount} failed out of ${bodyNode.children.length} total`);
+        console.log(
+          `[DEBUG] Build results: ${successCount} success, ${failCount} failed out of ${bodyNode.children.length} total`
+        );
 
         if (successCount === 0 && bodyNode.children.length > 0) {
           throw new Error(
             `CRITICAL: All ${bodyNode.children.length} child nodes failed to build. ` +
-            `This will result in a blank white frame. Check console above for specific validation/creation errors. ` +
-            `Failed nodes tracked in this.failedNodes (${this.failedNodes.length} total).`
+              `This will result in a blank white frame. Check console above for specific validation/creation errors. ` +
+              `Failed nodes tracked in this.failedNodes (${this.failedNodes.length} total).`
           );
         }
       } else {
@@ -1873,9 +2038,11 @@ export class EnhancedFigmaImporter {
             id: bodyNode.id,
             tagName: bodyNode.tagName,
             hasRect: !!bodyNode.rect,
-            hasLayout: !!bodyNode.layout
+            hasLayout: !!bodyNode.layout,
           });
-          throw new Error(`CRITICAL: Failed to build root bodyNode. This will result in a blank white frame.`);
+          throw new Error(
+            `CRITICAL: Failed to build root bodyNode. This will result in a blank white frame.`
+          );
         }
       }
 
@@ -1891,9 +2058,11 @@ export class EnhancedFigmaImporter {
           id: treeToBuild.id,
           tagName: treeToBuild.tagName,
           hasRect: !!treeToBuild.rect,
-          hasLayout: !!treeToBuild.layout
+          hasLayout: !!treeToBuild.layout,
         });
-        throw new Error(`CRITICAL: Failed to build root tree node. This will result in a blank white frame.`);
+        throw new Error(
+          `CRITICAL: Failed to build root tree node. This will result in a blank white frame.`
+        );
       }
 
       console.log(
@@ -1970,15 +2139,18 @@ export class EnhancedFigmaImporter {
     const figmaNode = await this.nodeBuilder.createNode(nodeData);
 
     if (!figmaNode) {
-      console.error(`❌ [NODE_CREATION] NodeBuilder returned null for ${nodeData.id}`, {
-        id: nodeData.id,
-        type: nodeData.type,
-        tagName: nodeData.tagName,
-        hasLayout: !!nodeData.layout,
-        hasRect: !!nodeData.rect,
-        hasStyles: !!nodeData.styles,
-        nodeKeys: Object.keys(nodeData)
-      });
+      console.error(
+        `❌ [NODE_CREATION] NodeBuilder returned null for ${nodeData.id}`,
+        {
+          id: nodeData.id,
+          type: nodeData.type,
+          tagName: nodeData.tagName,
+          hasLayout: !!nodeData.layout,
+          hasRect: !!nodeData.rect,
+          hasStyles: !!nodeData.styles,
+          nodeKeys: Object.keys(nodeData),
+        }
+      );
       return null;
     }
 
@@ -3393,6 +3565,19 @@ export class EnhancedFigmaImporter {
     nodeTypes: Map<string, number>;
     depth: number;
   } {
+    // 🚨 EMERGENCY: Log what analyzeSchema receives
+    console.log("🔬 [analyzeSchema] Called with root:", {
+      exists: !!root,
+      type: typeof root,
+      isNull: root === null,
+      isUndefined: root === undefined,
+      constructor: root?.constructor?.name,
+      keys: root ? Object.keys(root).slice(0, 20) : [],
+      hasChildren: !!root?.children,
+      childrenIsArray: Array.isArray(root?.children),
+      childrenLength: root?.children?.length,
+    });
+
     let totalNodes = 0;
     const imageNodes: any[] = [];
     const imageHashes = new Set<string>();
@@ -3401,8 +3586,24 @@ export class EnhancedFigmaImporter {
     let maxDepth = 0;
 
     const traverse = (node: any, depth: number = 0) => {
-      if (!node) return;
+      if (!node) {
+        console.log(`🔬 [analyzeSchema traverse] Skipping null/undefined node at depth ${depth}`);
+        return;
+      }
+
       totalNodes++;
+
+      // 🚨 EMERGENCY: Log first few nodes
+      if (totalNodes <= 3) {
+        console.log(`🔬 [analyzeSchema traverse] Node ${totalNodes} at depth ${depth}:`, {
+          type: node.type,
+          htmlTag: node.htmlTag,
+          id: node.id,
+          hasChildren: !!node.children,
+          childrenLength: node.children?.length,
+        });
+      }
+
       maxDepth = Math.max(maxDepth, depth);
 
       // Track node types
@@ -3460,10 +3661,28 @@ export class EnhancedFigmaImporter {
 
       if (Array.isArray(node.children)) {
         node.children.forEach((child: any) => traverse(child, depth + 1));
+      } else if (node.children !== undefined && node.children !== null) {
+        console.log(`⚠️ [analyzeSchema traverse] Node has non-array children at depth ${depth}:`, {
+          type: node.type,
+          childrenType: typeof node.children,
+          childrenValue: node.children,
+        });
       }
     };
 
     traverse(root, 0);
+
+    // 🚨 EMERGENCY: Log final analysis results
+    console.log("🔬 [analyzeSchema] Traversal complete. Final results:", {
+      totalNodes,
+      imageNodesCount: imageNodes.length,
+      imageHashesCount: imageHashes.size,
+      requiredFontsCount: requiredFonts.size,
+      nodeTypesCount: nodeTypes.size,
+      maxDepth,
+      nodeTypeBreakdown: Array.from(nodeTypes.entries()),
+    });
+
     return {
       totalNodes,
       imageNodes,
@@ -3617,46 +3836,65 @@ export class EnhancedFigmaImporter {
     const stats = this.calculateImportStatistics();
     const totalTime = Date.now() - (this as any).importStartTime;
 
-    console.log('\n🎯 ═══════════════════════════════════════════════════════════');
-    console.log('🚀 FIGMA IMPORT COMPLETION REPORT');
-    console.log('═══════════════════════════════════════════════════════════');
-    
-    console.log(`📄 SOURCE: ${this.data?.metadata?.url || 'Unknown'}`);
-    console.log(`⏱️  IMPORT TIME: ${totalTime || report.processingTime || 'Unknown'}ms`);
-    console.log(`📊 SUCCESS RATE: ${report.successfulNodes || 0}/${report.totalNodes || 0} nodes (${((report.successfulNodes || 0) / Math.max(1, report.totalNodes || 1) * 100).toFixed(1)}%)`);
-    
+    console.log(
+      "\n🎯 ═══════════════════════════════════════════════════════════"
+    );
+    console.log("🚀 FIGMA IMPORT COMPLETION REPORT");
+    console.log("═══════════════════════════════════════════════════════════");
+
+    console.log(`📄 SOURCE: ${this.data?.metadata?.url || "Unknown"}`);
+    console.log(
+      `⏱️  IMPORT TIME: ${totalTime || report.processingTime || "Unknown"}ms`
+    );
+    console.log(
+      `📊 SUCCESS RATE: ${report.successfulNodes || 0}/${
+        report.totalNodes || 0
+      } nodes (${(
+        ((report.successfulNodes || 0) / Math.max(1, report.totalNodes || 1)) *
+        100
+      ).toFixed(1)}%)`
+    );
+
     if (stats) {
-      console.log('\n🎯 PIXEL-PERFECT RESULTS:');
-      console.log(`   Nodes with Transforms Applied: ${stats.transformsApplied}`);
+      console.log("\n🎯 PIXEL-PERFECT RESULTS:");
+      console.log(
+        `   Nodes with Transforms Applied: ${stats.transformsApplied}`
+      );
       console.log(`   Matrix Transforms: ${stats.matrixTransforms}`);
       console.log(`   Auto Layout Frames: ${stats.autoLayoutFrames}`);
       console.log(`   Component Instances: ${stats.componentInstances || 0}`);
-      
-      console.log('\n📐 FIGMA STRUCTURE:');
+
+      console.log("\n📐 FIGMA STRUCTURE:");
       console.log(`   Total Figma Nodes: ${report.successfulNodes || 0}`);
       console.log(`   Frames Created: ${stats.framesCreated || 0}`);
       console.log(`   Text Nodes: ${stats.textNodes || 0}`);
       console.log(`   Vector Graphics: ${stats.vectorNodes || 0}`);
     }
-    
+
     if (report.errors && report.errors.length > 0) {
-      console.log('\n⚠️  ISSUES:');
+      console.log("\n⚠️  ISSUES:");
       console.log(`   Failed Nodes: ${report.errors.length}`);
       report.errors.slice(0, 3).forEach((error: any, i: number) => {
-        console.log(`   ${i + 1}. ${error.type || 'Error'}: ${error.message || 'Unknown error'}`);
+        console.log(
+          `   ${i + 1}. ${error.type || "Error"}: ${
+            error.message || "Unknown error"
+          }`
+        );
       });
     }
-    
+
     if (report.warnings && report.warnings.length > 0) {
-      console.log('\n💡 OPTIMIZATION OPPORTUNITIES:');
+      console.log("\n💡 OPTIMIZATION OPPORTUNITIES:");
       report.warnings.slice(0, 3).forEach((warning: any) => {
         console.log(`   - ${warning}`);
       });
     }
-    
-    console.log('═══════════════════════════════════════════════════════════');
+
+    console.log("═══════════════════════════════════════════════════════════");
     console.log(`🎉 FIGMA IMPORT COMPLETE: Ready for design iteration!`);
-    console.log('═══════════════════════════════════════════════════════════\n');
+    console.log(
+      "═══════════════════════════════════════════════════════════\n"
+    );
   }
 
   /**
@@ -3670,7 +3908,7 @@ export class EnhancedFigmaImporter {
       componentInstances: 0,
       framesCreated: 0,
       textNodes: 0,
-      vectorNodes: 0
+      vectorNodes: 0,
     };
 
     // Walk through created Figma nodes to gather statistics
@@ -3680,7 +3918,7 @@ export class EnhancedFigmaImporter {
         stats = this.analyzeNodeStats(mainFrame, stats);
       }
     } catch (error) {
-      console.warn('Could not calculate import statistics:', error);
+      console.warn("Could not calculate import statistics:", error);
     }
 
     return stats;
@@ -3692,24 +3930,24 @@ export class EnhancedFigmaImporter {
   private analyzeNodeStats(node: SceneNode, stats: any): any {
     // Count node types
     switch (node.type) {
-      case 'FRAME':
-      case 'GROUP':
+      case "FRAME":
+      case "GROUP":
         stats.framesCreated++;
-        if ('layoutMode' in node && node.layoutMode !== 'NONE') {
+        if ("layoutMode" in node && node.layoutMode !== "NONE") {
           stats.autoLayoutFrames++;
         }
         break;
-      case 'TEXT':
+      case "TEXT":
         stats.textNodes++;
         break;
-      case 'VECTOR':
-      case 'STAR':
-      case 'POLYGON':
-      case 'ELLIPSE':
-      case 'RECTANGLE':
+      case "VECTOR":
+      case "STAR":
+      case "POLYGON":
+      case "ELLIPSE":
+      case "RECTANGLE":
         stats.vectorNodes++;
         break;
-      case 'INSTANCE':
+      case "INSTANCE":
         stats.componentInstances++;
         break;
     }
@@ -3723,12 +3961,65 @@ export class EnhancedFigmaImporter {
     }
 
     // Recurse to children
-    if ('children' in node && node.children) {
+    if ("children" in node && node.children) {
       node.children.forEach((child: any) => {
         stats = this.analyzeNodeStats(child, stats);
       });
     }
 
     return stats;
+  }
+
+  /**
+   * Export diagnostic report for pixel-perfect fidelity debugging
+   * Generates comprehensive JSON report with all import tracking data
+   */
+  private exportDiagnosticReport(): void {
+    try {
+      const diagnosticExport = this.diagnosticCollector.export();
+
+      // Log summary to console
+      console.log("\n📊 ═══════════════════════════════════════════════════════════");
+      console.log("🔬 DIAGNOSTIC EXPORT SUMMARY");
+      console.log("═══════════════════════════════════════════════════════════");
+      console.log(`Import ID: ${diagnosticExport.importId}`);
+      console.log(`Timestamp: ${diagnosticExport.timestamp}`);
+      console.log(`Source URL: ${diagnosticExport.sourceUrl}`);
+      console.log("\n📈 NODE STATISTICS:");
+      console.log(`   Total Nodes: ${diagnosticExport.summary.totalNodes}`);
+      console.log(`   Successful Nodes: ${diagnosticExport.summary.successfulNodes}`);
+      console.log(`   Failed Nodes: ${diagnosticExport.summary.failedNodes.length}`);
+      console.log(`   White Blank Frames: ${diagnosticExport.summary.whiteBlankFrames.length}`);
+      console.log(`   Rasterized Nodes: ${diagnosticExport.summary.rasterizedNodes}`);
+      console.log(`   Auto Layout Nodes: ${diagnosticExport.summary.autoLayoutNodes}`);
+      console.log(`   Transformed Nodes: ${diagnosticExport.summary.transformedNodes}`);
+      console.log(`   Early Returns Detected: ${diagnosticExport.summary.earlyReturns.length}`);
+      console.log(`   Critical Failures: ${diagnosticExport.summary.criticalFailures}`);
+
+      if (diagnosticExport.performanceMetrics) {
+        console.log("\n⏱️  PERFORMANCE:");
+        console.log(`   Total Import Duration: ${diagnosticExport.performanceMetrics.totalImportDurationMs}ms`);
+        console.log(`   Average Node Build Time: ${diagnosticExport.performanceMetrics.averageNodeBuildTimeMs.toFixed(2)}ms`);
+        console.log(`   Rasterization Time: ${diagnosticExport.performanceMetrics.rasterizationTimeMs}ms`);
+      }
+
+      console.log("\n💾 EXPORT:");
+      console.log(`   Diagnostic data collected for ${diagnosticExport.nodeDetails.length} nodes`);
+      console.log(`   Use figma.ui.postMessage to export full JSON`);
+      console.log("═══════════════════════════════════════════════════════════\n");
+
+      // Post diagnostic data to UI for download
+      figma.ui.postMessage({
+        type: "diagnostic-export",
+        data: diagnosticExport,
+      });
+
+      // Also log the full JSON to console (can be large, but useful for debugging)
+      console.log("📋 Full diagnostic data (copy from console):");
+      console.log(JSON.stringify(diagnosticExport, null, 2));
+
+    } catch (error) {
+      console.error("❌ Failed to export diagnostic report:", error);
+    }
   }
 }

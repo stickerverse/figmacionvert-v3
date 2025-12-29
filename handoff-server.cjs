@@ -6,6 +6,16 @@ const https = require("https");
 const http = require("http");
 const path = require("path");
 
+// Global error handling to prevent process crash from native/worker leaks (like Tesseract)
+process.on("uncaughtException", (err) => {
+  console.error("🔥 CRITICAL: Uncaught Exception:", err.message);
+  console.error(err.stack);
+});
+
+process.on("unhandledRejection", (reason, promise) => {
+  console.error("🔥 CRITICAL: Unhandled Rejection at:", promise, "reason:", reason);
+});
+
 // #region agent log
 try {
   fs.appendFileSync(
@@ -1114,6 +1124,10 @@ app.post(["/api/jobs", "/"], (req, res) => {
     }
   }
 
+  // CRITICAL FIX: Apply schema hierarchy migration for ALL payloads (compressed or not)
+  // This ensures 'tree' is converted to 'root' BEFORE any processing
+  payloadToCheck = migrateSchemaHierarchy(payloadToCheck);
+
   // Check if this is an extension-produced schema (has captureEngine metadata)
   // Check both 'meta' and 'metadata' fields
   // ENHANCED: Also check nested structures and compressed payloads
@@ -2194,6 +2208,17 @@ app.post("/api/ai-analyze", async (req, res) => {
       screenshotBase64 = screenshot.split(",")[1];
     }
 
+    // CRITICAL: Basic validation of screenshot data
+    if (!screenshotBase64 || screenshotBase64.length < 10) {
+      if (timeoutId) clearTimeout(timeoutId);
+      return res.status(400).json({
+        ok: false,
+        error: `Invalid screenshot data (length: ${
+          screenshotBase64?.length || 0
+        }). Image must be non-empty.`,
+      });
+    }
+
     const screenshotSizeKB = (screenshotBase64.length / 1024).toFixed(1);
     console.log(
       `[ai-analyze] Received AI analysis request (screenshot: ${screenshotSizeKB} KB)`
@@ -2780,12 +2805,13 @@ function upsertLayoutRelatives(node, parentAbs) {
 
 function applyAxLandmarkFramesToSchema(schema, semantics) {
   const landmarks = semantics?.landmarks;
-  if (!schema?.tree || !Array.isArray(landmarks) || landmarks.length === 0) {
+  // Schema v2 uses 'root' (migration ensures tree→root conversion happened earlier)
+  if (!schema?.root || !Array.isArray(landmarks) || landmarks.length === 0) {
     return;
   }
 
   // Anchor under <body> when available (matches how users think about page structure).
-  const root = schema.tree;
+  const root = schema.root;
   const body = findFirstNodeByTag(root, "body") || root;
   const bodyAbs = body.absoluteLayout || {
     left: 0,

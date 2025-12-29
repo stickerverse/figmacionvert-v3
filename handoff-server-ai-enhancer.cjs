@@ -9,9 +9,12 @@
  * Enhance schema with AI results
  */
 function enhanceSchemaWithAI(extractionData, aiContext) {
-  if (!extractionData || !extractionData.tree) {
+  // Schema v2 uses 'root' (with backward compatibility for 'tree')
+  const rootNode = extractionData?.root || extractionData?.tree;
+
+  if (!extractionData || !rootNode) {
     console.warn(
-      "[ai-enhancer] Extraction data has no tree, skipping enhancement"
+      "[ai-enhancer] Extraction data has no root/tree, skipping enhancement"
     );
     return extractionData;
   }
@@ -22,13 +25,13 @@ function enhanceSchemaWithAI(extractionData, aiContext) {
     viewport.width ||
     viewport.layoutViewportWidth ||
     extractionData?.metadata?.viewportWidth ||
-    extractionData?.tree?.layout?.width ||
+    rootNode?.layout?.width ||
     1440;
   const viewportHeight =
     viewport.height ||
     viewport.layoutViewportHeight ||
     extractionData?.metadata?.viewportHeight ||
-    extractionData?.tree?.layout?.height ||
+    rootNode?.layout?.height ||
     900;
   const viewportArea = Math.max(1, viewportWidth * viewportHeight);
   const MAX_PALETTE_FILLS = 200; // hard cap to prevent flooding the schema
@@ -189,7 +192,7 @@ function enhanceSchemaWithAI(extractionData, aiContext) {
   }
 
   // Start enhancement
-  enhanceNode(extractionData.tree);
+  enhanceNode(rootNode);
 
   // Log summary
   console.log("[ai-enhancer] 📊 Enhancement Summary:");

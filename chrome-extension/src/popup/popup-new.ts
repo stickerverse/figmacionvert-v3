@@ -11,6 +11,70 @@ window.addEventListener("unhandledrejection", (event) => {
   console.error("[UNHANDLED_REJECTION]", event.reason);
 });
 
+// ===== PERSISTENT CAPTURE STATE =====
+// Restore capture state from background script
+function restoreCaptureState(state: any) {
+  if (!state) return;
+
+  console.log("[POPUP] Restoring capture state:", state);
+
+  // Restore basic state
+  isCapturing = state.isCapturing || false;
+  captureStartTime = state.startTime || 0;
+
+  // Restore UI state based on stage
+  if (state.isCapturing) {
+    // Show terminal
+    if (terminal) terminal.classList.add("active");
+
+    // Restore progress
+    updateProgressRing(
+      state.progress || 0,
+      state.statusMessage || "In progress...",
+      state.stage || "capturing"
+    );
+
+    // Restore logs
+    if (state.logs && Array.isArray(state.logs)) {
+      state.logs.forEach((logEntry: any) => {
+        const levelClass =
+          logEntry.level === "error"
+            ? "terminal-error"
+            : logEntry.level === "success"
+            ? "terminal-success"
+            : logEntry.level === "warning"
+            ? "terminal-warning"
+            : "terminal-info";
+        logToTerminal(logEntry.message, levelClass);
+      });
+    }
+
+    updateStatus(state.statusMessage || "Capture in progress...");
+  }
+}
+
+// Request current capture state on popup load
+async function loadCurrentCaptureState() {
+  try {
+    const response = await chrome.runtime.sendMessage({
+      type: "GET_CAPTURE_STATE",
+    });
+    if (response && response.state) {
+      restoreCaptureState(response.state);
+    }
+  } catch (error) {
+    console.error("[POPUP] Failed to load capture state:", error);
+  }
+}
+
+// Listen for capture state updates from background script
+chrome.runtime.onMessage.addListener((message) => {
+  if (message.type === "CAPTURE_STATE_UPDATE") {
+    console.log("[POPUP] Received capture state update:", message.state);
+    restoreCaptureState(message.state);
+  }
+});
+
 // DOM Elements
 const captureFullPageBtn = document.getElementById(
   "capture-full-page"
@@ -285,20 +349,67 @@ function init() {
 
   log("info", "Extension popup initialized");
 
-  // Set up event listeners
-  captureFullPageBtn.addEventListener("click", () => startCapture("send"));
-  captureComponentBtn.addEventListener("click", () =>
-    log("info", "Component capture coming soon!")
-  );
-  captureMultipleBtn.addEventListener("click", () => {
-    // Capture a standard responsive set (mobile/tablet/desktop)
-    startCapture("send", [
-      { name: "Mobile 375", width: 375, height: 667, deviceScaleFactor: 2 },
-      { name: "Tablet 768", width: 768, height: 1024, deviceScaleFactor: 2 },
-      { name: "Desktop 1440", width: 1440, height: 900, deviceScaleFactor: 1 },
-    ]);
+  // Debug: Log all button elements to verify they exist
+  console.log("[POPUP] Button elements check:", {
+    captureFullPageBtn: !!captureFullPageBtn,
+    captureComponentBtn: !!captureComponentBtn,
+    captureMultipleBtn: !!captureMultipleBtn,
+    captureDownloadBtn: !!captureDownloadBtn,
+    documentReadyState: document.readyState,
+    bodyExists: !!document.body,
   });
-  captureDownloadBtn.addEventListener("click", () => startCapture("download"));
+
+  // Load any ongoing capture state from background
+  loadCurrentCaptureState();
+
+  // Set up event listeners with null checks
+  if (!captureFullPageBtn) {
+    console.error("[POPUP] ❌ capture-full-page button not found!");
+    console.error(
+      "[POPUP] Available elements:",
+      Array.from(document.querySelectorAll("button")).map((b) => b.id)
+    );
+  } else {
+    console.log("[POPUP] ✅ Adding click listener to capture-full-page button");
+    captureFullPageBtn.addEventListener("click", () => {
+      console.log("[POPUP] 🖱️ capture-full-page button clicked!");
+      startCapture("send");
+    });
+  }
+
+  if (!captureComponentBtn) {
+    console.error("[POPUP] ❌ capture-component button not found!");
+  } else {
+    captureComponentBtn.addEventListener("click", () =>
+      log("info", "Component capture coming soon!")
+    );
+  }
+
+  if (!captureMultipleBtn) {
+    console.error("[POPUP] ❌ capture-multiple button not found!");
+  } else {
+    captureMultipleBtn.addEventListener("click", () => {
+      // Capture a standard responsive set (mobile/tablet/desktop)
+      startCapture("send", [
+        { name: "Mobile 375", width: 375, height: 667, deviceScaleFactor: 2 },
+        { name: "Tablet 768", width: 768, height: 1024, deviceScaleFactor: 2 },
+        {
+          name: "Desktop 1440",
+          width: 1440,
+          height: 900,
+          deviceScaleFactor: 1,
+        },
+      ]);
+    });
+  }
+
+  if (!captureDownloadBtn) {
+    console.error("[POPUP] ❌ capture-download button not found!");
+  } else {
+    captureDownloadBtn.addEventListener("click", () =>
+      startCapture("download")
+    );
+  }
   terminalClearBtn.addEventListener("click", clearTerminal);
   terminalMinimizeBtn.addEventListener("click", toggleTerminal);
   captureDialogClose?.addEventListener("click", () => hideCaptureDialog());
@@ -419,21 +530,37 @@ function isWebTab(tab: chrome.tabs.Tab): boolean {
 }
 
 async function getActiveWebTab(): Promise<chrome.tabs.Tab | null> {
-  const [activeInWindow] = await chrome.tabs.query({
-    active: true,
-    lastFocusedWindow: true,
-  });
-  if (activeInWindow && isWebTab(activeInWindow)) return activeInWindow;
+  // CRITICAL FIX: Since popup is now a detached window, lastFocusedWindow points to the popup itself
+  // We need to query ALL windows to find the actual browser tab
 
-  const activeCandidates = await chrome.tabs.query({
-    lastFocusedWindow: true,
-    active: true,
+  // First try: active tab in any normal window (not popup)
+  const allWindows = await chrome.windows.getAll({
+    populate: true,
+    windowTypes: ["normal"],
   });
-  const candidate = activeCandidates.find(isWebTab);
-  if (candidate) return candidate;
 
-  const allTabs = await chrome.tabs.query({ lastFocusedWindow: true });
-  return allTabs.find(isWebTab) ?? null;
+  for (const window of allWindows) {
+    const activeTab = window.tabs?.find((tab) => tab.active && isWebTab(tab));
+    if (activeTab) {
+      console.log(
+        `[TAB-QUERY] Found active web tab: ${activeTab.id} (${activeTab.url})`
+      );
+      return activeTab;
+    }
+  }
+
+  // Fallback: any web tab in any window
+  const allTabs = await chrome.tabs.query({});
+  const webTab = allTabs.find(isWebTab);
+  if (webTab) {
+    console.log(
+      `[TAB-QUERY] Using fallback web tab: ${webTab.id} (${webTab.url})`
+    );
+    return webTab;
+  }
+
+  console.error("[TAB-QUERY] No web tabs found in any window");
+  return null;
 }
 
 /**
@@ -670,8 +797,11 @@ function updateProgressRing(
 
 /**
  * Show success dialog with capture details
+ * @param data - The capture payload (WebToFigmaSchema)
+ * @param dataSize - Payload size in bytes (from message field)
+ * @param dataSizeKB - Payload size in KB (from message field)
  */
-function showSuccessDialog(data: any) {
+function showSuccessDialog(data: any, dataSize?: number, dataSizeKB?: string) {
   const modal = document.getElementById("success-modal");
   if (!modal) return;
 
@@ -684,17 +814,40 @@ function showSuccessDialog(data: any) {
     data.metadata?.viewport?.height
   ) {
     viewport = `${data.metadata.viewport.width}×${data.metadata.viewport.height}`;
+  } else if (data.viewport?.width && data.viewport?.height) {
+    // Schema v2 path
+    viewport = `${data.viewport.width}×${data.viewport.height}`;
   }
 
-  // Calculate size - dataSizeKB is in KB, display as MB
-  const sizeBytes = data.dataSize || JSON.stringify(data).length;
+  // Calculate size - use message fields if available, otherwise estimate
+  const sizeBytes = dataSize || JSON.stringify(data).length;
   const sizeMB = (sizeBytes / (1024 * 1024)).toFixed(2);
 
-  // Get element count from various locations
-  const elements =
-    data.metadata?.extractionSummary?.totalElements ||
-    data.tree?.children?.length ||
-    (data.tree ? 1 : 0);
+  // Get element count from schema v2 structure
+  let elements = 0;
+
+  // Helper to recursively count all nodes
+  const countNodes = (node: any): number => {
+    if (!node) return 0;
+    let count = 1; // Count this node
+    if (node.children && Array.isArray(node.children)) {
+      for (const child of node.children) {
+        count += countNodes(child);
+      }
+    }
+    return count;
+  };
+
+  if (data.meta?.diagnostics?.nodeCount) {
+    // Primary: schema v2 diagnostics
+    elements = data.meta.diagnostics.nodeCount;
+  } else if (data.metadata?.extractionSummary?.totalElements) {
+    // Legacy: old extraction summary
+    elements = data.metadata.extractionSummary.totalElements;
+  } else if (data.root) {
+    // Fallback: recursively count nodes in tree
+    elements = countNodes(data.root);
+  }
 
   const duration = ((Date.now() - captureStartTime) / 1000).toFixed(1);
 
@@ -1085,8 +1238,8 @@ function handleCaptureComplete(message: any) {
     log("warning", `   assets.images exists: ${!!data?.assets?.images}`);
   }
 
-  // Node tree stats
-  if (data?.tree) {
+  // Node tree stats (schema v2 uses 'root' not 'tree')
+  if (data?.root || data?.tree) {
     const countNodesWithImages = (
       node: any
     ): { total: number; withImageHash: number; withImageFills: number } => {
@@ -1113,7 +1266,8 @@ function handleCaptureComplete(message: any) {
       return { total, withImageHash, withImageFills };
     };
 
-    const nodeStats = countNodesWithImages(data.tree);
+    const rootNode = data.root || data.tree; // Schema v2 uses 'root'
+    const nodeStats = countNodesWithImages(rootNode);
     log("info", `🌳 Nodes: ${nodeStats.total} total`);
     log("info", `   - ${nodeStats.withImageHash} nodes with imageHash`);
     log(
@@ -1132,7 +1286,7 @@ function handleCaptureComplete(message: any) {
 
   // Show success dialog with details
   if (data) {
-    setTimeout(() => showSuccessDialog(data), 500);
+    setTimeout(() => showSuccessDialog(data, dataSize, dataSizeKB), 500);
   } else {
     showCaptureDialog();
   }
@@ -1143,7 +1297,7 @@ function handleCaptureComplete(message: any) {
  */
 function handleCaptureError(message: any) {
   log("error", ` Capture failed: ${message.error}`);
-  
+
   // Log diagnostic details if available
   if (message.details) {
     const diagnostics = message.details.diagnostics;
@@ -1153,12 +1307,12 @@ function handleCaptureError(message: any) {
         .join(", ");
       log("warning", ` Diagnostics: ${diagInfo}`);
     }
-    
+
     if (message.details.reason) {
       log("warning", ` Reason: ${message.details.reason}`);
     }
   }
-  
+
   updateStatus("Capture failed");
   setStage("error");
   finishCapture();
@@ -1351,8 +1505,17 @@ async function checkFigmaConnection() {
   return false;
 }
 
-// Initialize on load
-init();
+// Initialize on load - ensure DOM is ready
+if (document.readyState === "loading") {
+  document.addEventListener("DOMContentLoaded", () => {
+    console.log("[POPUP] DOMContentLoaded fired, initializing...");
+    init();
+  });
+} else {
+  // DOM is already ready
+  console.log("[POPUP] DOM already ready, initializing...");
+  init();
+}
 
 // Export for webpack
 export {};

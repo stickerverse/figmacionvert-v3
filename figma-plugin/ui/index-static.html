@@ -1157,6 +1157,38 @@
           break;
         }
 
+        case 'debug-logs': {
+          // Accumulate debug logs from plugin
+          if (!window.debugLogBuffer) {
+            window.debugLogBuffer = '';
+          }
+          window.debugLogBuffer += msg.logs;
+          break;
+        }
+
+        case 'debug-logs-complete': {
+          // Download accumulated debug logs to file
+          if (window.debugLogBuffer) {
+            const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+            const filename = `figma-import-debug-${timestamp}.log`;
+
+            // Create blob and download
+            const blob = new Blob([window.debugLogBuffer], { type: 'text/plain' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = filename;
+            a.click();
+            URL.revokeObjectURL(url);
+
+            console.log(`✅ Debug log saved: ${filename} (${msg.totalLogs} entries)`);
+
+            // Clear buffer
+            window.debugLogBuffer = '';
+          }
+          break;
+        }
+
         case 'history-loading':
           updateStatus('Loading history...', 'info');
           break;
@@ -1192,6 +1224,33 @@
         case 'transcode-image': {
           const { id, base64, mimeType } = msg;
           transcodeToPng(id, base64, mimeType || 'image/png', 'image-transcoded');
+          break;
+        }
+
+        case 'diagnostic-export': {
+          // Download diagnostic data as JSON file
+          const diagnosticData = msg.data;
+          if (diagnosticData) {
+            const timestamp = new Date(diagnosticData.timestamp).toISOString().replace(/[:.]/g, '-');
+            const filename = `figma-import-diagnostics-${diagnosticData.importId}-${timestamp}.json`;
+
+            // Create blob and download
+            const jsonString = JSON.stringify(diagnosticData, null, 2);
+            const blob = new Blob([jsonString], { type: 'application/json' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = filename;
+            a.click();
+            URL.revokeObjectURL(url);
+
+            console.log(`📊 Diagnostic export saved: ${filename}`);
+            console.log(`   Total Nodes: ${diagnosticData.summary.totalNodes}`);
+            console.log(`   Failed Nodes: ${diagnosticData.summary.failedNodes.length}`);
+            console.log(`   White Blank Frames: ${diagnosticData.summary.whiteBlankFrames.length}`);
+
+            updateStatus(`📊 Diagnostic report downloaded: ${filename}`, 'success');
+          }
           break;
         }
       }

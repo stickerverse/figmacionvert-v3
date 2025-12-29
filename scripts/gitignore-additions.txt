@@ -1,0 +1,23 @@
+# Add these lines to .gitignore to prevent future clutter
+
+# Test artifacts and captures
+page-capture-*.json
+*-report.json
+*.backup
+*.backup[0-9]
+*.old
+*.swp
+*~
+
+# Browser test profiles
+.puppeteer-profile*/
+.chrome-profile*/
+
+# Archived files (optional - if you want to keep archives out of git)
+scripts/archive/
+docs/archive/
+
+# Temporary test outputs
+test-output/
+capture-output/
+debug-*.json

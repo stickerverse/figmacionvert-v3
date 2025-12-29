@@ -325,6 +325,18 @@ async function extractIntrinsicSize(el: Element, computed?: CSSStyleDeclaration)
   const url = bestElementImageUrl(el, computed);
   if (url) return await probeImageUrlIntrinsicSize(url);
 
+  // FIX 2: Fallback to CSS computed dimensions as last resort
+  // CRITICAL: When natural dimensions and URL probing fail, use computed CSS dimensions
+  // This ensures we always have some dimension data rather than failing completely
+  if (computed) {
+    const cssWidth = parseFloat(computed.width);
+    const cssHeight = parseFloat(computed.height);
+    if (cssWidth > 0 && cssHeight > 0 && Number.isFinite(cssWidth) && Number.isFinite(cssHeight)) {
+      console.log(`📐 [INTRINSIC SIZE FALLBACK] Using CSS dimensions: ${cssWidth}x${cssHeight}`);
+      return { width: Math.round(cssWidth), height: Math.round(cssHeight) };
+    }
+  }
+
   return null;
 }
 
@@ -4522,6 +4534,32 @@ export class DOMExtractor {
     return validModes.includes(mode) ? mode : "NORMAL";
   }
 
+  /**
+   * FIX 3: Determine if a CSS filter should trigger rasterization
+   * Most CSS filters cannot be natively represented in Figma and need Phase 5 rasterization
+   */
+  private shouldRasterizeForFilter(filter: string): boolean {
+    if (!filter || filter === 'none') return false;
+
+    // Figma can natively render blur effects, but most other filters need rasterization
+    // blur(), drop-shadow(), brightness(), contrast(), grayscale(), hue-rotate(),
+    // invert(), opacity(), saturate(), sepia() - all should be rasterized for pixel-perfect fidelity
+    const filterFunctions = [
+      'blur', 'brightness', 'contrast', 'drop-shadow', 'grayscale',
+      'hue-rotate', 'invert', 'opacity', 'saturate', 'sepia', 'url'
+    ];
+
+    // Check if filter string contains any of these functions
+    const lowerFilter = filter.toLowerCase();
+    for (const fn of filterFunctions) {
+      if (lowerFilter.includes(fn + '(')) {
+        return true;
+      }
+    }
+
+    return false;
+  }
+
   private async extractStylesSafe(
     computed: CSSStyleDeclaration,
     element: Element,
@@ -4674,6 +4712,18 @@ export class DOMExtractor {
             : "none",
           value: clipPath,
         };
+      }
+
+      // FIX 3: Extract CSS filters for Phase 4 rasterization (applies to ALL elements)
+      // CRITICAL: Fidelity blockers analysis showed filters were MISSING from schema
+      const filter = computed.filter;
+      if (filter && filter !== "none") {
+        console.log(`🎨 [CSS FILTER] Captured filter on ${element.tagName}: ${filter}`);
+        node.cssFilter = filter;
+        // Mark for rasterization if complex filters that Figma can't natively render
+        if (!node.rasterize && this.shouldRasterizeForFilter(filter)) {
+          node.rasterize = { reason: "FILTER" };
+        }
       }
 
       // ENHANCED: Store all border properties individually for precise rendering
@@ -7483,6 +7533,56 @@ export class DOMExtractor {
       const scaleMode =
         objectFit === "contain" || objectFit === "scale-down" ? "FIT" : "FILL";
 
+      // FIX 1: Ensure image is loaded before extracting intrinsic size
+      // CRITICAL: Many images fail to capture intrinsicSize because they haven't loaded yet
+      if (!img.complete || img.naturalWidth === 0 || img.naturalHeight === 0) {
+        try {
+          console.log(`🔄 [IMAGE LOAD] Waiting for image to load: ${imageUrl.substring(0, 80)}...`);
+          await new Promise<void>((resolve, reject) => {
+            const timeout = setTimeout(() => {
+              console.warn(`⏱️ [IMAGE LOAD] Timeout waiting for image`);
+              reject(new Error('Image load timeout'));
+            }, 5000);
+
+            const cleanup = () => {
+              clearTimeout(timeout);
+              img.onload = null;
+              img.onerror = null;
+            };
+
+            img.onload = () => {
+              cleanup();
+              console.log(`✅ [IMAGE LOAD] Image loaded successfully`);
+              resolve();
+            };
+
+            img.onerror = (err) => {
+              cleanup();
+              console.warn(`❌ [IMAGE LOAD] Image load error:`, err);
+              reject(new Error('Image load error'));
+            };
+
+            // Force reload if image is not complete
+            if (!img.complete) {
+              const currentSrc = img.src;
+              img.src = '';
+              img.src = currentSrc;
+            } else {
+              // Image claims to be complete but has no dimensions - give it a moment
+              setTimeout(() => {
+                if (img.naturalWidth > 0 && img.naturalHeight > 0) {
+                  cleanup();
+                  resolve();
+                }
+              }, 100);
+            }
+          });
+        } catch (err) {
+          console.warn(`⚠️ [IMAGE LOAD] Failed to wait for image load, continuing with extraction:`, err);
+          // Continue with extraction even if load fails - we'll use fallback dimensions
+        }
+      }
+
       // PIXEL-PERFECT: Extract intrinsic size for proper aspect ratio and object-fit handling
       const intrinsicSize = await extractIntrinsicSize(img, computed);
       if (intrinsicSize) {
@@ -7492,6 +7592,30 @@ export class DOMExtractor {
 
       // Store imageFit for importer to map to Figma scaleMode correctly
       node.imageFit = objectFit;
+
+      // FIX 3: Capture CSS filters for Phase 4 rasterization
+      // CRITICAL: All images with filters were missing this data, causing visual fidelity loss
+      const filter = computed.filter;
+      if (filter && filter !== 'none') {
+        console.log(`🎨 [CSS FILTER] Captured filter: ${filter}`);
+        node.cssFilter = filter;
+        // Mark for rasterization if not already marked
+        if (!node.rasterize) {
+          node.rasterize = { reason: 'FILTER' };
+        }
+      }
+
+      // FIX 3: Capture blend modes for Phase 4 rasterization
+      // CRITICAL: All images with blend modes were missing this data
+      const mixBlendMode = computed.mixBlendMode;
+      if (mixBlendMode && mixBlendMode !== 'normal') {
+        console.log(`🎨 [BLEND MODE] Captured blend mode: ${mixBlendMode}`);
+        node.mixBlendMode = mixBlendMode;
+        // Mark for rasterization if not already marked
+        if (!node.rasterize) {
+          node.rasterize = { reason: 'BLEND_MODE' };
+        }
+      }
 
       node.fills = [
         {
@@ -10216,6 +10340,7 @@ export class DOMExtractor {
 
   /**
    * Parse CSS transform string into 2x3 matrix
+   * FIX 4: Added debug logging to diagnose transform parsing failures
    */
   private parseTransformMatrix(transform: string): number[] | null {
     // Handle matrix() and matrix3d() functions
@@ -10224,15 +10349,27 @@ export class DOMExtractor {
       const values = matrixMatch[1].split(',').map(v => parseFloat(v.trim()));
       if (values.length === 6) {
         // 2D matrix: [a, b, c, d, e, f]
+        console.log(`✅ [TRANSFORM PARSE] Successfully parsed 2D matrix: ${transform}`);
         return values;
       } else if (values.length === 16) {
         // 3D matrix: extract 2D components [a, b, c, d, e, f] from 4x4 matrix
+        console.log(`✅ [TRANSFORM PARSE] Successfully parsed 3D matrix: ${transform}`);
         return [values[0], values[1], values[4], values[5], values[12], values[13]];
+      } else {
+        // FIX 4: Log unexpected matrix value count
+        console.warn(`⚠️ [TRANSFORM PARSE] Matrix has unexpected value count (${values.length}): ${transform}`);
       }
     }
 
     // Parse individual transform functions and compose matrix
-    return this.composeTransformMatrix(transform);
+    const result = this.composeTransformMatrix(transform);
+    if (result) {
+      console.log(`✅ [TRANSFORM PARSE] Composed matrix from functions: ${transform}`);
+    } else {
+      // FIX 4: Log parsing failure to help diagnose the 6 failed nodes
+      console.warn(`❌ [TRANSFORM PARSE] Failed to parse transform: ${transform}`);
+    }
+    return result;
   }
 
   /**
