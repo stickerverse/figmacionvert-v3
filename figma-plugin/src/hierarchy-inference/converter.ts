@@ -30,23 +30,25 @@ export function convertInferredTreeToElementNodes(
     elementNode.htmlTag = originalData.htmlTag;
   }
 
-  // Update layout from inferred rect
-  if (!elementNode.layout) {
-    elementNode.layout = {};
-  }
-  elementNode.layout.x = inferredNode.rect.x;
-  elementNode.layout.y = inferredNode.rect.y;
-  elementNode.layout.width = inferredNode.rect.width;
-  elementNode.layout.height = inferredNode.rect.height;
+  // SAFETY: Update layout from inferred rect (handle case where rect may be undefined)
+  if (inferredNode.rect) {
+    if (!elementNode.layout) {
+      elementNode.layout = {};
+    }
+    elementNode.layout.x = inferredNode.rect.x;
+    elementNode.layout.y = inferredNode.rect.y;
+    elementNode.layout.width = inferredNode.rect.width;
+    elementNode.layout.height = inferredNode.rect.height;
 
-  // Update absoluteLayout if it exists
-  if (!elementNode.absoluteLayout) {
-    elementNode.absoluteLayout = {};
+    // Update absoluteLayout if it exists
+    if (!elementNode.absoluteLayout) {
+      elementNode.absoluteLayout = {};
+    }
+    elementNode.absoluteLayout.left = inferredNode.rect.x;
+    elementNode.absoluteLayout.top = inferredNode.rect.y;
+    elementNode.absoluteLayout.width = inferredNode.rect.width;
+    elementNode.absoluteLayout.height = inferredNode.rect.height;
   }
-  elementNode.absoluteLayout.left = inferredNode.rect.x;
-  elementNode.absoluteLayout.top = inferredNode.rect.y;
-  elementNode.absoluteLayout.width = inferredNode.rect.width;
-  elementNode.absoluteLayout.height = inferredNode.rect.height;
 
   // Apply inferred auto-layout if present
   if (inferredNode.autoLayout) {

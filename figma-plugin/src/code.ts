@@ -645,6 +645,7 @@ async function handleImportRequest(
       retryFailedImages: true,
       enableProgressiveLoading: false,
       applyAutoLayout: resolvedOptions.applyAutoLayout,
+      useHierarchyInference: false, // CRITICAL FIX: Disable hierarchy inference - it collapses 398 nodes to 1
     };
 
 
@@ -1557,6 +1558,7 @@ async function handleEnhancedImport(
       createMainFrame: true,
       enableBatchProcessing: true,
       verifyPositions: true,
+      useHierarchyInference: false, // CRITICAL FIX: Disable hierarchy inference - it collapses nodes incorrectly
     };
 
     const importer = new EnhancedFigmaImporter(data, enhancedOptions);
@@ -1839,6 +1841,7 @@ async function handleEnhancedImportV2(
       enableDebugMode: false,
       retryFailedImages: true,
       enableProgressiveLoading: false,
+      useHierarchyInference: false, // CRITICAL FIX: Disable hierarchy inference - it collapses nodes incorrectly
       ...options,
     };
 

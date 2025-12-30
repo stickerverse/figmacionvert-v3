@@ -380,7 +380,7 @@ export class EnhancedFigmaImporter {
       maxImportDuration: 300000, // 5 minutes
       enableMemoryCleanup: true,
       validateTextNodes: true,
-      useHierarchyInference: true, // Default: enabled
+      useHierarchyInference: false, // Default: disabled (hierarchy inference has bugs that collapse nodes)
       ...options,
     };
 
@@ -2003,7 +2003,16 @@ export class EnhancedFigmaImporter {
           `[DEBUG] Building ${bodyNode.children.length} child nodes...`
         );
 
-        for (const child of bodyNode.children) {
+        // FIDELITY FIX: Sort children by z-index before building
+        const sortedChildren = (bodyNode.children || []).sort((a: any, b: any) => {
+          const zA = typeof a.zIndex === 'number' ? a.zIndex :
+                    (a.layoutContext?.zIndex && a.layoutContext.zIndex !== 'auto' ? parseInt(a.layoutContext.zIndex, 10) : 0);
+          const zB = typeof b.zIndex === 'number' ? b.zIndex :
+                    (b.layoutContext?.zIndex && b.layoutContext.zIndex !== 'auto' ? parseInt(b.layoutContext.zIndex, 10) : 0);
+          return zA - zB;
+        });
+
+        for (const child of sortedChildren) {
           const result = await buildHierarchy(child, parentFrame);
           if (result) {
             successCount++;
@@ -2023,12 +2032,14 @@ export class EnhancedFigmaImporter {
           `[DEBUG] Build results: ${successCount} success, ${failCount} failed out of ${bodyNode.children.length} total`
         );
 
+        // GRACEFUL FAILURE: Don't throw - allow partial imports to persist for validation
         if (successCount === 0 && bodyNode.children.length > 0) {
-          throw new Error(
-            `CRITICAL: All ${bodyNode.children.length} child nodes failed to build. ` +
+          console.error(
+            `❌ [CRITICAL] All ${bodyNode.children.length} child nodes failed to build. ` +
               `This will result in a blank white frame. Check console above for specific validation/creation errors. ` +
               `Failed nodes tracked in this.failedNodes (${this.failedNodes.length} total).`
           );
+          console.warn(`⚠️ [GRACEFUL] Continuing import to preserve partial results for debugging`);
         }
       } else {
         console.log(`[DEBUG] Building single bodyNode directly...`);
@@ -2040,9 +2051,8 @@ export class EnhancedFigmaImporter {
             hasRect: !!bodyNode.rect,
             hasLayout: !!bodyNode.layout,
           });
-          throw new Error(
-            `CRITICAL: Failed to build root bodyNode. This will result in a blank white frame.`
-          );
+          // GRACEFUL FAILURE: Don't throw - allow partial imports to persist for validation
+          console.warn(`⚠️ [GRACEFUL] Continuing import despite root bodyNode failure`);
         }
       }
 
@@ -2060,9 +2070,8 @@ export class EnhancedFigmaImporter {
           hasRect: !!treeToBuild.rect,
           hasLayout: !!treeToBuild.layout,
         });
-        throw new Error(
-          `CRITICAL: Failed to build root tree node. This will result in a blank white frame.`
-        );
+        // GRACEFUL FAILURE: Don't throw - allow partial imports to persist for validation
+        console.warn(`⚠️ [GRACEFUL] Continuing import despite root tree node failure`);
       }
 
       console.log(

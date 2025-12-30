@@ -2253,6 +2253,10 @@ export class DOMExtractor {
         // RULE 6.1: Stacking context detection
         _stackingContext: this.detectStackingContext(computed),
       },
+      // Parse transform matrix for pixel-perfect positioning
+      transform: this.parseTransformMatrix(computed.transform),
+      // Extract z-index for layer ordering
+      zIndex: computed.zIndex && computed.zIndex !== "auto" ? parseInt(computed.zIndex, 10) : undefined,
       fills: [],
       strokes: [],
       effects: [],
@@ -2291,12 +2295,18 @@ export class DOMExtractor {
 
     // PHASE 4: Capture CSS filters and blend modes for pixel-perfect visual effects
     if (computed.filter && computed.filter !== "none") {
-      node.cssFilter = computed.filter;
+      node.filters = this.parseFiltersToArray(computed.filter);
 
       // PHASE 5: Check if filter requires rasterization (strict clone mode)
       if (this.filterRequiresRasterization(computed.filter)) {
         node.rasterize = { reason: "FILTER" };
       }
+    }
+
+    // PHASE 4b: Capture backdrop filters (glassmorphism effects)
+    const backdropFilter = computed.backdropFilter || (computed as any).webkitBackdropFilter;
+    if (backdropFilter && backdropFilter !== "none") {
+      node.backdropFilters = this.parseFiltersToArray(backdropFilter);
     }
 
     if (computed.mixBlendMode && computed.mixBlendMode !== "normal") {
@@ -4558,6 +4568,75 @@ export class DOMExtractor {
     }
 
     return false;
+  }
+
+  /**
+   * Parse CSS filter string to array of filter objects for Figma
+   * Converts "blur(10px) brightness(1.2)" to [{type: "blur", value: 10, unit: "px"}, ...]
+   */
+  private parseFiltersToArray(filterString: string): any[] {
+    if (!filterString || filterString === "none") {
+      return [];
+    }
+
+    const filters: any[] = [];
+
+    // Match blur(Xpx)
+    const blurMatch = filterString.match(/blur\((\d+(?:\.\d+)?)(px)?\)/);
+    if (blurMatch) {
+      filters.push({
+        type: "blur",
+        value: parseFloat(blurMatch[1]),
+        unit: "px"
+      });
+    }
+
+    // Match brightness(X)
+    const brightnessMatch = filterString.match(/brightness\((\d+(?:\.\d+)?)\)/);
+    if (brightnessMatch) {
+      filters.push({
+        type: "brightness",
+        value: parseFloat(brightnessMatch[1])
+      });
+    }
+
+    // Match contrast(X)
+    const contrastMatch = filterString.match(/contrast\((\d+(?:\.\d+)?)\)/);
+    if (contrastMatch) {
+      filters.push({
+        type: "contrast",
+        value: parseFloat(contrastMatch[1])
+      });
+    }
+
+    // Match saturate(X)
+    const saturateMatch = filterString.match(/saturate\((\d+(?:\.\d+)?)\)/);
+    if (saturateMatch) {
+      filters.push({
+        type: "saturate",
+        value: parseFloat(saturateMatch[1])
+      });
+    }
+
+    // Match grayscale(X)
+    const grayscaleMatch = filterString.match(/grayscale\((\d+(?:\.\d+)?)\)/);
+    if (grayscaleMatch) {
+      filters.push({
+        type: "grayscale",
+        value: parseFloat(grayscaleMatch[1])
+      });
+    }
+
+    // Match opacity(X)
+    const opacityMatch = filterString.match(/opacity\((\d+(?:\.\d+)?)\)/);
+    if (opacityMatch) {
+      filters.push({
+        type: "opacity",
+        value: parseFloat(opacityMatch[1])
+      });
+    }
+
+    return filters;
   }
 
   private async extractStylesSafe(

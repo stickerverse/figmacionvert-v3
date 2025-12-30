@@ -338,7 +338,17 @@ try {
   console.warn("[handoff] typography-analyzer not available");
 }
 try {
-  yoloDetect = require("./yolo-detector.cjs").detectComponents;
+  const yoloModule = require("./yolo-detector.cjs");
+  yoloDetect = yoloModule.detectComponents;
+  // Pre-load YOLO model in background to avoid timeout on first request
+  if (typeof yoloModule.loadModel === "function") {
+    setTimeout(() => {
+      console.log("[handoff] 🔄 Pre-loading YOLO model in background...");
+      yoloModule.loadModel()
+        .then(() => console.log("[handoff] ✅ YOLO model pre-loaded successfully"))
+        .catch(e => console.warn(`[handoff] ⚠️ YOLO pre-load warning: ${e.message}`));
+    }, 1000); // Small delay to let server start
+  }
 } catch (e) {
   yoloDetect = async () => ({
     detections: [],
@@ -623,7 +633,7 @@ app.use((req, _res, next) => {
 
 app.use(
   cors({
-    origin: "*", // Allow all origins for local development
+    origin: true, // Reflect request origin to allow credentials
     methods: ["GET", "POST", "OPTIONS"],
     allowedHeaders: [
       "Content-Type",
@@ -1747,8 +1757,8 @@ async function runAIAnalysis(screenshotBase64, strictFidelity = true) {
     },
   };
 
-  // Per-model timeout (20s each, allowing 3 models = 60s total)
-  const MODEL_TIMEOUT = 20000; // 20 seconds per model
+  // Per-model timeout (45s each, allowing ample time for model loading)
+  const MODEL_TIMEOUT = 45000; // 45 seconds per model
 
   /**
    * Helper to run a model with timeout and diagnostics
@@ -2164,9 +2174,9 @@ async function runAIAnalysis(screenshotBase64, strictFidelity = true) {
 
 app.post("/api/ai-analyze", async (req, res) => {
   // CRITICAL FIX: Add timeout to prevent hanging
-  // Overall timeout is 70s (20s per model × 3 models + 10s buffer)
+  // Overall timeout is 100s (45s per model × parallel execution + buffer)
   // Per-model timeouts are handled in runAIAnalysis()
-  const AI_ANALYSIS_TIMEOUT = 70000; // 70 seconds max (20s per model + buffer)
+  const AI_ANALYSIS_TIMEOUT = 100000; // 100 seconds max
   const requestStartTime = Date.now();
 
   const timeoutId = setTimeout(() => {

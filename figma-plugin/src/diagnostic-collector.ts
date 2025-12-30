@@ -171,9 +171,13 @@ export class DiagnosticCollector {
     if (expectedEffects !== actualEffects) countMismatches.push("effects");
     if (expectedChildren !== actualChildren) countMismatches.push("children");
 
-    const dimensionMismatch = actualDimensions
-      ? Math.abs(actualDimensions.width - schemaNode.rect.width) > 1 ||
-        Math.abs(actualDimensions.height - schemaNode.rect.height) > 1
+    // SAFETY: Handle hasLayout:true/hasRect:false cases - rect may be undefined
+    const expectedWidth = schemaNode.rect?.width ?? 0;
+    const expectedHeight = schemaNode.rect?.height ?? 0;
+
+    const dimensionMismatch = actualDimensions && schemaNode.rect && (expectedWidth > 0 || expectedHeight > 0)
+      ? Math.abs(actualDimensions.width - expectedWidth) > 1 ||
+        Math.abs(actualDimensions.height - expectedHeight) > 1
       : false;
 
     tracking.mapping = {
@@ -182,8 +186,8 @@ export class DiagnosticCollector {
       schemaType: schemaNode.tagName,
       figmaType,
       expectedDimensions: {
-        width: schemaNode.rect.width,
-        height: schemaNode.rect.height,
+        width: expectedWidth,
+        height: expectedHeight,
       },
       actualDimensions,
       transformApplied: tracking.phases.includes("TRANSFORM_APPLIED"),
@@ -203,7 +207,7 @@ export class DiagnosticCollector {
     // Auto-detect dimension mismatches
     if (dimensionMismatch) {
       tracking.warnings.push(
-        `DIMENSION_MISMATCH: Expected ${schemaNode.rect.width}x${schemaNode.rect.height}, got ${actualDimensions?.width}x${actualDimensions?.height}`
+        `DIMENSION_MISMATCH: Expected ${expectedWidth}x${expectedHeight}, got ${actualDimensions?.width}x${actualDimensions?.height}`
       );
     }
   }

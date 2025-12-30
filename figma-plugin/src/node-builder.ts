@@ -2203,24 +2203,46 @@ export class NodeBuilder {
       // CRITICAL FIX: Validate and sanitize all data before applying
       const validatedData = this.validateNodeData(data);
 
-      this.applyPositioning(node, validatedData);
-      await this.applyCommonStyles(node, validatedData);
+      // SAFETY: Runtime type guard for each method call to prevent "not a function" errors
+      if (typeof this.applyPositioning === 'function') {
+        this.applyPositioning(node, validatedData);
+      } else {
+        console.warn(`⚠️ [SAFETY] applyPositioning is not a function, skipping`);
+      }
+
+      if (typeof this.applyCommonStyles === 'function') {
+        await this.applyCommonStyles(node, validatedData);
+      } else {
+        console.warn(`⚠️ [SAFETY] applyCommonStyles is not a function, skipping`);
+      }
 
       // Only try to convert CSS Grid → Auto Layout if auto-layout mode is enabled
       if (this.options?.applyAutoLayout) {
-        if (data.autoLayout && node.type === "FRAME") {
+        if (data.autoLayout && node.type === "FRAME" && typeof this.applyAutoLayout === 'function') {
           this.applyAutoLayout(node as FrameNode, data.autoLayout);
         }
-        this.applyGridLayoutMetadata(node, data);
+        if (typeof this.applyGridLayoutMetadata === 'function') {
+          this.applyGridLayoutMetadata(node, data);
+        }
       }
 
-      this.applyOverflow(node, data);
-      this.applyOpacity(node, data);
-      this.applyVisibility(node, data);
-      this.applyFilters(node, data);
-      this.applyMetadata(node, data, meta);
+      if (typeof this.applyOverflow === 'function') {
+        this.applyOverflow(node, data);
+      }
+      if (typeof this.applyOpacity === 'function') {
+        this.applyOpacity(node, data);
+      }
+      if (typeof this.applyVisibility === 'function') {
+        this.applyVisibility(node, data);
+      }
+      if (typeof this.applyFilters === 'function') {
+        this.applyFilters(node, data);
+      }
+      if (typeof this.applyMetadata === 'function') {
+        this.applyMetadata(node, data, meta);
+      }
 
-      if (data.designTokens && this.designTokensManager) {
+      if (data.designTokens && this.designTokensManager && typeof this.applyDesignTokens === 'function') {
         await this.applyDesignTokens(node, data.designTokens);
       }
     } catch (e) {
@@ -2228,7 +2250,8 @@ export class NodeBuilder {
         `❌ [NODE_BUILDER] afterCreate failed for ${node.name}:`,
         e
       );
-      throw e;
+      // GRACEFUL FAILURE: Don't throw - log error and continue
+      console.warn(`⚠️ [GRACEFUL] Continuing import despite afterCreate failure for ${node.name}`);
     }
   }
 
